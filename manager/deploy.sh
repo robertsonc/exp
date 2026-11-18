@@ -449,8 +449,14 @@ else
   fi
 
   code="$(http "$body" "$BASE/install.sh")"
-  [ "$code" = 200 ] && head -c 2 "$body" | grep -q '^#!' && head -n1 "$body" | grep -Eq 'sh' || die "GET $BASE/install.sh answered $code or is not a shell script (is RELEASE_PUBKEY_PEM valid?)"
-  log "ok: $BASE/install.sh"
+  if [ "$code" = 503 ] && grep -q 'no valid release version is imported yet' "$body"; then
+    # Expected on a first deploy: the installer is only served once a signed release is published
+    # (scripts/publish-release.sh), because install.sh pins the agent version. Not a failure.
+    warn "GET $BASE/install.sh answered 503 'no release imported yet': publish a release (scripts/publish-release.sh), then the installer is served"
+  else
+    [ "$code" = 200 ] && head -c 2 "$body" | grep -q '^#!' && head -n1 "$body" | grep -Eq 'sh' || die "GET $BASE/install.sh answered $code or is not a shell script (is RELEASE_PUBKEY_PEM valid?)"
+    log "ok: $BASE/install.sh"
+  fi
 
   bogus="expe_$(printf 'A%.0s' $(seq 1 43))"
   code="$(http "$body" --request POST --header 'Content-Type: application/json' --data "{\"token\":\"$bogus\",\"facts\":{\"hostname\":\"smoke-test\",\"arch\":\"amd64\"}}" "$BASE/api/agent/v1/enrol")"
