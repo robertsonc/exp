@@ -158,12 +158,13 @@ def test_run_refuses_an_invalid_config_with_the_reason(env, capsys):
     assert cli.main(["--root", str(env.root), "run"]) == 78
 
 
-def test_enrol_writes_agent_json_0600_and_never_prints_the_secret(env, capsys):
+def test_enrol_writes_agent_json_0600_and_never_prints_the_secret(env, capsys, monkeypatch):
     pend = env.app.add_host(name="srv-9")
     token = env.app.issue_enrol_token(pend["host_id"])
     fresh = env.root / "fresh"
     fresh.mkdir()
-    rc = cli.main(["--root", str(fresh), "enrol", token, "--manager", env.cfg.manager_url])
+    monkeypatch.setenv("EXP_ENROL_TOKEN", token)
+    rc = cli.main(["--root", str(fresh), "enrol", "--manager", env.cfg.manager_url])
     out = capsys.readouterr()
     assert rc == 0 and pend["host_id"] in out.out
     cfgp = fresh / "etc" / "exp" / "agent.json"
@@ -173,9 +174,25 @@ def test_enrol_writes_agent_json_0600_and_never_prints_the_secret(env, capsys):
     assert doc["agent_secret"] not in out.out + out.err and token not in out.out + out.err
     assert "BEGIN PUBLIC KEY" in doc["release_pubkey_pem"]
     # a spent token fails cleanly; no manager URL on an un-enrolled host is a usage error
-    assert cli.main(["--root", str(fresh), "enrol", token, "--manager", env.cfg.manager_url]) == 1
-    assert cli.main(["--root", str(env.root / "nowhere"), "enrol", token]) == 2
-    assert cli.main(["--root", str(fresh), "enrol", "garbage", "--manager", env.cfg.manager_url]) == 1
+    assert cli.main(["--root", str(fresh), "enrol", "--manager", env.cfg.manager_url]) == 1
+    assert cli.main(["--root", str(env.root / "nowhere"), "enrol"]) == 2
+    monkeypatch.setenv("EXP_ENROL_TOKEN", "garbage")
+    assert cli.main(["--root", str(fresh), "enrol", "--manager", env.cfg.manager_url]) == 1
+
+
+def test_enrol_refuses_a_token_on_argv_and_reads_stdin(env, capsys, monkeypatch):
+    import io
+    monkeypatch.delenv("EXP_ENROL_TOKEN", raising=False)
+    pend = env.app.add_host(name="srv-10")
+    token = env.app.issue_enrol_token(pend["host_id"])
+    fresh = env.root / "fresh2"
+    fresh.mkdir()
+    with pytest.raises(SystemExit) as ei:  # a positional token is no longer accepted (SR-14)
+        cli.main(["--root", str(fresh), "enrol", token, "--manager", env.cfg.manager_url])
+    assert ei.value.code == 2
+    assert not (fresh / "etc" / "exp" / "agent.json").exists()
+    monkeypatch.setattr("sys.stdin", io.StringIO(token + "\n"))
+    assert cli.main(["--root", str(fresh), "enrol", "--manager", env.cfg.manager_url]) == 0
 
 
 def test_health_json_is_exp_health_1_and_exit_code_tracks_health(env, capsys):

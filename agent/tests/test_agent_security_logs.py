@@ -67,7 +67,8 @@ def test_full_run_leaves_no_secret_in_logs_argv_status_events_state_or_diagnosti
         tok = env.app.issue_enrol_token(pend["host_id"])
         fresh = tmp_path / "fresh"
         fresh.mkdir()
-        assert cli.main(["--root", str(fresh), "enrol", tok, "--manager", env.cfg.manager_url]) == 0
+        monkeypatch.setenv("EXP_ENROL_TOKEN", tok)
+        assert cli.main(["--root", str(fresh), "enrol", "--manager", env.cfg.manager_url]) == 0
         enrol_out = capsys.readouterr()
 
         comp_c = env.comp(

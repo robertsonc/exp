@@ -42,7 +42,8 @@ exp-agent run                      poll the manager, converge the host, report s
 exp-agent status                   local summary: desired/applied versions, components, last error, pending update
 exp-agent reconcile --once         fetch the desired state once and apply it (prints "reconcile: ok|error|rolled_back")
 exp-agent facts                    host facts as JSON (what enrol sends)
-exp-agent enrol <token> [--manager https://host]   one-time enrolment; writes /etc/exp/agent.json (0600)
+exp-agent enrol [--manager https://host] [--token-file PATH|-]   one-time enrolment; token from $EXP_ENROL_TOKEN or stdin
+                                   (never argv: /proc exposure); writes /etc/exp/agent.json (0600)
 exp-agent uninstall [--local]      remove all components, their data and the agent (--local: do not contact the manager)
 exp-agent health [--json]          exp.health/1 for the agent itself (exit 0 iff healthy)
 exp-agent version | selftest       selftest: python, openssl Ed25519 round trip, schemas, path guard, safe unpack, tools
@@ -123,8 +124,11 @@ runner. (`--root DIR` exists on the CLI for the same purpose; never use it on a 
 * `release manifest signature verification FAILED` — the manifest was not signed by the pinned release key (`release_pubkey_pem`);
   nothing was changed. Re-enrol only if the key legitimately rotated.
 * `requirements.apt lists packages outside the agent allowlist` — the artifact asks for a package the agent will not install.
+* Manager unreachable (network down, DNS, 5xx, 429): the agent logs it and retries with back-off from 30 s up to 5 min;
+  installed components are left untouched and keep running. Check `exp-agent status` (last error) and the `manager_url` in
+  `/etc/exp/agent.json`, then `curl -sS <manager_url>/api/agent/v1/desired` for a 401/TLS answer from the host itself.
 * Credentials revoked (401): the agent logs once and pauses 5 minutes at a time; re-enrol with a new token
-  (`exp-agent enrol <token>`), components keep running meanwhile.
+  (`echo "$TOKEN" | exp-agent enrol`), components keep running meanwhile.
 * Logs: `journalctl -u exp-agent`; secrets are scrubbed (`exp[aeidn]_…` → `[REDACTED]`).
 
 ## Tests

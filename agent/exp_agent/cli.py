@@ -55,7 +55,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--once", action="store_true", required=True)
     sub.add_parser("facts", parents=[common()], help="print host facts as JSON")
     p = sub.add_parser("enrol", parents=[common()], help="enrol this host with a one-time token")
-    p.add_argument("token")
+    # the one-time token is a secret: never a positional argument (it would sit in /proc/<pid>/cmdline, SR-14)
+    p.add_argument("--token-file", metavar="PATH", help="read the token from PATH ('-' = stdin); "
+                   "default: $EXP_ENROL_TOKEN, else stdin")
     p.add_argument("--manager", help="manager URL (https://host)")
     p = sub.add_parser("uninstall", parents=[common()], help="remove everything exp installed")
     p.add_argument("--local", action="store_true", help="do not contact the manager")
@@ -153,9 +155,30 @@ def cmd_facts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_enrol_token(args: argparse.Namespace) -> str:
+    """Token from --token-file, $EXP_ENROL_TOKEN or stdin; never from argv."""
+    path = getattr(args, "token_file", None)
+    if path and path != "-":
+        with open(path, encoding="utf-8") as fh:
+            raw = fh.read(4096)
+    elif path == "-" or not os.environ.get("EXP_ENROL_TOKEN"):
+        raw = sys.stdin.read(4096)
+    else:
+        raw = os.environ["EXP_ENROL_TOKEN"]
+    return raw.strip()
+
+
 def cmd_enrol(args: argparse.Namespace) -> int:
     test_root = os.path.abspath(args.root) != "/"
     ctx = _ctx(args, need_cfg=False)
+    try:
+        token = _read_enrol_token(args)
+    except OSError as exc:
+        print(f"exp-agent: cannot read the enrolment token: {exc.strerror or exc}", file=sys.stderr)
+        return 2
+    if not token:
+        print("exp-agent: no enrolment token given (stdin, --token-file, $EXP_ENROL_TOKEN)", file=sys.stderr)
+        return 2
     url = args.manager
     if not url:
         try:
@@ -168,7 +191,7 @@ def cmd_enrol(args: argparse.Namespace) -> int:
     try:
         url = normalise_manager_url(url, allow_http=test_root)
         client = ManagerClient(url, None, allow_http=test_root)
-        doc = client.enrol(args.token, collect_facts(ctx))
+        doc = client.enrol(token, collect_facts(ctx))
     except (AgentError, AgentConfigError, exp_config.ConfigError) as exc:
         print(f"exp-agent: enrolment failed: {exc}", file=sys.stderr)
         return 1

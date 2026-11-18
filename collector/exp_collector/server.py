@@ -353,6 +353,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.flush()
 
+    def client_gone(self) -> bool:
+        """True once the peer closed (or broke) the connection. Anything it sends after its request is
+        discarded: an SSE client has nothing more to say."""
+        import select
+        conn = self.connection
+        try:
+            while True:
+                if not (isinstance(conn, ssl.SSLSocket) and conn.pending()):
+                    readable, _, _ = select.select([conn], [], [], 0)
+                    if not readable:
+                        return False
+                conn.setblocking(False)
+                try:
+                    if not conn.recv(4096):
+                        return True
+                finally:
+                    conn.settimeout(BODY_READ_TIMEOUT_S)
+        except (ssl.SSLWantReadError, ssl.SSLWantWriteError, BlockingIOError):
+            return False
+        except (OSError, ssl.SSLError, ValueError):
+            return True
+
     def write_stream(self, data: bytes) -> None:
         """One chunk of an open response; raises OSError when the client is gone or too slow."""
         self.wfile.write(data)

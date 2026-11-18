@@ -537,7 +537,7 @@ def handle_stream(req: Handler) -> None:
             elif _time.monotonic() - last_write >= app.hub.keepalive_s:
                 req.write_stream(sse.KEEPALIVE)
                 last_write = _time.monotonic()
-            if not app.started:
+            if not app.started or req.client_gone():
                 break
     finally:
         app.hub.unsubscribe(client)

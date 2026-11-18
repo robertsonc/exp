@@ -3,10 +3,11 @@
 Ingest, VictoriaMetrics, rules engine, incidents, alerts, query API. Spec:
 [docs/spec/03-collector.md](../docs/spec/03-collector.md). Work package WP-2.
 
-**Status: step 2 of 3** - step 1 (HTTPS server, auth, ingest pipeline, SQLite store, VictoriaMetrics writer,
-pruning, health, CLI, systemd units) plus the rules engine, verdicts, incidents and alerts, time travel and the
-golden tests. Step 3 adds the rest of the query API (`state`, `beats`, `incidents`, ack, `summary`,
-`query_range`), SSE and the reflector; they attach through the hooks listed under "Extension points".
+**Status: complete for M1/M2 (step 3 of 3).** HTTPS server, auth, ingest pipeline, SQLite store, VictoriaMetrics
+writer, pruning, health, CLI, systemd units, the rules engine, verdicts, incidents and alerts, time travel, the
+full dashboard query API, the SSE hub, the summary tables, self-telemetry and the end-to-end daemon wiring.
+Not in this build: the reflector (M4, `exp-collector reflector` is a stub) and drill storage (M5, the three drill
+routes are wired and answer `404 drill_not_found` / `{"abort":[]}`).
 
 ## What runs
 
@@ -102,7 +103,7 @@ open state is checkpointed in `meta` (`incidents:<probe>`) so a restart mid-outa
 Messages hold the line, what, since (site timezone), where + why and `<board_url>/probe/<probe>?at=<start>`.
 Webhooks: Slack, Teams, JSON; all probe text is escaped (no links, no mentions); 3 retries with backoff
 (5/15/45 s); a failure is logged without the URL; redirects are never followed. `Store.ack_incident` records
-`acked_by`/`acked_at` (the API route is step 3).
+`acked_by`/`acked_at` (`POST incidents/{id}/ack`).
 
 ## Storage and files
 
@@ -118,14 +119,73 @@ certificate on disk) and `facts.listen`, and derives `status`: `fail` = daemon n
 no TLS cert / < 0.5 GB free; `degraded` = VM unreachable or backlog non-empty, credential reload failing, low
 disk, `days_to_full` < 3; else `ok`. `days_to_full` = free storage / 24-h average growth of (records DB + VM
 data), sampled every 10 min and kept in `meta`; `null` when growth <= 0 or history < 10 min. `open_incidents`
-(causes without an end), `webhook_failures_1h` and `rules_eval_ms_p95` are live; `sse_clients` is `0` until step 3.
+(causes without an end), `webhook_failures_1h`, `rules_eval_ms_p95` and `sse_clients` are live.
 
-## Extension points (step 3)
+## Query API (`api.py`, `summary.py`, `queryguard.py`, `drills.py`)
+
+Base `https://<collector>:8443/api/v1/`, `Authorization: Bearer expd_...` on everything; `GET /healthz` is the only
+open route (`ok` / `fail`). `X-Exp-User` is logged (sanitised) for audit and recorded as `acked_by`; it is never
+used for authorization (the dashboard session enforces roles). Responses are validated against
+`shared/openapi/collector.yaml` and the shared schemas by the tests. Errors are the contract envelope
+`{"error":{"code","message","details"}}`; expensive reads (time travel, beats, summary, query_range) are capped at
+a few in flight and answer `429` + `Retry-After` beyond that.
+
+| Route | Notes |
+|---|---|
+| `GET health` | status, VM up/lag, ingest rate and rejects, probes reporting, free disk |
+| `GET probes?site=&limit=&cursor=` | last seen, newest age, probe version, state `ok|warn|fail|unknown` |
+| `GET state?probe=&at=&voice=` | `exp.state/1`; `at` = time travel from SQLite; unknown probe `404 unknown_probe` |
+| `GET states?site=&at=&voice=` | State-lite list (paged) |
+| `GET beats?probe=&from=&to=` | `exp.beats/1` with incident/drill/ext markers; `to - from` <= 6 h else `400 range_too_large` |
+| `GET records?probe=&test=&outcome=&from=&to=&limit=&cursor=` | stored measurements, oldest first; `limit` <= 1000 (default 100); cursor = opaque `(ts_ms, id)` keyset |
+| `GET incidents?probe=&site=&from=&to=&open=` | newest first, keyset cursor; folded consequences have `folded_into` |
+| `POST incidents/{id}/ack` | body `{note?}` (<= 512 chars); needs `X-Exp-User` (else `403 forbidden`); first ack wins; audited in the `exp-collector.audit` log and announced as an SSE `incident` event; `204` |
+| `GET summary?probe=&minutes=` | `minutes` <= 1440; tables `clients` (per port: DHCP/DNS/app health, worst app, Wi-Fi), `dhcp` (servers seen), `dns` (per resolver, pooled), `apps` (Apdex), `throughput` (latest per port/provider, bufferbloat), `servers` (target ports: requests, errors, top sources); ported from EXM `report.py` |
+| `GET query_range?query=&start=&end=&step=` | proxied to VM, see below |
+| `GET stream?probes=a,b` or `?site=` | SSE, see below |
+| `GET drills/control` | executor ingest token (`expi_`, not a dashboard token): `{"abort":[run_id,...]}`; M5 plugs a registry into `app.drills` |
+| `GET drills/{run_id}`, `POST drills/{run_id}/abort` | `404 drill_not_found` until M5 |
+
+**query_range guards** (`queryguard.py`; all refused before VM sees the query): only `exp_*` metric names (the
+MetricsQL is tokenized with a small allow-list grammar: every bare identifier must be `exp_...`, every selector
+must hang off an `exp_` name or pin `__name__="exp_..."`, `__name__` regex/negative matchers, `WITH` templates,
+comments, non-ASCII and backslash escapes are refused) -> `400 invalid_query`; query <= 2 KiB; range <= 30 d
+(`range_too_large`); step >= 10 s and <= 11,000 points per series (`step_too_small`); more than 500 series (or VM's
+own `-search.maxSeries`) -> `422 too_many_series`; VM unreachable or garbled -> `503 vm_unavailable` + `Retry-After`
+(ingest is unaffected); 10 s timeout. `start`/`end` are `...Z` timestamps (epoch seconds also work), `step` is `30s`,
+`1m`, `1h` or plain seconds.
+
+**SSE** (`sse.py`): events `beat {probe,line,t,v}`, `state` (State-lite, sent when a probe's roll-up changes),
+`incident` (opened, ended or acknowledged). Preamble `retry: 3000`, a `: keepalive` comment every 15 s, event ids
+`<boot>.<n>`. Every client has a bounded queue of 1,000 events; one that falls behind (or whose socket stalls) is
+disconnected, never waited for, and resumes with `Last-Event-ID` from the 5-minute ring buffer (an id from before
+a collector restart replays nothing: re-read `states`). Filters `probes=` (<= 64 ids) or `site=`, exactly one;
+at most 256 clients (`429`). Dead peers are noticed within about a second. Clients are counted in `sse_clients`
+(health + `exp_collector_sse_clients`).
+
+## The daemon (`app.py`)
+
+`exp-collector run` starts, in order: credentials, SQLite (migrations), VM writer (drains `vm_backlog`), webhook
+sender, rules engine (warms its buffers from SQLite and restores open incidents), the HTTPS server, the health
+monitor, the pruner and the self-telemetry. The rules loop ticks every 2 s and also right after records arrive
+(at most every 0.5 s), so a state change reaches a dashboard within about a second of the batch that caused it.
+**SIGTERM/SIGINT**: stop SSE, stop accepting, let in-flight requests finish (<= 5 s), final checkpoints, queued VM
+points go to `vm_backlog`, webhook queue stops, SQLite closes; exit 0. **SIGHUP** (and the 5 s mtime poll)
+re-reads the credential files. **SIGKILL** loses nothing that was acknowledged: records are in SQLite before a
+line is `accepted`, a replayed spool is deduplicated on `(probe, id)`.
+
+Self-telemetry (every 15 s, straight into VM): `exp_collector_ingest_records_total{result}`,
+`exp_collector_ingest_bytes_total`, `exp_collector_vm_backlog_points`, `exp_collector_sse_clients`,
+`exp_collector_rules_eval_ms`, `exp_collector_probe_clock_offset_ms{probe}`.
+
+## Extension points
 
 - `app.router.add(method, "/api/v1/...", handler, auth="dashboard")` - fixed route table; `/api/*` routes must use
   dashboard auth and `/ingest/*` routes ingest auth (enforced at registration).
 - `app.ingestor.subscribe(callback)` - called with the list of accepted `Measurement`s, after they are durable.
 - `app.monitor.extra_sources.append(fn)` - `fn() -> dict` merged into the health metrics.
+- `app.hub` (`sse.Hub`): `publish(kind, payload)`, `client_count()`; `app.drills`: replace with an object that
+  has `abort_list()`, `report(run_id)`, `abort(run_id, user)` (M5).
 - `app.sse_clients` / `app.rules_eval_ms` - callables used by the self-telemetry series.
 - `app.rules` (`RulesEngine`): `state(probe, at_ms=None, voice=None)`, `states(site, at_ms, voice)`,
   `beats(probe, from_ms, to_ms)`, `severity(probe)`, `subscribe(cb)` (events `state`, `beat`, `incident`);
@@ -139,7 +199,12 @@ data), sampled every 10 min and kept in `meta`; `null` when growth <= 0 or histo
 | `refusing to start: ...` (exit 78) | the config problems it lists; `exp-collector selftest` |
 | `cannot start: TLS key ... accessible to 'other'` | key mode must not grant "other" any access (agent creates it 0600) |
 | probes get `401` | token not in `ingest_tokens.json`, wrong kind (`expd_` on ingest), or rotation not yet delivered |
-| probes get `429` | `vm_backlog_points` / VM down / disk slow: see `health --json` |
+| probes or dashboards get `429` | probes: `vm_backlog_points` / VM down / disk slow (`health --json`), honour `Retry-After`; dashboards: too many heavy queries or > 256 SSE clients |
+| dashboards get `401` | wrong or rotated `expd_` token (an `expi_` token never works on `/api`, a dashboard token never on `/ingest` or `drills/control`); after a rotation send SIGHUP or wait 5 s |
+| `query_range` answers `503 vm_unavailable` | VictoriaMetrics is down (`journalctl -u exp-victoriametrics`); ingest keeps working and the backlog drains on recovery |
+| `query_range` answers `400 invalid_query` | the query touches a non-`exp_` metric, is > 2 KiB or uses unsupported syntax: the message says which |
+| a probe cannot connect: "pin mismatch" | the probe/dashboard config pins an old `tls_fingerprint_sha256`; compare with `exp-collector health --json` (`facts`), the agent republishes it after a certificate change |
+| SSE keeps reconnecting | the client is too slow (queue overflow) or a proxy buffers: the stream sends `X-Accel-Buffering: no`; check `journalctl` for "SSE client disconnected" |
 | records `identity_mismatch` | probe's `probe`/`site` differ from the token identity / configured site |
 | health says `daemon is not running` | no fresh `<run>/health.json`: `systemctl status exp-collector` |
 | VM backlog keeps growing | VM unit down or refusing data (`journalctl -u exp-victoriametrics`) |
