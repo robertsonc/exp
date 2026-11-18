@@ -1,0 +1,730 @@
+"""iperf3 client wrapper with structured result parsing.
+
+Two modes:
+  * Burst: per-run JSON output, one Iperf3Result per cycle.
+  * Continuous: iperf3 -t 0 -i 1, streaming text output parsed line-by-line.
+    Yields one Iperf3Interval per second.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+import shutil
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator
+
+from config import Config
+from poller import WireDelta
+
+log = logging.getLogger(__name__)
+
+
+# Matches the interval lines emitted by iperf3 with -i N. With -P >= 2 the
+# aggregate is on [SUM] lines; with -P 1 iperf3 emits ONLY per-stream lines
+# ("[  5] ..."), so the pattern accepts both and run_continuous() filters by
+# stream count.
+# TCP example:  [SUM]   1.00-2.00   sec   180 MBytes  1.51 Gbits/sec    0
+# UDP example:  [  5]   1.00-2.00   sec   180 MBytes  1.51 Gbits/sec
+# Final summary lines have a trailing "sender" or "receiver" — we skip those
+# by checking the role group.
+_SUM_INTERVAL_RE = re.compile(
+    r"^\[(?:SUM|\s*\d+)\]\s+"
+    r"(?P<t0>\d+(?:\.\d+)?)-(?P<t1>\d+(?:\.\d+)?)\s+sec\s+"
+    r"(?P<bytes>\d+(?:\.\d+)?)\s+(?P<bytes_unit>[KMGT]?)Bytes\s+"
+    r"(?P<rate>\d+(?:\.\d+)?)\s+(?P<rate_unit>[KMG]?)bits/sec"
+    r"(?:\s+(?P<retx>\d+))?"
+    r"(?:\s+(?P<role>sender|receiver))?"
+    r"\s*$"
+)
+
+_BYTE_UNIT_MULT = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
+_BIT_UNIT_MULT_MBPS = {"": 1e-6, "K": 1e-3, "M": 1.0, "G": 1000.0}
+
+
+# Server-side UDP interval line, e.g.:
+#   [  5]   1.00-2.00   sec   119 MBytes  1.00 Gbits/sec  0.020 ms  3/85000 (0.0035%)
+#   [SUM]   1.00-2.00   sec   476 MBytes  3.99 Gbits/sec  0.020 ms  12/340000 (0.0035%)
+# Final summary lines have a trailing "sender"/"receiver" — those we skip.
+_UDP_SERVER_LINE_RE = re.compile(
+    r"^\[\s*(?:SUM|\d+)\]\s+"
+    r"(?P<t0>\d+(?:\.\d+)?)-(?P<t1>\d+(?:\.\d+)?)\s+sec\s+"
+    r"(?P<bytes>\d+(?:\.\d+)?)\s+(?P<bytes_unit>[KMGT]?)Bytes\s+"
+    r"(?P<rate>\d+(?:\.\d+)?)\s+(?P<rate_unit>[KMG]?)bits/sec\s+"
+    r"(?P<jitter>\d+(?:\.\d+)?)\s+ms\s+"
+    r"(?P<lost>\d+)/(?P<total>\d+)"
+    r"(?:\s+\([^)]*\))?"
+    r"(?:\s+(?P<role>sender|receiver))?"
+    r"\s*$"
+)
+
+
+@dataclass(slots=True)
+class Iperf3Result:
+    """Parsed result of one iperf3 run."""
+    started: bool = False
+    success: bool = False
+    error: str = ""
+
+    t_start_mono: float = 0.0
+    t_end_mono: float = 0.0
+    duration_s: float = 0.0
+
+    protocol: str = "tcp"
+    parallel_streams: int = 0
+    reverse: bool = False
+
+    payload_bytes: int = 0
+    goodput_mbps: float = 0.0
+
+    retransmits: int = 0
+
+    lost_packets: int = 0
+    total_packets: int = 0
+    jitter_ms: float = 0.0
+
+    streams: list[dict[str, Any]] = field(default_factory=list)
+
+    raw: dict[str, Any] | None = None
+
+
+@dataclass(slots=True)
+class Iperf3Interval:
+    """One streaming interval (typically 1s) from continuous-mode iperf3."""
+    t_start_mono: float
+    t_end_mono: float
+    interval_s: float
+    bytes: int
+    bitrate_mbps: float
+    retransmits: int = 0
+    cumulative_retransmits: int = 0
+
+
+@dataclass(slots=True)
+class UdpServerStats:
+    """Per-interval UDP stats from the iperf3 SERVER's log.
+
+    These are what the receiver actually saw — the only honest source of
+    UDP loss and jitter data during a test.
+    """
+    t_start_offset: float    # seconds since iperf3 client connected
+    t_end_offset: float
+    bitrate_mbps: float
+    jitter_ms: float
+    lost_packets: int
+    total_packets: int
+    seen_at_mono: float = 0.0    # when the orchestrator received this line
+
+    @property
+    def loss_pct(self) -> float:
+        if self.total_packets <= 0:
+            return 0.0
+        return (self.lost_packets / self.total_packets) * 100.0
+
+
+def _parse_udp_server_line(line: str) -> UdpServerStats | None:
+    """Parse one server-side UDP interval line."""
+    m = _UDP_SERVER_LINE_RE.match(line.strip())
+    if not m or m.group("role"):
+        return None
+    try:
+        t0 = float(m.group("t0"))
+        t1 = float(m.group("t1"))
+        rate_val = float(m.group("rate"))
+        rate_unit = (m.group("rate_unit") or "").upper()
+        jitter = float(m.group("jitter"))
+        lost = int(m.group("lost"))
+        total = int(m.group("total"))
+    except (ValueError, KeyError):
+        return None
+    return UdpServerStats(
+        t_start_offset=t0,
+        t_end_offset=t1,
+        bitrate_mbps=rate_val * _BIT_UNIT_MULT_MBPS.get(rate_unit, 1.0),
+        jitter_ms=jitter,
+        lost_packets=lost,
+        total_packets=total,
+    )
+
+
+class UdpServerMonitor:
+    """Tails the iperf3 server log and exposes the latest UDP receiver stats.
+
+    Caller passes an async iterator of log lines (typically from
+    ServerSession.tail_log). The monitor runs as a background task that
+    updates `latest` whenever it sees a parseable interval line.
+
+    For -P >1 we prefer [SUM] lines over per-stream lines (more accurate
+    aggregate). For -P 1 the per-stream line is the only thing we get.
+    """
+
+    def __init__(self, parallel_streams: int) -> None:
+        self._parallel_streams = parallel_streams
+        self.latest: UdpServerStats | None = None
+        self._task: asyncio.Task[None] | None = None
+
+    async def run(self, line_source) -> None:
+        """Consume lines from the source until exhausted."""
+        try:
+            async for line in line_source:
+                stats = _parse_udp_server_line(line)
+                if stats is None:
+                    continue
+                # If multi-stream, only trust [SUM] lines
+                if self._parallel_streams > 1 and not line.lstrip().startswith("[SUM]"):
+                    continue
+                stats.seen_at_mono = time.monotonic()
+                self.latest = stats
+        except Exception as exc:  # noqa: BLE001
+            log.warning("UdpServerMonitor stopped: %s", exc)
+
+    def consume(self, line_source) -> asyncio.Task[None]:
+        """Start the monitor as a background task."""
+        self._task = asyncio.create_task(
+            self.run(line_source), name="udp-server-monitor",
+        )
+        return self._task
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+            self._task = None
+
+
+def _parse_interval_line(
+    line: str, t_offset_mono: float,
+) -> Iperf3Interval | None:
+    """Parse a single [SUM] interval line into an Iperf3Interval, or None."""
+    m = _SUM_INTERVAL_RE.match(line.strip())
+    if not m or m.group("role"):
+        return None
+    try:
+        t0 = float(m.group("t0"))
+        t1 = float(m.group("t1"))
+        bytes_val = float(m.group("bytes"))
+        bytes_unit = (m.group("bytes_unit") or "").upper()
+        rate_val = float(m.group("rate"))
+        rate_unit = (m.group("rate_unit") or "").upper()
+        retx = int(m.group("retx") or 0)
+    except (ValueError, KeyError):
+        return None
+
+    bytes_mult = _BYTE_UNIT_MULT.get(bytes_unit, 1)
+    rate_mult = _BIT_UNIT_MULT_MBPS.get(rate_unit, 1.0)
+
+    return Iperf3Interval(
+        t_start_mono=t_offset_mono + t0,
+        t_end_mono=t_offset_mono + t1,
+        interval_s=max(0.001, t1 - t0),
+        bytes=int(bytes_val * bytes_mult),
+        bitrate_mbps=rate_val * rate_mult,
+        retransmits=retx,
+    )
+
+
+@dataclass(slots=True)
+class HopMetrics:
+    """Roll-up of one vantage point's wire counters for one iperf3 window."""
+    name: str                       # 'client' | 'frr' | 'server'
+    interfaces: list[str] = field(default_factory=list)
+    bulk_bytes: int = 0             # bytes in the iperf3 data direction
+    return_bytes: int = 0           # bytes in the opposite direction (ACKs)
+    duration_s: float = 0.0
+
+    @property
+    def bulk_mbps(self) -> float:
+        return (self.bulk_bytes * 8) / (self.duration_s * 1e6) if self.duration_s > 0 else 0.0
+
+    @property
+    def return_mbps(self) -> float:
+        return (self.return_bytes * 8) / (self.duration_s * 1e6) if self.duration_s > 0 else 0.0
+
+
+@dataclass(slots=True)
+class RunAnalysis:
+    """Full analysis of one iperf3 run + correlated wire counters."""
+    run_n: int
+    timestamp: str
+    iperf3: Iperf3Result
+
+    # One per vantage point. May be missing if the corresponding poller failed.
+    client: HopMetrics | None = None
+    frr: HopMetrics | None = None
+    server: HopMetrics | None = None
+
+    # Per-hop deltas, computed against payload
+    tcp_ip_overhead_pct: float = 0.0   # (client TX − payload) / payload
+    tunnel_overhead_pct: float = 0.0   # (frr − client TX) / client TX
+    e2e_loss_pct: float = 0.0          # (client TX − server RX) / client TX
+
+    # Loss localization: split e2e loss into west-of-FRR vs east-of-FRR.
+    # Negative tunnel_overhead (FRR saw fewer bytes than client TX) implies
+    # loss in the west path — most likely the West-side SD-WAN appliance.
+    # Whatever's left of e2e_loss is east-of-FRR loss.
+    west_loss_pct: float = 0.0         # loss between client NIC and FRR egress
+    east_loss_pct: float = 0.0         # loss between FRR egress and server NIC
+
+
+class Iperf3Runner:
+    """Builds and executes iperf3 commands against the remote server."""
+
+    def __init__(self, config: Config) -> None:
+        self._config = config
+        self._verify_local_iperf3()
+
+    @staticmethod
+    def _verify_local_iperf3() -> None:
+        if shutil.which("iperf3") is None:
+            raise RuntimeError(
+                "iperf3 not found in PATH on the client. "
+                "Install with: sudo apt install -y iperf3"
+            )
+
+    def _build_cmd(self) -> list[str]:
+        cfg = self._config
+        ic = cfg.iperf3
+        target = cfg.hosts.server.data_ip
+        if not target:
+            raise RuntimeError("hosts.server.data_ip is required")
+        cmd: list[str] = [
+            "iperf3",
+            "-c", target,
+            "-p", str(ic.port),
+            "-t", str(ic.duration_s),
+            "-P", str(ic.parallel_streams),
+            "-J",
+            "--connect-timeout", "5000",
+        ]
+        if ic.reverse:
+            cmd.append("-R")
+        if ic.protocol == "udp":
+            cmd.append("-u")
+            cmd += ["-b", self._udp_bandwidth()]
+            if ic.udp_length:
+                cmd += ["-l", str(ic.udp_length)]
+        else:
+            if ic.window_kib:
+                cmd += ["-w", f"{ic.window_kib}K"]
+            if ic.mss_bytes:
+                cmd += ["-M", str(ic.mss_bytes)]
+        return cmd
+
+    def _udp_bandwidth(self) -> str:
+        """UDP target bandwidth — must be explicit. Defaulting to '-b 0'
+        (unlimited) floods the path at line rate, inducing the very loss the
+        harness is trying to measure, on what may be a shared demo network."""
+        bw = self._config.iperf3.udp_bandwidth
+        if not bw:
+            raise RuntimeError(
+                "protocol=udp requires iperf3.udp_bandwidth "
+                "(e.g. '100M', or '0' explicitly for unlimited)"
+            )
+        return bw
+
+    def _build_continuous_cmd(self) -> list[str]:
+        """Build iperf3 args for continuous text-mode streaming."""
+        cfg = self._config
+        ic = cfg.iperf3
+        target = cfg.hosts.server.data_ip
+        if not target:
+            raise RuntimeError("hosts.server.data_ip is required")
+        # -t 0 = run forever (until killed). Older iperf3 versions treat 0 as
+        # "no time limit" which works for TCP. For maximum compatibility we
+        # use a 24h ceiling and just kill the process when stopping.
+        cmd: list[str] = [
+            "iperf3",
+            "-c", target,
+            "-p", str(ic.port),
+            "-t", "86400",
+            "-i", str(ic.interval_s),
+            "-P", str(ic.parallel_streams),
+            "--connect-timeout", "5000",
+        ]
+        if ic.reverse:
+            cmd.append("-R")
+        if ic.protocol == "udp":
+            cmd.append("-u")
+            cmd += ["-b", self._udp_bandwidth()]
+            if ic.udp_length:
+                cmd += ["-l", str(ic.udp_length)]
+        else:
+            if ic.window_kib:
+                cmd += ["-w", f"{ic.window_kib}K"]
+            if ic.mss_bytes:
+                cmd += ["-M", str(ic.mss_bytes)]
+        # Force line-buffered stdout so per-second [SUM] lines reach us
+        # without a 4KB pipe-buffer delay. stdbuf is from coreutils, always
+        # available on modern Linux. If absent we still work, just laggier.
+        if shutil.which("stdbuf"):
+            cmd = ["stdbuf", "-oL"] + cmd
+        return cmd
+
+    async def run_continuous(
+        self, stop_event: asyncio.Event,
+    ) -> AsyncIterator[Iperf3Interval]:
+        """Run iperf3 continuously, yielding one Iperf3Interval per report.
+
+        The subprocess runs until `stop_event` is set or it dies on its own.
+        Stderr is drained concurrently so it doesn't block on a full pipe.
+        """
+        cmd = self._build_continuous_cmd()
+        log.info("iperf3 continuous: %s", " ".join(cmd))
+        # Interval offsets are relative to when iperf3 starts the TEST, which
+        # is after process launch and the control-connection handshake (up to
+        # 5s with --connect-timeout 5000). Anchor the offset on the first
+        # interval line instead of the spawn time so counter windows are not
+        # skewed early by the connect latency.
+        t_offset: float | None = None
+        multi_stream = self._config.iperf3.parallel_streams > 1
+        is_udp = self._config.iperf3.protocol == "udp"
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stderr_buf: deque[str] = deque(maxlen=200)
+        cumulative_retx = 0
+
+        async def _drain_stderr() -> None:
+            assert proc.stderr is not None
+            async for line_b in proc.stderr:
+                stderr_buf.append(line_b.decode("utf-8", errors="replace"))
+
+        stderr_task = asyncio.create_task(_drain_stderr())
+
+        try:
+            assert proc.stdout is not None
+            while not stop_event.is_set():
+                try:
+                    line_b = await asyncio.wait_for(
+                        proc.stdout.readline(), timeout=2.0
+                    )
+                except asyncio.TimeoutError:
+                    if proc.returncode is not None:
+                        break
+                    continue
+                if not line_b:
+                    break  # EOF — process ended
+                line = line_b.decode("utf-8", errors="replace")
+                # With -P >= 2 only [SUM] lines carry the aggregate; the
+                # per-stream lines would double-count. With -P 1 there are
+                # no [SUM] lines at all, so the per-stream line IS the data.
+                if multi_stream and not line.lstrip().startswith("[SUM]"):
+                    continue
+                if t_offset is None:
+                    probe = _parse_interval_line(line, 0.0)
+                    if probe is None:
+                        continue
+                    t_offset = time.monotonic() - probe.t_end_mono
+                interval = _parse_interval_line(line, t_offset)
+                if interval is None:
+                    continue
+                if is_udp:
+                    # The trailing column on UDP client interval lines is the
+                    # datagram count, not TCP retransmits.
+                    interval.retransmits = 0
+                # iperf3's interval Retr column is already per-interval;
+                # accumulate it for the running total.
+                cumulative_retx += interval.retransmits
+                interval.cumulative_retransmits = cumulative_retx
+                yield interval
+        finally:
+            stderr_task.cancel()
+            try:
+                await stderr_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+            if proc.returncode is None:
+                proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+            if proc.returncode not in (0, -15, None):  # 0=ok, -15=SIGTERM
+                err = "".join(stderr_buf).strip()
+                log.warning(
+                    "iperf3 exited %d: %s",
+                    proc.returncode, err or "(no stderr)",
+                )
+
+    async def run_one(self) -> Iperf3Result:
+        cmd = self._build_cmd()
+        log.debug("iperf3 cmd: %s", " ".join(cmd))
+        result = Iperf3Result(
+            protocol=self._config.iperf3.protocol,
+            parallel_streams=self._config.iperf3.parallel_streams,
+            reverse=self._config.iperf3.reverse,
+            started=True,
+        )
+        result.t_start_mono = time.monotonic()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout_b, stderr_b = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=self._config.iperf3.duration_s + 60,
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                result.t_end_mono = time.monotonic()
+                result.duration_s = result.t_end_mono - result.t_start_mono
+                result.error = "iperf3 timed out"
+                log.error("iperf3 timed out after %.1fs", result.duration_s)
+                return result
+        except FileNotFoundError as exc:
+            result.error = f"iperf3 binary not found: {exc}"
+            return result
+        except OSError as exc:
+            result.error = f"iperf3 launch failed: {exc}"
+            return result
+
+        result.t_end_mono = time.monotonic()
+        result.duration_s = result.t_end_mono - result.t_start_mono
+
+        if proc.returncode != 0 and not stdout_b:
+            result.error = (stderr_b.decode("utf-8", "replace").strip()
+                            or f"iperf3 exited {proc.returncode}")
+            log.warning("iperf3 failed: %s", result.error)
+            return result
+
+        try:
+            data = json.loads(stdout_b)
+        except json.JSONDecodeError as exc:
+            result.error = f"iperf3 JSON parse failed: {exc}"
+            log.warning("%s", result.error)
+            return result
+
+        result.raw = data
+        # iperf3 reports failures ("the server is busy running a test", etc.)
+        # as a top-level "error" field in otherwise-valid JSON, often with
+        # exit code != 0 and non-empty stdout.
+        if isinstance(data, dict) and data.get("error"):
+            result.error = str(data["error"])
+        self._parse_iperf3_json(data, result)
+        result.success = result.goodput_mbps > 0.0 and not result.error
+        if not result.success and not result.error:
+            result.error = (
+                stderr_b.decode("utf-8", "replace").strip()
+                or f"no data (iperf3 exited {proc.returncode})"
+            )
+        return result
+
+    @staticmethod
+    def _parse_iperf3_json(data: dict[str, Any], result: Iperf3Result) -> None:
+        end = data.get("end", {})
+        if result.protocol == "udp":
+            sum_data = end.get("sum", {})
+            result.payload_bytes = int(sum_data.get("bytes", 0) or 0)
+            result.lost_packets = int(sum_data.get("lost_packets", 0) or 0)
+            result.total_packets = int(sum_data.get("packets", 0) or 0)
+            result.jitter_ms = float(sum_data.get("jitter_ms", 0.0) or 0.0)
+        else:
+            if result.reverse:
+                sum_data = end.get("sum_received", end.get("sum_sent", {}))
+            else:
+                sum_data = end.get("sum_sent", {})
+            result.payload_bytes = int(sum_data.get("bytes", 0) or 0)
+            result.retransmits = int(
+                end.get("sum_sent", {}).get("retransmits", 0) or 0
+            )
+
+        sum_block = end.get("sum_sent") or end.get("sum") or {}
+        seconds = float(sum_block.get("seconds", 0.0) or 0.0)
+        if seconds > 0:
+            result.goodput_mbps = (result.payload_bytes * 8) / (seconds * 1e6)
+
+        for s in end.get("streams", []):
+            sender = s.get("sender") or {}
+            receiver = s.get("receiver") or {}
+            udp = s.get("udp") or {}
+            result.streams.append({
+                "sender_mbps": (
+                    (int(sender.get("bytes", 0) or 0) * 8)
+                    / (float(sender.get("seconds", 1) or 1) * 1e6)
+                ),
+                "receiver_mbps": (
+                    (int(receiver.get("bytes", 0) or 0) * 8)
+                    / (float(receiver.get("seconds", 1) or 1) * 1e6)
+                ),
+                "retransmits": int(sender.get("retransmits", 0) or 0),
+                "lost_packets": int(udp.get("lost_packets", 0) or 0),
+                "jitter_ms": float(udp.get("jitter_ms", 0.0) or 0.0),
+            })
+
+
+def _hop_metrics_endpoint(
+    name: str,
+    deltas: list[WireDelta],
+    iface: str,
+    reverse: bool,
+) -> HopMetrics:
+    """Roll up an endpoint NIC's deltas into bulk vs return-direction bytes.
+
+    For an iperf3 upload (reverse=False), the client's bulk direction is TX
+    and the server's bulk direction is RX. For a download (reverse=True), it
+    flips: the server sends bulk (TX) and the client receives bulk (RX).
+    """
+    is_client = (name == "client")
+    # Bulk direction:
+    #   upload + client   → TX
+    #   upload + server   → RX
+    #   reverse + client  → RX
+    #   reverse + server  → TX
+    bulk_is_tx = (is_client and not reverse) or (not is_client and reverse)
+    hop = HopMetrics(name=name, interfaces=[iface])
+    for d in deltas:
+        if d.iface != iface:
+            continue
+        hop.duration_s = max(hop.duration_s, d.duration_s)
+        if bulk_is_tx:
+            hop.bulk_bytes += d.tx_bytes
+            hop.return_bytes += d.rx_bytes
+        else:
+            hop.bulk_bytes += d.rx_bytes
+            hop.return_bytes += d.tx_bytes
+    return hop
+
+
+def _hop_metrics_frr(
+    deltas: list[WireDelta],
+    config: Config,
+) -> HopMetrics:
+    """Roll up FRR underlay deltas into bulk vs return-direction bytes.
+
+    For an upload, bulk traffic enters FRR from the West appliance (rx on
+    the ingress_iface) and exits toward the East appliance (tx on the
+    egress_iface). For a download, the directions flip.
+
+    We use the egress side (tx on egress_iface) as the authoritative bulk
+    counter because it represents what the FRR actually forwarded, after any
+    queueing or drop on the FRR itself.
+    """
+    appliance = config.active_appliance()
+    egress_ifaces: list[str] = [appliance.wan0.egress_iface]
+    ingress_ifaces: list[str] = [appliance.wan0.ingress_iface]
+    if config.active.dual_wan and appliance.wan1 is not None:
+        egress_ifaces.append(appliance.wan1.egress_iface)
+        ingress_ifaces.append(appliance.wan1.ingress_iface)
+
+    reverse = config.iperf3.reverse
+    # Upload bulk flows West→East: tx on egress_iface
+    # Reverse bulk flows East→West: rx on egress_iface (same iface, opposite dir)
+    hop = HopMetrics(
+        name="frr",
+        interfaces=sorted(set(egress_ifaces + ingress_ifaces)),
+    )
+    for d in deltas:
+        if d.iface in egress_ifaces:
+            hop.duration_s = max(hop.duration_s, d.duration_s)
+            if not reverse:
+                hop.bulk_bytes += d.tx_bytes
+                hop.return_bytes += d.rx_bytes
+            else:
+                hop.bulk_bytes += d.rx_bytes
+                hop.return_bytes += d.tx_bytes
+    return hop
+
+
+def analyze_run(
+    run_n: int,
+    iperf_result: Iperf3Result,
+    client_deltas: list[WireDelta],
+    frr_deltas: list[WireDelta],
+    server_deltas: list[WireDelta],
+    config: Config,
+    client_iface: str,
+    server_iface: str,
+) -> RunAnalysis:
+    """Combine iperf3 + 3 wire vantage points; compute per-hop metrics."""
+    analysis = RunAnalysis(
+        run_n=run_n,
+        timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+        iperf3=iperf_result,
+    )
+    reverse = config.iperf3.reverse
+
+    if client_deltas and client_iface:
+        analysis.client = _hop_metrics_endpoint(
+            "client", client_deltas, client_iface, reverse,
+        )
+    if server_deltas and server_iface:
+        analysis.server = _hop_metrics_endpoint(
+            "server", server_deltas, server_iface, reverse,
+        )
+    if frr_deltas:
+        analysis.frr = _hop_metrics_frr(frr_deltas, config)
+
+    payload = iperf_result.payload_bytes
+
+    # TCP/IP overhead = how much the client kernel added on top of payload
+    if analysis.client and payload > 0:
+        client_bulk = analysis.client.bulk_bytes
+        if client_bulk > 0:
+            analysis.tcp_ip_overhead_pct = (
+                (client_bulk - payload) / payload
+            ) * 100.0
+
+    # Tunnel overhead = how much EC-V (or SSR) added on top of the
+    # already-headered Ethernet frames the client sent
+    if analysis.client and analysis.frr:
+        client_bulk = analysis.client.bulk_bytes
+        frr_bulk = analysis.frr.bulk_bytes
+        if client_bulk > 0:
+            analysis.tunnel_overhead_pct = (
+                (frr_bulk - client_bulk) / client_bulk
+            ) * 100.0
+
+    # End-to-end loss = the sending endpoint put more bytes on the wire than
+    # the receiving endpoint got. In an upload the client sends; in reverse
+    # (-R, download) the server sends — comparing the wrong way round made
+    # reverse-mode loss come out negative and clamp to a permanent 0%.
+    src_hop = analysis.server if reverse else analysis.client
+    dst_hop = analysis.client if reverse else analysis.server
+    if src_hop and dst_hop:
+        src_bulk = src_hop.bulk_bytes
+        dst_bulk = dst_hop.bulk_bytes
+        if src_bulk > 0:
+            analysis.e2e_loss_pct = max(
+                0.0,
+                ((src_bulk - dst_bulk) / src_bulk) * 100.0,
+            )
+
+    # Loss localization. If the FRR wire saw fewer bytes than the SENDING
+    # endpoint put out (negative source-relative overhead), the loss is on
+    # the source side of the FRR; whatever's left of e2e loss is on the
+    # destination side. For an upload the source side is west; in reverse
+    # the source is the server, so the sides swap. Clamp to e2e_loss_pct so
+    # the decomposition is physically consistent.
+    src_overhead_pct: float | None = None
+    if analysis.frr and src_hop and src_hop.bulk_bytes > 0:
+        src_overhead_pct = (
+            (analysis.frr.bulk_bytes - src_hop.bulk_bytes)
+            / src_hop.bulk_bytes
+        ) * 100.0
+    if src_overhead_pct is not None and src_overhead_pct < 0:
+        near_src_loss = min(-src_overhead_pct, analysis.e2e_loss_pct)
+    else:
+        near_src_loss = 0.0
+    far_loss = max(0.0, analysis.e2e_loss_pct - near_src_loss)
+    if reverse:
+        analysis.east_loss_pct = near_src_loss   # server side of the FRR
+        analysis.west_loss_pct = far_loss
+    else:
+        analysis.west_loss_pct = near_src_loss   # client side of the FRR
+        analysis.east_loss_pct = far_loss
+
+    return analysis

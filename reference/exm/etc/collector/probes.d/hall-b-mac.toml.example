@@ -1,0 +1,11 @@
+# BETA: a Mac on the event Wi-Fi running mac/exm-wifi.py. Its results are the Wi-Fi row of the board it is
+# attached to. The collector passes it the network to monitor (ssid) each time it connects.
+#   sudo exm-collector probe add hall-b-mac --kind mac --host 192.0.2.20 --user noc --attach-to probe-01 --ssid EventWiFi
+name = "hall-b-mac"
+kind = "mac"
+label = "Hall B laptop (Wi-Fi)"
+host = "192.0.2.20"           # the Mac's wired/management address
+port = 22
+user = "noc"                  # the Mac login that runs the agent
+attach_to = "probe-01"
+ssid = "EventWiFi"

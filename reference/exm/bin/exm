@@ -1,0 +1,549 @@
+#!/usr/bin/env python3
+"""exm: the EXM probe (exm-probe package). Emulated clients as namespaces, tests on a schedule.
+
+  exm apply                          (root) namespaces up, DHCP holders on, crontab written, scheduler restarted
+  exm netns up|down|status           (root) manage the client namespaces
+  exm run TEST CLIENT|all            (root) run dhcp | dns | apps | speedtest inside a client namespace
+  exm speedtest-next                 (root) next client and provider in the heavy-test rotation
+  exm heartbeat                      (root) the 10 s checks: gateway, DHCP DISCOVER, DNS, traceroutes
+  exm gateway-check                  (root) the network part of the heartbeat only
+  exm server set|clear|show [ID]     (root) inject or clear faults on a server port (Minis target)
+  exm status [--write]               namespace, link and lease state; non-root reads the last snapshot
+  exm summary [--minutes N] [--emit] results summary; --emit writes it as a result for the collector
+  exm authorize-collector 'KEY'      (root) let a collector stream this probe's results (and nothing else)
+  exm deauthorize-collector 'KEY'|--all
+  exm stream                         the collector's forced command (never run by hand)
+  exm crontab [--write PATH]         print or write the generated crontab
+  exm prune                          (root) delete results older than retention_days
+  exm version
+"""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import pwd
+import random
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import time
+import traceback
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+
+from exm import config as C  # noqa: E402
+from exm import events, netns  # noqa: E402
+
+SELF = os.path.realpath(__file__)
+STATUS_FILE = "/var/lib/exm/status.json"
+CRONTAB = "/etc/exm/crontab"
+SUPERCRONIC = "/usr/local/bin/supercronic"
+STREAM_USER = "exm-stream"                     # the only account a collector's key can use, for `exm stream` only
+STREAM_HOME = "/var/lib/exm-stream"
+PUBKEY = re.compile(r"^(ssh-ed25519|ecdsa-sha2-nistp(?:256|384|521)|ssh-rsa) ([A-Za-z0-9+/]{40,}={0,3})(?: ([\x21-\x7e ]{1,120}))?$")
+
+
+def need_root():
+    if os.geteuid() != 0:
+        sys.exit("exm: this command needs root (sudo)")
+
+
+def cmd_netns(args, cfg):
+    need_root()
+    os.makedirs(C.RUN_DIR, exist_ok=True)
+    only = args.client or None
+    if args.action == "up":
+        return 0 if netns.up(cfg, only) else 1
+    if args.action == "down":
+        netns.down(cfg, only)
+        return 0
+    return cmd_status(argparse.Namespace(write=False, quiet=False, json=False), cfg)
+
+
+def cmd_dhcp_daemon(args, cfg):
+    need_root()
+    from exm import lease
+    os.makedirs(C.RUN_DIR, exist_ok=True)
+    c = C.client(cfg, args.client)
+    if not netns.netns_exists(C.ns_name(c["id"])):
+        sys.exit(f"exm: namespace {C.ns_name(c['id'])} does not exist; start exm-netns.service first")
+    argv = lease.udhcpc_argv(cfg, c)
+    print("exec: " + " ".join(argv), flush=True)
+    os.execvp(argv[0], argv)
+
+
+def cmd_server_daemon(args, cfg):
+    """systemd entry for a server port: claim the address, then serve inside the namespace."""
+    need_root()
+    from exm import server
+    c = C.client(cfg, args.client)
+    if c.get("role") != "server":
+        sys.exit(f"exm: {c['id']} is not a server port (role = \"{c.get('role')}\")")
+    rc = server.claim_address(cfg, c)
+    if rc:
+        sys.exit(rc)
+    server.ensure_cert(c)
+    fault = server.read_fault(cfg, c["id"])
+    if fault.get("netem"):
+        server.set_netem(c, fault["netem"])          # re-apply impairment after a restart
+    argv = ["ip", "netns", "exec", C.ns_name(c["id"]), sys.executable, SELF, "serve", c["id"]]
+    os.execvpe(argv[0], argv, dict(os.environ, EXM_IN_NS=c["id"]))
+
+
+def cmd_serve(args, cfg):
+    from exm import server
+    c = C.client(cfg, args.client)
+    if os.environ.get("EXM_IN_NS") != c["id"]:
+        sys.exit("exm: serve runs inside the port's namespace; use exm-server@<id>.service")
+    return server.serve(cfg, c)
+
+
+def cmd_server(args, cfg):
+    from exm import server
+    ports = C.servers(cfg) if args.action == "show" and not args.client else [C.client(cfg, args.client)]
+    if args.action == "show":
+        for c in ports:
+            print(f"{c['id']}: {c['address']} gw {c.get('gateway') or '-'}  fault {server.read_fault(cfg, c['id']) or 'none'}")
+        return 0
+    need_root()
+    c = ports[0]
+    if c.get("role") != "server":
+        sys.exit(f"exm: {c['id']} is not a server port")
+    fault = {} if args.action == "clear" else server.read_fault(cfg, c["id"])
+    if args.action == "set":
+        if args.http_delay_ms is not None:
+            fault["http_delay_ms"] = args.http_delay_ms
+        if args.http_status is not None:
+            fault["http_status"] = args.http_status
+        if args.netem is not None:
+            fault["netem"] = args.netem or None
+    fault = {k: v for k, v in fault.items() if v not in (None, 0, "")}
+    server.set_netem(c, fault.get("netem"))
+    server.write_fault(cfg, c["id"], fault)
+    print(f"{c['id']}: fault {fault or 'cleared'}")
+    return 0
+
+
+def cmd_udhcpc_hook(args, cfg):
+    from exm import lease
+    try:
+        return lease.hook(cfg, args.event)
+    except Exception:
+        traceback.print_exc()
+        return 0                        # never kill the lease holder over a hook bug
+
+
+def _dhcp_mode(cfg, c, args):
+    if not args.auto_mode:
+        return args.mode
+    every = int(cfg["schedule"].get("init_reboot_every", 0))
+    counter = C.state_path(cfg, f"{c['id']}.dhcp.count")
+    try:
+        n = int(open(counter).read().strip())
+    except (FileNotFoundError, ValueError):
+        n = 0
+    with open(counter, "w") as fh:
+        fh.write(str(n + 1))
+    from exm import dhcptest
+    held, _ = dhcptest._held(c["iface"])
+    if every and n % every == every - 1 and held:
+        return "init-reboot"
+    return "dora"
+
+
+def _run_inside(test, cfg, c, args):
+    if test == "dhcp":
+        from exm import dhcptest
+        dhcptest.run(cfg, c, _dhcp_mode(cfg, c, args))
+    elif test == "dns":
+        from exm import dnstest
+        dnstest.run(cfg, c)
+    elif test == "apps":
+        from exm import apps
+        apps.run(cfg, c)
+    elif test == "speedtest":
+        from exm import speedtest
+        speedtest.run(cfg, c, args.provider or cfg["speedtest"].get("providers", ["cloudflare"])[0])
+    else:
+        sys.exit(f"exm: unknown test {test}")
+
+
+def cmd_run(args, cfg):
+    need_root()
+    clients = C.clients(cfg) if args.client == "all" else [C.client(cfg, args.client)]
+    if any(c.get("role") == "server" for c in clients):
+        sys.exit(f"exm: {args.client} is a server port; client tests do not run on it")
+    rc = 0
+    for c in clients:
+        if os.environ.get("EXM_IN_NS") == c["id"]:
+            try:
+                carrier = open(f"/sys/class/net/{c['iface']}/carrier").read().strip()
+            except OSError:
+                carrier = "0"
+            if carrier != "1":
+                # Unplugged or dead port: say so plainly instead of a pile of unreachable errors.
+                ev = events.make(cfg, c, args.test if args.test != "apps" else "app")
+                ev["outcome"], ev["error"] = C.FAIL, f"no link on {c['iface']} (carrier down)"
+                events.emit(cfg, ev)
+                continue
+            try:
+                _run_inside(args.test, cfg, c, args)
+            except Exception as exc:
+                ev = events.make(cfg, c, args.test if args.test != "apps" else "app")
+                ev["outcome"] = C.HARNESS
+                ev["error"] = f"{type(exc).__name__}: {exc}"
+                ev["value"] = {"traceback": traceback.format_exc()[-2000:]}
+                events.emit(cfg, ev)
+                rc = 1
+            continue
+        ns = C.ns_name(c["id"])
+        if not netns.netns_exists(ns):
+            ev = events.make(cfg, c, args.test if args.test != "apps" else "app")
+            ev["outcome"], ev["error"] = C.HARNESS, f"namespace {ns} does not exist"
+            events.emit(cfg, ev)
+            rc = 1
+            continue
+        if args.jitter:
+            time.sleep(random.uniform(0, args.jitter))
+        argv = ["ip", "netns", "exec", ns, sys.executable, SELF, "run", args.test, c["id"], "--mode", args.mode]
+        if args.auto_mode:
+            argv.append("--auto-mode")
+        if args.provider:
+            argv += ["--provider", args.provider]
+        env = dict(os.environ, EXM_IN_NS=c["id"])
+        r = subprocess.run(argv, env=env)
+        rc = rc or r.returncode
+    return rc
+
+
+def _lease_bound(cfg, cid):
+    try:
+        with open(C.state_path(cfg, f"{cid}.lease.json")) as fh:
+            return json.load(fh).get("state") == "bound"
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+
+
+def cmd_speedtest_next(args, cfg):
+    need_root()
+    os.makedirs(C.RUN_DIR, exist_ok=True)
+    fd = os.open(os.path.join(C.RUN_DIR, "heavy.lock"), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("speedtest skipped: another heavy test is still running", flush=True)
+        return 0
+    providers = list(cfg["speedtest"].get("providers", ["cloudflare"]))
+    rot_path = C.state_path(cfg, "speedtest.rotation.json")
+    try:
+        rot = json.load(open(rot_path))
+    except (FileNotFoundError, json.JSONDecodeError):
+        rot = {"client": -1, "provider": -1}
+    ids = [c["id"] for c in C.clients(cfg)]
+    pick = None
+    for step in range(1, len(ids) + 1):
+        cand = ids[(rot["client"] + step) % len(ids)]
+        if _lease_bound(cfg, cand):
+            pick = cand
+            rot["client"] = ids.index(cand)
+            break
+    if pick is None:
+        print("speedtest skipped: no client holds a DHCP lease", flush=True)
+        return 0
+    rot["provider"] = (rot["provider"] + 1) % len(providers)
+    with open(rot_path, "w") as fh:
+        json.dump(rot, fh)
+    provider = providers[rot["provider"]]
+    print(f"speedtest-next: {pick} via {provider}", flush=True)
+    return subprocess.run([sys.executable, SELF, "run", "speedtest", pick, "--provider", provider]).returncode
+
+
+def cmd_gateway_check(args, cfg):
+    need_root()
+    from exm import gateway
+    ev = gateway.run(cfg)
+    return 0 if ev["outcome"] != C.HARNESS else 1
+
+
+def cmd_heartbeat(args, cfg):
+    need_root()
+    from exm import heartbeat
+    return heartbeat.run(cfg)
+
+
+def cmd_stream(args, cfg):
+    """The collector's forced command: replay since its cursor, then follow (see lib/exm/stream.py)."""
+    from exm import stream
+    return stream.run(cfg)
+
+
+def _authorized_keys():
+    return os.path.join(STREAM_HOME, ".ssh", "authorized_keys")
+
+
+def _root_dir(path: str, mode: int) -> None:
+    """A directory owned by root (never by the stream user, so it can't have planted a link)."""
+    if not os.path.lexists(path):
+        os.mkdir(path, mode)
+    st = os.lstat(path)
+    if not stat.S_ISDIR(st.st_mode):
+        sys.exit(f"exm: refusing to use {path}: not a directory")
+    os.chown(path, 0, 0, follow_symlinks=False)
+    os.chmod(path, mode)
+
+
+def _write_keys(lines):
+    # Home, .ssh and authorized_keys all belong to root: sshd accepts that, and the stream
+    # user (which can only run `exm stream`) owns nothing it could change or replace.
+    _root_dir(STREAM_HOME, 0o755)
+    _root_dir(os.path.dirname(_authorized_keys()), 0o755)
+    tmp = _authorized_keys() + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(fd, "w") as fh:
+        fh.write("".join(ln + "\n" for ln in lines))
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, _authorized_keys())
+
+
+def _read_keys():
+    try:
+        with open(_authorized_keys()) as fh:
+            return [ln.rstrip("\n") for ln in fh if ln.strip()]
+    except FileNotFoundError:
+        return []
+
+
+def cmd_authorize_collector(args, cfg):
+    """Idempotent: the exm-stream user, and this key allowed to run `exm stream` and nothing else."""
+    need_root()
+    m = PUBKEY.match(args.pubkey.strip())
+    if not m:
+        sys.exit("exm: expected one OpenSSH public key line, e.g. 'ssh-ed25519 AAAA... exm-collector@dc-vm'")
+    if args.source and not re.fullmatch(r"[0-9a-fA-F.:/,*?]{1,200}", args.source):
+        sys.exit("exm: --from takes addresses or CIDRs, comma-separated")
+    try:
+        pwd.getpwnam(STREAM_USER)
+    except KeyError:
+        subprocess.run(["useradd", "--system", "--home-dir", STREAM_HOME, "--no-create-home", "--shell", "/bin/sh",
+                        "--comment", "EXM collector stream (forced command only)", STREAM_USER], check=True)
+        print(f"created system user {STREAM_USER}")
+    # '*' not '!': no password, but not "locked", which some sshd setups treat as no login at all.
+    subprocess.run(["usermod", "-p", "*", STREAM_USER], check=True)
+    opts = 'restrict,command="' + os.path.join(os.path.dirname(SELF), "exm") + ' stream"'
+    if args.source:
+        opts += f',from="{args.source}"'
+    line = f"{opts} {m.group(1)} {m.group(2)}" + (f" {m.group(3)}" if m.group(3) else "")
+    keep = [ln for ln in _read_keys() if m.group(2) not in ln]
+    _write_keys(keep + [line])
+    r = subprocess.run(["ssh-keygen", "-lf", "-"], input=f"{m.group(1)} {m.group(2)}", capture_output=True, text=True)
+    print(f"authorized for {STREAM_USER}@{os.uname().nodename}: {r.stdout.strip() or m.group(1)}")
+    print(f"it can run `exm stream` and nothing else; {len(keep) + 1} collector key(s) in {_authorized_keys()}")
+    return 0
+
+
+def cmd_deauthorize_collector(args, cfg):
+    need_root()
+    if not args.all and not args.pubkey:
+        sys.exit("exm: give the key, or --all")
+    blob = PUBKEY.match(args.pubkey.strip()).group(2) if args.pubkey and PUBKEY.match(args.pubkey.strip()) else None
+    if args.pubkey and not blob:
+        sys.exit("exm: that is not an OpenSSH public key line")
+    keys = _read_keys()
+    if not keys:
+        print("no collector keys")
+        return 0
+    keep = [] if args.all else [ln for ln in keys if blob not in ln]
+    _write_keys(keep)
+    print(f"removed {len(keys) - len(keep)} key(s); {len(keep)} left")
+    return 0
+
+
+def cmd_version(args, cfg):
+    print(f"exm-probe {C.AGENT_VER}")
+    return 0
+
+
+def _fmt_status(rows):
+    out = [f"{'port':6} {'iface':11} {'link':5} {'Mbps':>5}  {'address':18} {'gateway':15} {'dns':31} {'lease':8} role"]
+    for r in rows:
+        link = "-" if not r["in_ns"] else ("up" if r["carrier"] else "nocar")
+        addr = f"{r['ip']}/{r['prefix']}" if r["ip"] else "-"
+        lease = (r.get("lease") or {}).get("state") or "-"
+        out.append(f"{r['client']:6} {r['iface']:11} {link:5} {str(r['speed_mbps'] or '-'):>5}  {addr:18} "
+                   f"{str(r['gateway'] or '-'):15} {','.join(r['dns'])[:31] or '-':31} {lease:8} "
+                   f"{r.get('daemon') or ('dhcp running' if r['udhcpc_pid'] else 'dhcp stopped')}")
+    return "\n".join(out)
+
+
+def cmd_status(args, cfg):
+    if os.geteuid() != 0:
+        try:
+            snap = json.load(open(STATUS_FILE))
+        except FileNotFoundError:
+            sys.exit(f"exm: not root and no snapshot at {STATUS_FILE} yet")
+        print(f"snapshot {snap['ts']} (non-root view)")
+        print(json.dumps(snap, indent=1) if args.json else _fmt_status(snap["clients"]))
+        return 0
+    rows = netns.status(cfg)
+    if args.write:
+        snap = {"ts": events.utc_iso(), "probe_id": cfg["probe_id"], "config_ver": cfg["_ver"], "clients": rows}
+        os.makedirs(os.path.dirname(STATUS_FILE), exist_ok=True)
+        tmp = STATUS_FILE + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(snap, fh, indent=1)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, STATUS_FILE)
+    if not args.quiet:
+        print(json.dumps(rows, indent=1) if args.json else _fmt_status(rows))
+    return 0
+
+
+def cmd_summary(args, cfg):
+    from exm import report
+    if args.emit:
+        report.emit_summary(cfg, args.minutes)
+        return 0
+    if args.json:
+        print(json.dumps(report.summarize(cfg, args.minutes), indent=1))
+    else:
+        print(report.render(cfg, args.minutes))
+    return 0
+
+
+def cmd_crontab(args, cfg):
+    from exm import cron
+    text = cron.generate(cfg)
+    if not args.write:
+        print(text)
+        return 0
+    tmp = args.write + ".tmp"
+    with open(tmp, "w") as fh:
+        fh.write(text)
+    if shutil.which(SUPERCRONIC) or os.path.exists(SUPERCRONIC):
+        r = subprocess.run([SUPERCRONIC, "-test", tmp], capture_output=True, text=True)
+        if r.returncode != 0:
+            os.unlink(tmp)
+            sys.exit(f"exm: supercronic rejected the generated crontab:\n{r.stdout}{r.stderr}")
+    os.replace(tmp, args.write)
+    print(f"wrote {args.write} ({sum(1 for ln in text.splitlines() if ln and not ln.startswith('#'))} jobs)")
+    return 0
+
+
+def cmd_apply(args, cfg):
+    need_root()
+    cmd_crontab(argparse.Namespace(write=CRONTAB), cfg)
+    # 1. Stop units that should no longer run: a client turning into a server (or a
+    #    renamed port) releases its DHCP lease before anything else changes.
+    for sec in cfg.get("_legacy", []):
+        print(f"exm: note: [{sec}] in {cfg['_path']} is ignored since 0.9.0; it belongs on the collector "
+              "(exm-collector package). Remove it from this file when the collector is set up.", file=sys.stderr)
+    for family, ports in (("exm-dhcp", C.clients(cfg)), ("exm-server", C.servers(cfg))):
+        wanted = {f"{family}@{c['id']}.service" for c in ports}
+        listed = subprocess.run(["systemctl", "list-units", "--all", "--plain", "--no-legend", f"{family}@*"],
+                                capture_output=True, text=True).stdout.split()
+        enabled = subprocess.run(["systemctl", "list-unit-files", "--plain", "--no-legend", f"{family}@*"],
+                                 capture_output=True, text=True).stdout.split()
+        for unit in sorted({u for u in listed + enabled if u.startswith(f"{family}@") and u.endswith(".service")
+                            and u != f"{family}@.service"} - wanted):
+            subprocess.run(["systemctl", "disable", "--now", unit])
+    # 2. Remove namespaces of ports that were renamed or dropped, returning their ports.
+    netns.remove_stale(cfg)
+    # 3. Bring every configured port into its namespace.
+    ok = netns.up(cfg)
+    # 4. Start what should run.
+    for family, ports in (("exm-dhcp", C.clients(cfg)), ("exm-server", C.servers(cfg))):
+        for c in ports:
+            subprocess.run(["systemctl", "enable", "--now", f"{family}@{c['id']}.service"], check=False)
+    subprocess.run(["systemctl", "restart", "exm-cron.service"], check=False)
+    return 0 if ok else 1
+
+
+def cmd_prune(args, cfg):
+    need_root()
+    import datetime
+    keep = int(cfg.get("retention_days", 7))
+    cutoff = (datetime.date.today() - datetime.timedelta(days=keep)).isoformat()
+    removed = 0
+    for d in sorted(os.listdir(cfg["results_dir"])) if os.path.isdir(cfg["results_dir"]) else []:
+        if len(d) == 10 and d < cutoff:
+            shutil.rmtree(os.path.join(cfg["results_dir"], d))
+            removed += 1
+    print(f"prune: removed {removed} day(s) older than {cutoff}")
+    return 0
+
+
+def main():
+    p = argparse.ArgumentParser(prog="exm", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--config", default=None)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("netns")
+    s.add_argument("action", choices=["up", "down", "status"])
+    s.add_argument("--client", action="append")
+    s = sub.add_parser("dhcp-daemon")
+    s.add_argument("client")
+    s = sub.add_parser("server-daemon")
+    s.add_argument("client")
+    s = sub.add_parser("serve")
+    s.add_argument("client")
+    s = sub.add_parser("server", help="inject or clear faults on a server port")
+    s.add_argument("action", choices=["set", "clear", "show"])
+    s.add_argument("client", nargs="?")
+    s.add_argument("--http-delay-ms", type=int)
+    s.add_argument("--http-status", type=int)
+    s.add_argument("--netem", help='tc netem arguments, e.g. "delay 100ms 10ms loss 5%%"; "" clears')
+    s = sub.add_parser("udhcpc-hook")
+    s.add_argument("event")
+    s = sub.add_parser("run")
+    s.add_argument("test", choices=["dhcp", "dns", "apps", "speedtest"])
+    s.add_argument("client")
+    s.add_argument("--mode", default="dora", choices=["dora", "init-reboot"])
+    s.add_argument("--auto-mode", action="store_true")
+    s.add_argument("--provider")
+    s.add_argument("--jitter", type=float, default=0)
+    sub.add_parser("speedtest-next")
+    sub.add_parser("gateway-check")
+    sub.add_parser("heartbeat")
+    sub.add_parser("stream", help="the collector's forced command: results since its cursor, then live")
+    s = sub.add_parser("authorize-collector", help="let a collector's key stream results (and nothing else)")
+    s.add_argument("pubkey", help="the collector's public key line (exm-collector probe add prints it)")
+    s.add_argument("--from", dest="source", help="only from these addresses/CIDRs (sshd from= option)")
+    s = sub.add_parser("deauthorize-collector")
+    s.add_argument("pubkey", nargs="?")
+    s.add_argument("--all", action="store_true")
+    sub.add_parser("version")
+    s = sub.add_parser("status")
+    s.add_argument("--write", action="store_true")
+    s.add_argument("--quiet", action="store_true")
+    s.add_argument("--json", action="store_true")
+    s = sub.add_parser("summary")
+    s.add_argument("--minutes", type=int, default=60)
+    s.add_argument("--json", action="store_true")
+    s.add_argument("--emit", action="store_true", help="write the dashboard summary as a result (cron, every minute)")
+    s = sub.add_parser("crontab")
+    s.add_argument("--write")
+    sub.add_parser("apply")
+    sub.add_parser("prune")
+    args = p.parse_args()
+    if args.config:
+        os.environ["EXM_CONFIG"] = os.path.abspath(args.config)   # so re-executions inherit it
+    try:
+        cfg = C.load(args.config)
+    except (C.ConfigError, FileNotFoundError) as exc:
+        sys.exit(f"exm: {exc}")
+    handler = {"netns": cmd_netns, "dhcp-daemon": cmd_dhcp_daemon, "udhcpc-hook": cmd_udhcpc_hook,
+               "server-daemon": cmd_server_daemon, "serve": cmd_serve, "server": cmd_server,
+               "run": cmd_run, "speedtest-next": cmd_speedtest_next, "gateway-check": cmd_gateway_check,
+               "heartbeat": cmd_heartbeat, "stream": cmd_stream, "authorize-collector": cmd_authorize_collector,
+               "deauthorize-collector": cmd_deauthorize_collector, "version": cmd_version, "status": cmd_status,
+               "summary": cmd_summary, "crontab": cmd_crontab, "apply": cmd_apply,
+               "prune": cmd_prune}[args.cmd]
+    sys.exit(handler(args, cfg) or 0)
+
+
+if __name__ == "__main__":
+    main()

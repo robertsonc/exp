@@ -1,0 +1,28 @@
+[Unit]
+Description=EXM collector: stream probe %i's results in over SSH
+Documentation=file:///opt/exm-collector/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/exm-collector/bin/exm-collector follow %i
+# The collector's own user: reads its keys in /etc/exm/collector/keys, writes only its data directory.
+User=exm-collector
+Group=exm-collector
+Environment=HOME=/var/lib/exm-collector/state
+ReadWritePaths=/var/lib/exm-collector
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

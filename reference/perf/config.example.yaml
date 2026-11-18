@@ -1,0 +1,89 @@
+# SD-WAN performance orchestrator configuration.
+#
+# Copy to config.yaml and edit. SSH keys preferred over passwords; if you must
+# use a password, set SDWAN_FRR_PASSWORD / SDWAN_SERVER_PASSWORD env vars
+# rather than putting them here.
+
+dashboard:
+  bind: "0.0.0.0"
+  port: 8080
+
+iperf3:
+  port: 5201
+  protocol: tcp                 # tcp | udp
+  parallel_streams: 4
+  reverse: false                # iperf3 -R (server → client)
+
+  # Continuous mode: iperf3 runs uninterrupted, dashboard updates every
+  # interval_s seconds. Recommended for live monitoring.
+  continuous: true
+  interval_s: 1
+
+  # Burst mode (continuous: false): one iperf3 invocation per cycle.
+  duration_s: 10
+  cooldown_s: 1
+
+  # window_kib: 4096            # iperf3 -w (TCP only)
+  # mss_bytes: 1400             # iperf3 -M (TCP only)
+  # udp_bandwidth: "950M"       # iperf3 -b. REQUIRED for protocol: udp.
+  #                             # "0" = unlimited (floods the path; only use
+  #                             # deliberately on an isolated bench).
+  # udp_length: 1400            # iperf3 -l (UDP only)
+
+poller_interval_s: 1.0
+poller_buffer_size: 3600
+
+hosts:
+  client:
+    # The orchestrator runs here. SSH not required (we read /proc/net/dev locally).
+    mgmt_ip: "192.168.2.118"
+    data_ip: "10.1.1.3"
+    # data_iface: "ens160"      # optional; auto-detected from data_ip
+
+  server:
+    mgmt_ip: "192.168.2.123"
+    data_ip: "10.2.2.2"
+    # data_iface: "ens160"      # optional; auto-detected from data_ip
+    ssh_user: "aruba"
+    ssh_key_path: "~/.ssh/id_ed25519"
+    # ssh_password_env: "SDWAN_SERVER_PASSWORD"
+    # Host keys are verified against ~/.ssh/known_hosts (populated by
+    # setup_ssh.py). Override with ssh_known_hosts, or — for an ISOLATED
+    # lab bench only — disable verification entirely:
+    # ssh_known_hosts: "~/.ssh/known_hosts"
+    # ssh_insecure_no_host_check: false
+    iperf3_path: "iperf3"
+
+  frr:
+    mgmt_ip: "192.168.2.102"
+    ssh_user: "aruba"
+    ssh_key_path: "~/.ssh/id_ed25519"
+    # ssh_password_env: "SDWAN_FRR_PASSWORD"
+
+# Appliance-specific WAN interface mappings on the FRR.
+#   ingress = the FRR interface that receives bulk frames from the West-side
+#             (client-side) appliance.
+#   egress  = the FRR interface that transmits bulk frames toward the East-side
+#             (server-side) appliance.
+appliances:
+  ecv:
+    description: "HPE EdgeConnect (Silver Peak) EC-V"
+    wan0:
+      ingress_iface: "ens161"
+      egress_iface:  "ens193"
+    wan1:
+      ingress_iface: "ens162"
+      egress_iface:  "ens225"
+
+  ssr:
+    description: "Juniper Session Smart Router"
+    wan0:
+      ingress_iface: "ens192"
+      egress_iface:  "ens256"
+    wan1:
+      ingress_iface: "ens224"
+      egress_iface:  "ens257"
+
+active:
+  appliance: "ecv"
+  dual_wan: false

@@ -1,0 +1,26 @@
+# SD-WAN Chaos Monkey - Node Filter Configuration
+#
+# Use this file to control which SD-WAN nodes are included in chaos testing.
+# Pass it to the chaos monkey with: --nodes-file nodes.yaml
+#
+# You can use EITHER 'include' OR 'exclude', but not both.
+# Hostnames are matched case-insensitively against appliance hostnames
+# discovered from the orchestrator.
+
+# --- Option 1: Include only these nodes ---
+# Only the listed nodes will be targeted for chaos testing.
+# All other discovered nodes will be skipped.
+#
+# include:
+#   - edge-router-east-01
+#   - edge-router-west-01
+#   - branch-office-nyc
+#   - branch-office-sfo
+
+# --- Option 2: Exclude these nodes ---
+# All discovered nodes EXCEPT the listed ones will be targeted.
+# Use this to protect critical nodes from chaos testing.
+#
+# exclude:
+#   - core-router-primary
+#   - management-appliance

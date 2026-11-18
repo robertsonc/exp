@@ -1,0 +1,14 @@
+[Unit]
+Description=EXM probe: client network namespaces (one physical port each)
+Documentation=file:///opt/exm/README.md
+After=systemd-udevd.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/exm/bin/exm netns up
+ExecStop=/opt/exm/bin/exm netns down
+
+[Install]
+WantedBy=multi-user.target

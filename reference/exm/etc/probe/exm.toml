@@ -1,0 +1,238 @@
+# EXM probe configuration (exm-probe package): the client end of the Event EXM platform.
+#
+# Each [[client]] is one emulated wired client: a NIC moved into its own network
+# namespace ("exm-<id>"), holding its own DHCP lease, routes and resolver. The
+# management interface (the one with the default route) is never touched: the
+# installer refuses to move it. Edit, then run `sudo exm apply`.
+#
+# The dashboard and alerts run on the collector (exm-collector package), which
+# streams this probe's results over SSH: `sudo exm authorize-collector '<key>'`.
+# A real, complete example: deploy/lab-srv02/exm.toml (12 ports, Silicom NICs).
+
+probe_id = "probe-01"            # unique per probe; the collector's name for it should match
+hw_class = "vm-virtio"           # speed results are only comparable within a class
+results_dir = "/var/lib/exm/results"
+state_dir = "/var/lib/exm/state"
+retention_days = 7               # the collector can backfill from here after an outage
+
+# ---------------------------------------------------------------------------
+# Clients. Access mode: one port per client; its MAC is the client's stable MAC.
+# vlan/zone are labels carried on every result (e.g. "hall-b", "registration").
+# ---------------------------------------------------------------------------
+[[client]]
+id = "c01"
+iface = "ens19"
+vlan = ""
+zone = ""
+
+[[client]]
+id = "c02"
+iface = "ens20"
+vlan = ""
+zone = ""
+
+# A port can instead be a hard-coded TEST SERVER for Marvis Minis (and for the
+# clients above): change its role, give it a fixed address OUTSIDE the DHCP pool,
+# then `sudo exm apply`. It answers ping/traceroute and returns HTTP 200 on every
+# path over http://<ip>/ and https://<ip>/ (self-signed). The clients test it too,
+# as app "lab-server-<id>". Before claiming the address it probes the wire and
+# refuses if any host answers for it.
+#
+# [[client]]
+# id = "s01"
+# iface = "enp130s0f3"
+# role = "server"
+# address = "10.1.0.250/24"     # must be outside the DHCP pool
+# gateway = "10.1.0.1"
+# dns = ["8.8.8.8"]
+# http_port = 80                # optional
+# https_port = 443              # optional
+
+# ---------------------------------------------------------------------------
+# Scheduling. Light tests run on every client, staggered evenly across the
+# interval so 12 clients never fire together, plus a little random jitter.
+# Heavy tests (speed tests) run one client at a time, round robin.
+# ---------------------------------------------------------------------------
+[schedule]
+dhcp_interval_s = 300
+init_reboot_every = 3            # every 3rd DHCP run per client uses INIT-REBOOT instead of DORA
+dns_interval_s = 300
+apps_interval_s = 300
+speedtest_interval_s = 600       # one client per slot, rotating clients and providers
+heartbeat_interval_s = 10        # the fast checks below; must divide 60; 0 turns them off
+jitter_s = 10
+
+# Heartbeat, every heartbeat_interval_s, all at once:
+#   network  link, link drops since the last run, and one gateway ping on every port
+#   DHCP     one DISCOVER from the next client in rotation, its own MAC and client-id,
+#            waiting for an OFFER; never a REQUEST, so no lease is taken or changed
+#   DNS      one A query to the resolver DHCP gave the next client in rotation
+# These feed the dashboard's Network, DHCP and DNS lines.
+[heartbeat]
+dhcp = true
+dns = true
+dhcp_timeout_s = 3
+dns_timeout_s = 2
+trace = true                     # traceroute from a rotating client: where the path stops when the internet is down
+trace_target = "8.8.8.8"
+trace_max_hops = 16
+trace_timeout_s = 2
+control_trace = true             # the same trace from this host's management path: tells the WAN edge from the ISP
+dns_alt = "1.1.1.1"              # also asked each heartbeat: tells a dead resolver from a dead path (8.8.8.8 if DHCP hands out this one)
+dns_ping = true                  # ping both resolvers too: unreachable, or reachable but not answering DNS
+
+[gateway]
+timeout_s = 1
+degraded_ms = 20                 # a LAN gateway slower than this counts as degraded
+
+# ---------------------------------------------------------------------------
+# DHCP. The lease holder is busybox udhcpc; the timing test is a raw-socket
+# client (scapy) using the same MAC and client-id, so it re-confirms the held
+# binding instead of burning a new lease.
+# ---------------------------------------------------------------------------
+[dhcp]
+hostname_prefix = "exm"          # option 12 sent as <prefix>-<client id>
+vendor_class = "exm-probe"       # option 60, so probe leases are easy to spot
+broadcast_flag = true
+retry_backoff_s = [4, 8, 16]     # client-like retries; retries are a metric
+offer_collect_s = 3.0            # keep listening this long for extra offers; ping-checking servers (ISC dhcpd default) answer ~1-2 s late
+degraded_ms = 1500               # total DORA above this is degraded
+arp_conflict_probe = true        # RFC 5227 probe of the acked address
+
+# ---------------------------------------------------------------------------
+# DNS
+# ---------------------------------------------------------------------------
+[dns]
+domains_per_run = 8              # random sample of the list below, per client per run
+record_types = ["A", "AAAA", "HTTPS"]
+timeout_s = 2.0
+degraded_p95_ms = 250
+interception_check = true        # whoami-style queries to each public resolver
+dot_check = true                 # DNS over TLS (853) reachability
+
+[dns.public_resolvers]
+google = "8.8.8.8"
+cloudflare = "1.1.1.1"
+quad9 = "9.9.9.9"
+opendns = "208.67.222.222"
+
+[dns.dot_names]
+google = "dns.google"
+cloudflare = "cloudflare-dns.com"
+quad9 = "dns.quad9.net"
+
+[dns.domains]
+list = [
+  "google.com", "youtube.com", "gmail.com", "googleapis.com", "gstatic.com",
+  "apple.com", "icloud.com",
+  "facebook.com", "instagram.com", "whatsapp.com", "messenger.com",
+  "x.com", "linkedin.com", "tiktok.com", "snapchat.com", "reddit.com", "discord.com",
+  "slack.com", "zoom.us", "webex.com", "dropbox.com", "salesforce.com", "github.com",
+  "microsoft.com", "office.com", "teams.microsoft.com", "outlook.office365.com",
+  "login.microsoftonline.com", "onedrive.live.com",
+  "claude.ai", "anthropic.com", "chatgpt.com", "openai.com",
+  "amazon.com", "netflix.com", "spotify.com", "doordash.com",
+  "chase.com", "americanexpress.com", "bankofamerica.com", "wellsfargo.com", "paypal.com", "venmo.com",
+  "uber.com", "lyft.com", "weather.com",
+  "wikipedia.org", "cloudflare.com", "hpe.com", "juniper.net",
+]
+
+# ---------------------------------------------------------------------------
+# Speed tests. ndt7 (M-Lab) is off: M-Lab publishes every result with the
+# client IP as open data, which the spec lists as an open question. To enable,
+# install an ndt7-client binary and add "ndt7" here.
+# ---------------------------------------------------------------------------
+[speedtest]
+providers = ["cloudflare", "fastcom"]
+download_bytes = 50000000
+upload_bytes = 10000000
+streams = 1
+latency_probes = 6
+loaded_latency_degraded_ms = 100  # loaded minus idle RTT above this is degraded (bufferbloat)
+timeout_s = 60
+
+# ---------------------------------------------------------------------------
+# App experience (Apdex). One transaction per app, run through the client's
+# DHCP-learned resolver, as a phone would. Sample = time to first byte (DNS +
+# TCP + TLS + server) for http steps, TLS handshake complete for tls steps, TCP
+# connect for tcp steps; a multi-step app scores its slowest step.
+# satisfied <= T, tolerating <= 4T, frustrated above 4T or on any error.
+# QUIC is not tested: this curl build has no HTTP/3.
+# ---------------------------------------------------------------------------
+[apps]
+timeout_s = 10
+lab_server_t_ms = 100            # Apdex T for the auto-added test against each server port
+user_agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+
+[[apps.app]]
+name = "phone-connectivity"
+t_ms = 300
+steps = [
+  { kind = "http", url = "http://captive.apple.com/hotspot-detect.html", expect_body = "Success" },
+  { kind = "http", url = "http://connectivitycheck.gstatic.com/generate_204", expect_status = 204 },
+]
+
+[[apps.app]]
+name = "push-channels"
+t_ms = 500
+steps = [
+  { kind = "tcp", host = "courier.push.apple.com", port = 5223 },
+  { kind = "tls", host = "api.push.apple.com", port = 443 },
+  { kind = "tls", host = "mtalk.google.com", port = 5228 },
+]
+
+[[apps.app]]
+name = "google-search"
+t_ms = 800
+quic = true
+steps = [ { kind = "http", url = "https://www.google.com/" } ]
+
+[[apps.app]]
+name = "youtube"
+t_ms = 1000
+quic = true
+steps = [
+  { kind = "http", url = "https://www.youtube.com/" },
+  { kind = "http", url = "https://i.ytimg.com/vi/jNQXAC9IVRw/default.jpg" },
+]
+
+[[apps.app]]
+name = "instagram-facebook"
+t_ms = 1000
+quic = true
+steps = [
+  { kind = "http", url = "https://www.instagram.com/" },
+  { kind = "http", url = "https://graph.facebook.com/" },
+]
+
+[[apps.app]]
+name = "whatsapp"
+t_ms = 600
+steps = [ { kind = "tls", host = "web.whatsapp.com", port = 443 } ]
+
+[[apps.app]]
+name = "tiktok"
+t_ms = 1000
+steps = [ { kind = "http", url = "https://www.tiktok.com/" } ]
+
+[[apps.app]]
+name = "apple-services"
+t_ms = 1000
+steps = [
+  { kind = "http", url = "https://apps.apple.com/" },
+  { kind = "http", url = "https://www.icloud.com/" },
+]
+
+[[apps.app]]
+name = "google-play"
+t_ms = 800
+quic = true
+steps = [ { kind = "http", url = "https://play.googleapis.com/" } ]
+
+[[apps.app]]
+name = "microsoft-365-teams"
+t_ms = 1200
+steps = [
+  { kind = "http", url = "https://login.microsoftonline.com/" },
+  { kind = "http", url = "https://teams.microsoft.com/" },
+]

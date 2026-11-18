@@ -1,63 +1,41 @@
 # exp — Event network eXperience Platform
 
-Network **experience** monitoring for event networks: synthetic probes measure what a real
-user's traffic would see (can I get a lease, resolve a name, reach the apps, how fast),
-collectors aggregate those measurements into a time-series database, and a dashboard shows
-admins the live experience and where it's breaking.
+Synthetic users on the event network measure what attendees experience — link, DHCP, DNS,
+internet, apps, Wi-Fi, path quality — every 10 seconds. Collectors store it in VictoriaMetrics and
+turn it into one-sentence verdicts with *where* the path is breaking. Dashboards show it to the NOC,
+on the LAN, even when the internet is down. A Cloudflare-hosted central manager deploys and runs
+everything from admin intent: point it at an Ubuntu host, pick a shape, paste one command.
+Resilience drills prove the monitoring and the network's failover actually work.
 
-**Mantra: simplicity for deployment, and simplicity for operation.** One command to stand up
-a component. One place to see everything. No per-host babysitting.
-
-## Lineage
-
-`exp` builds directly on work already done:
-
-- **EXM** (`~/labs/exm`) — the direct ancestor. Its Python probe library (gateway, DHCP, DNS,
-  apps, speedtest, heartbeats), SSH-pull collector, and Pulse dashboard are the starting point
-  for `exp`'s probe, collector, and dashboard.
-- **netvitals** — network-quality measurement and a self-contained web UI.
-- **chaos / perf** — fault-injection and load/latency concepts, folded in as optional probe
-  behaviours (a probe can also *perturb* and measure the response).
-
-What `exp` adds beyond EXM: a real **TSDB** in the collector, and a **central manager** that
-turns admin intent into deployed, configured, secret-provisioned components across many hosts.
-
-## Components
-
-| Component | What it is | Language |
-|---|---|---|
-| **Probe** | Lightweight package that generates and measures network transactions, reports status + measurements | Python |
-| **Collector** | Central collection point; ingests probe reports, aggregates into a TSDB, serves the dashboard API | Python |
-| **Dashboard** | Where admins watch network experience — stats and telemetry from the platform | Static SPA |
-| **Central manager** | SaaS orchestrator on Cloudflare. Admin signs in, points at an Ubuntu host, picks a shape (probe/collector/dashboard); the manager distributes software, secrets, config, and metadata per intent | Cloudflare Workers (TS) |
-
-## How it fits together
-
-```
-                         ┌──────────────────────────────────────┐
-                         │   Central Manager  (Cloudflare SaaS)  │
-                         │   intent → software, secrets, config  │
-                         └───────────────┬──────────────────────┘
-             deploy / configure / enrol  │  (model TBD — see docs/ARCHITECTURE.md)
-          ┌─────────────────────────────┼─────────────────────────────┐
-          ▼                              ▼                             ▼
-   ┌─────────────┐  reports      ┌───────────────┐   query      ┌───────────────┐
-   │   Probes    │ ─────────────▶│   Collector   │ ◀─────────── │   Dashboard   │
-   │ (Ubuntu)    │  measurements │  + TSDB        │  telemetry   │  (admins)     │
-   └─────────────┘               └───────────────┘              └───────────────┘
-```
+**Mantra: simplicity for deployment and operation.**
 
 ## Status
 
-Scaffolding. Two foundational decisions are being settled before component build-out — see
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): (1) how the Cloudflare manager provisions a host,
-and (2) the TSDB. Everything else follows the EXM patterns.
+**Specification complete; implementation not started** (except the hardened measurement schema in
+`shared/`). Build it with a multi-agent session — start at [KICKOFF.md](KICKOFF.md).
 
-## Layout
+## Documents
 
-- `manager/` — Cloudflare Worker central manager (SaaS)
-- `probe/` — Python probe package
-- `collector/` — ingest + TSDB + dashboard API
-- `dashboard/` — admin SPA
-- `shared/` — result/event schema and config contracts
-- `docs/`, `scripts/`
+| | |
+|---|---|
+| [SPEC.md](SPEC.md) | Source of truth: principles, architecture, decisions, milestones, acceptance |
+| [KICKOFF.md](KICKOFF.md) | How to run the build (multi-agent), with a paste-ready prompt |
+| [docs/spec/](docs/spec/) | Contracts, component specs, security, operations, work packages, drills |
+| [ROADMAP.md](ROADMAP.md) | Milestones M0–M5 |
+| [reference/](reference/README.md) | Prior art to port from (EXM, netvitals, perf, chaos_monkey) — read-only |
+
+## Components
+
+| Shape | What it does | Tech |
+|---|---|---|
+| **Probe** | owns test ports, behaves like an attendee's device, measures, ships to its collector | Python 3.10+ |
+| **Collector** | ingest, VictoriaMetrics, rules engine (state, verdict, where), incidents, alerts, query API | Python + VictoriaMetrics |
+| **Dashboard** | auth, federated queries, the Pulse board, overview, incidents, NOC/kiosk mode | Python + static SPA |
+| **Runner** | resilience drills (EC Orchestrator) and Mist/EC event correlation, on-prem | Python |
+| **Central manager** | SaaS control plane: intent, desired state, signed releases, secrets, users, audit | Cloudflare Workers (TS), D1, R2, Access |
+| **Agent** | enrols a host with one command and keeps it converged to desired state | Python |
+
+## Lineage
+
+EXM (event experience monitor — the direct ancestor), Network Vitals (bidirectional path quality,
+MOS/PQI), sdwan_perf (multi-vantage throughput), SD-WAN chaos monkey (failover drills).
