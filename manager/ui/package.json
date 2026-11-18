@@ -1,0 +1,32 @@
+{
+  "name": "exp-manager-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "exp manager admin UI (WP-5): fleet health and administration",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && node scripts/check-size.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "size": "node scripts/check-size.mjs",
+    "e2e": "node e2e/run.mjs"
+  },
+  "dependencies": {
+    "preact": "10.29.8",
+    "uplot": "1.6.32"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@babel/core": "7.29.13",
+    "@preact/preset-vite": "2.10.6",
+    "axe-core": "4.14.0",
+    "jsdom": "26.1.0",
+    "pixelmatch": "8.0.0",
+    "pngjs": "7.0.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.6",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,0 +1,20 @@
+# exp-probe: test-port network namespaces (02-probe.md section 1).
+# Oneshot: `netns up` runs preflight over every port first and changes NOTHING if any port is refused;
+# `netns down` (ExecStop) moves EVERY port back to the host namespace explicitly before deleting the
+# namespaces (deleting a namespace would destroy virtual ports).
+[Unit]
+Description=exp probe: test-port network namespaces (v@VERSION@)
+Documentation=https://github.com/hpe/exp
+After=network.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=@PREFIX@/bin/exp-probe netns up --config @CONFIG@
+ExecStop=@PREFIX@/bin/exp-probe netns down --config @CONFIG@
+TimeoutStartSec=90
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

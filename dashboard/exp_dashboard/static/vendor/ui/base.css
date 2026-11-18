@@ -1,0 +1,36 @@
+/* exp base styles: minimal reset driven by tokens.css (load tokens.css first). */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--exp-bg);
+  color: var(--exp-text);
+  font-family: var(--exp-font-ui);
+  font-size: var(--exp-text-md);
+  line-height: var(--exp-leading-normal);
+}
+
+h1, h2, h3, h4, p, ul, ol, figure { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+img, svg { display: block; max-width: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+code, kbd, samp, pre { font-family: var(--exp-font-mono); }
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+a { color: var(--exp-accent); }
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--exp-focus-ring);
+  border-radius: var(--exp-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

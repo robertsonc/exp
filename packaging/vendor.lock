@@ -1,6 +1,6 @@
 {
   "schema": "exp.vendor.lock/1",
-  "comment": "Every vendored artifact is pinned by version AND sha256 (SR-11). 'sha256' is always the hash of the FILE USED (the wheel, or the extracted binary). 'sources' are tried in order; the first that works wins and the hash is ALWAYS verified (mismatch aborts, never falls through). GitHub is unreachable from some build hosts, hence the docker-image source pinned by digest. See packaging/README.md.",
+  "comment": "Every vendored artifact is pinned by version AND sha256 (SR-11). Item 'sha256' is the CANONICAL hash of the file used: the wheel, or the binary inside the upstream release archive (checked against upstream's published *_checksums.txt; the archive itself is pinned as 'archive_sha256'). Sources are tried in order; unreachable sources fall through, but a sha256 MISMATCH always aborts. The docker-image source exists for hosts that cannot reach GitHub; the image's binary is a different build and carries its own pin ('sha256' on the source): it is NON-CANONICAL and only usable with EXP_ALLOW_FALLBACK_VENDOR=1 (never for official releases). See packaging/README.md.",
   "items": [
     {
       "name": "dnspython",
@@ -25,20 +25,22 @@
       "component": "collector",
       "arch": "amd64",
       "file": "victoria-metrics-prod",
-      "install_as": "victoria-metrics-prod",
-      "sha256": "26be614890005bda4176674e4481fecdb4f055ad9c635eb813e2272480fb6b67",
+      "install_as": "victoria-metrics",
+      "sha256": "f459722b9fb9473c9f377f465a0b75ef8b3309089fd8b454a083907399dd6413",
       "license": "Apache-2.0",
       "sources": [
         {
           "type": "url",
           "url": "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.106.1/victoria-metrics-linux-amd64-v1.106.1.tar.gz",
-          "extract": "victoria-metrics-prod"
+          "extract": "victoria-metrics-prod",
+          "archive_sha256": "f8b9473446e0283e1a7959755ec3adee85a49161d07020410c2a0b893fd226ef"
         },
         {
           "type": "docker",
           "image": "victoriametrics/victoria-metrics:v1.106.1@sha256:4f0a1e7175ba1835c6da1dd9debea2d6952d3349ea1ab86f2ee2915b0560c19b",
           "platform": "linux/amd64",
-          "path": "/victoria-metrics-prod"
+          "path": "/victoria-metrics-prod",
+          "sha256": "26be614890005bda4176674e4481fecdb4f055ad9c635eb813e2272480fb6b67"
         }
       ]
     },
@@ -49,20 +51,22 @@
       "component": "collector",
       "arch": "arm64",
       "file": "victoria-metrics-prod",
-      "install_as": "victoria-metrics-prod",
-      "sha256": "4b468a6efe9066cd2233468a9eb59fe36bc2ecb2e9b81322a4e8788d3dd57f70",
+      "install_as": "victoria-metrics",
+      "sha256": "2dc6b5e200ab99e52646b5a3b8cd554f88dbaf3161b3139a0085781f6f37350b",
       "license": "Apache-2.0",
       "sources": [
         {
           "type": "url",
           "url": "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.106.1/victoria-metrics-linux-arm64-v1.106.1.tar.gz",
-          "extract": "victoria-metrics-prod"
+          "extract": "victoria-metrics-prod",
+          "archive_sha256": "42c7bc1fb0f28399743d85202472b88649e552ba5eb3984a12f52f859f51d9b2"
         },
         {
           "type": "docker",
           "image": "victoriametrics/victoria-metrics:v1.106.1@sha256:f0b824bbd6e75224597c8303ecd47c4b5e252cddd8767ee2c4f7242cb8319087",
           "platform": "linux/arm64",
-          "path": "/victoria-metrics-prod"
+          "path": "/victoria-metrics-prod",
+          "sha256": "4b468a6efe9066cd2233468a9eb59fe36bc2ecb2e9b81322a4e8788d3dd57f70"
         }
       ]
     }

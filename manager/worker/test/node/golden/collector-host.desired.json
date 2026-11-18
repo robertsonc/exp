@@ -1,0 +1,90 @@
+{
+  "schema": "exp.desired/1",
+  "host_id": "h_WTXRV0HGMT06DKT07DMT17EMV1",
+  "org": {
+    "id": "default",
+    "name": "HPE Event NOC"
+  },
+  "site": {
+    "id": "hall-b",
+    "name": "Hall B",
+    "timezone": "America/Chicago"
+  },
+  "components": [
+    {
+      "type": "collector",
+      "id": "col-hallb",
+      "component_id": "cmp_WTXRV0HGMT06DKT07DMT17EMV1",
+      "version": "0.1.0",
+      "artifact": {
+        "id": "art_5EBE9PAZBY859EMV18ENV28FNW",
+        "name": "exp-collector-0.1.0-amd64.tar.gz",
+        "url": "/api/agent/v1/artifacts/art_5EBE9PAZBY859EMV18ENV28FNW",
+        "sha256": "4d96b5ce508984be894c77ee8434e4bacdb2354e9dbec0183fcf9d314bc0f599",
+        "size": 1105
+      },
+      "config": {
+        "schema": "exp.collector.config/1",
+        "collector_id": "col-hallb",
+        "site": "hall-b",
+        "listen": "10.32.98.25:8443",
+        "probes": [
+          {
+            "probe_id": "probe-a1",
+            "site": "hall-b",
+            "label": "Hall B east"
+          }
+        ],
+        "dashboards": [
+          "dash-main"
+        ],
+        "reflector": {
+          "enabled": true,
+          "port": 8862
+        },
+        "iperf3": {
+          "enabled": true,
+          "port": 5201
+        },
+        "rules": {
+          "edge_label": "EC",
+          "lines": [
+            "network",
+            "dhcp",
+            "dns",
+            "internet",
+            "apps",
+            "wifi",
+            "path"
+          ]
+        },
+        "alerts": {
+          "enabled": true,
+          "voice": "sysadmin",
+          "board_url": "https://10.32.98.30",
+          "timezone": "America/Chicago"
+        }
+      },
+      "creds": {
+        "ingest_tokens.json": "{\"probe-a1\":\"f527fb1d3b3d1901433116d340b85424e544fc18793e4e87636af7bd3ca9ee1a\"}",
+        "dashboard_tokens.json": "{\"dash-main\":\"5016ad23d2f7e9a2f09f783e074b4e2ec0e536a57a64df863d6852ea6016b813\"}",
+        "webhooks.json": "[{\"format\":\"slack\",\"id\":\"wh_1\",\"url\":\"https://hooks.example.invalid/services/FIXTURE\"}]"
+      }
+    }
+  ],
+  "actions": [],
+  "decommission": false,
+  "agent": {
+    "version": "0.1.0",
+    "artifact": "art_9C6KWERB0P2Z38ENV28FNW29FP",
+    "poll_interval_s": 30,
+    "status_interval_s": 60
+  },
+  "release": {
+    "version": "0.1.0",
+    "manifest_url": "/api/agent/v1/releases/0.1.0/manifest",
+    "signature_url": "/api/agent/v1/releases/0.1.0/manifest.sig"
+  },
+  "version": 1,
+  "generated_at": "2026-11-18T20:00:00.000Z"
+}

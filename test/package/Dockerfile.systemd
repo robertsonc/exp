@@ -1,0 +1,10 @@
+# A systemd host for the package install tests (test_install.py): release tarballs are unpacked into a
+# container built from this, so units are verified by the real systemd. Run --privileged --cgroupns=host.
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+      systemd systemd-sysv dbus python3 openssl ca-certificates iproute2 procps \
+    && rm -rf /var/lib/apt/lists/* \
+ && systemctl mask getty@tty1.service systemd-logind.service >/dev/null 2>&1 || true
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

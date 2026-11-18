@@ -1,0 +1,1 @@
+[{"ifindex":4,"link":"vt1","ifname":"vt0","flags":["BROADCAST","MULTICAST","UP","LOWER_UP"],"mtu":1500,"qdisc":"noqueue","operstate":"UP","linkmode":"DEFAULT","group":"default","txqlen":1000,"link_type":"ether","address":"8a:66:17:91:43:c5","broadcast":"ff:ff:ff:ff:ff:ff"}]

@@ -1,0 +1,32 @@
+# exp-probe daemon: scheduler, test workers, spool, shipper, probe_self (02-probe.md section 1).
+# Runs as root (namespaces, raw sockets) with the hardening of section 1. The ingest token is a systemd
+# credential (never in the config, argv or environment).
+[Unit]
+Description=exp probe: synthetic user (v@VERSION@)
+Requires=exp-probe-netns.service
+After=exp-probe-netns.service network-online.target
+PartOf=exp-probe-netns.service
+
+[Service]
+Type=simple
+ExecStart=@PREFIX@/bin/exp-probe run --config @CONFIG@
+LoadCredential=ingest_token:@CREDS@/ingest_token
+StateDirectory=exp/probe
+RuntimeDirectory=exp/probe
+RuntimeDirectoryPreserve=yes
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+# hardening (exactly as 02-probe.md section 1)
+ProtectSystem=strict
+ReadWritePaths=@STATE@ @RUN@
+NoNewPrivileges=yes
+PrivateTmp=yes
+# additional, compatible with network namespaces and raw sockets
+ProtectHome=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

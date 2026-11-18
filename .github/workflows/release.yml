@@ -1,0 +1,128 @@
+# Release (08-operations.md section 3): tag vX.Y.Z -> full tests, build amd64 + arm64, sign, verify, publish.
+# The signing key lives ONLY in the protected 'release' environment (required reviewers). It is written to a
+# 0600 file in RUNNER_TEMP outside the checkout, used once, destroyed, and never printed (SR-10).
+# Least privilege: the workflow default is contents: read; only the publish job has contents: write.
+name: release
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_NO_PROGRESS: "1"
+  EXP_PACKAGE_STRICT: "1"   # every component must build; a skipped component fails the release
+
+jobs:
+  test:
+    name: full tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - run: packaging/ci-venv.sh 3.10
+      - run: make lint
+      - run: make test
+      - name: manager
+        working-directory: manager
+        run: npm ci --ignore-scripts && npm run typecheck && npm test
+      - name: manager/ui
+        working-directory: manager/ui
+        run: npm ci --ignore-scripts && npm run build && npm test
+      - run: packaging/fetch-vendor.sh
+      - name: Packaging tests (incl. systemd-container installs of freshly built tarballs)
+        run: .venv/bin/python -m pytest test/package -q -ra
+
+  build-sign:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release   # required reviewers; holds EXP_RELEASE_KEY
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Check tag matches VERSION
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_REF_NAME}" = "v$(cat VERSION)" ] || { echo "tag ${GITHUB_REF_NAME} != v$(cat VERSION)" >&2; exit 1; }
+      - name: Fetch vendored dependencies (sha256-verified against packaging/vendor.lock)
+        run: packaging/fetch-vendor.sh
+      - name: Build (all components; collector for amd64 and arm64), sign, verify
+        env:
+          EXP_RELEASE_KEY_PEM: ${{ secrets.EXP_RELEASE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [ -n "$EXP_RELEASE_KEY_PEM" ] || { echo "EXP_RELEASE_KEY is not set in the 'release' environment" >&2; exit 1; }
+          keyfile="$RUNNER_TEMP/release-key.pem"
+          printf '%s\n' "$EXP_RELEASE_KEY_PEM" > "$keyfile"
+          trap 'shred -u "$keyfile" 2>/dev/null || rm -f "$keyfile"' EXIT
+          export EXP_RELEASE_KEY="$keyfile" EXP_DIST_DIR="$RUNNER_TEMP/dist"
+          packaging/build.sh --release "$(cat VERSION)"
+          packaging/verify-release.sh "$EXP_DIST_DIR" packaging/keys/release-pub.pem
+          mkdir -p dist-out && cp "$EXP_DIST_DIR"/* dist-out/
+          ls -l dist-out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dist
+          path: dist-out/
+          if-no-files-found: error
+
+  verify-install:
+    # Independent of the signing job: re-verify the signature with the public key committed in the repo and
+    # install the signed tarballs into systemd containers.
+    needs: build-sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: packaging/ci-venv.sh 3.10
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-dist
+          path: dist
+      - run: packaging/verify-release.sh dist packaging/keys/release-pub.pem
+      - name: Install the signed tarballs in systemd containers
+        run: EXP_DIST_DIR="$PWD/dist" .venv/bin/python -m pytest test/package/test_install.py -q -ra -m harness
+
+  publish:
+    needs: verify-install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write   # create the GitHub Release; no other job has this
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-dist
+          path: dist
+      - name: Publish GitHub Release (artifacts + manifest + signature)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls dist/*.sig dist/*manifest.json >/dev/null
+          gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" \
+            --title "exp ${GITHUB_REF_NAME}" \
+            --notes "See CHANGELOG.md. Verify with packaging/verify-release.sh and packaging/keys/release-pub.pem."

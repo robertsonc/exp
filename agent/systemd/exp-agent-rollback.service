@@ -1,0 +1,15 @@
+[Unit]
+Description=exp agent update rollback check
+Documentation=https://github.com/example-org/exp/blob/main/docs/spec/06-agent.md
+# Only meaningful while a self-update is waiting for confirmation (the marker is written by the agent).
+ConditionPathExists=/var/lib/exp/agent/pending.json
+
+[Service]
+Type=oneshot
+# Runs from the PREVIOUS agent tree: a broken new version cannot prevent its own rollback.
+ExecStart=/opt/exp/agent/previous/bin/exp-agent rollback-check --config /etc/exp/agent.json
+User=root
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadWritePaths=/opt/exp /etc/exp /var/lib/exp /run/exp

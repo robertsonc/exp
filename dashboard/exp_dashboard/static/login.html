@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Sign in</title>
+<link rel="stylesheet" href="/vendor/ui/tokens.css">
+<link rel="stylesheet" href="/vendor/ui/base.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/login.css">
+</head>
+<body>
+<main class="card">
+  <h1>@@TITLE@@</h1>
+  <form method="post" action="/auth/login" autocomplete="on">
+    <p class="error" role="alert">@@ERROR@@</p>
+    <div class="field"><label for="u">Username</label>
+    <input id="u" name="username" type="text" autocomplete="username" required maxlength="128"></div>
+    <div class="field"><label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required maxlength="1024"></div>
+    <button class="btn btn-primary" type="submit">Sign in</button>
+  </form>
+</main>
+</body>
+</html>

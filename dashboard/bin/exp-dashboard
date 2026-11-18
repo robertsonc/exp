@@ -1,0 +1,17 @@
+#!/usr/bin/python3
+"""exp-dashboard entry point. Works from a release tarball (bin/ + lib/ + vendor/) and from the dev tree."""
+import os
+import sys
+
+_here = os.path.dirname(os.path.realpath(__file__))
+_lib = os.path.join(_here, "..", "lib")
+if os.path.isdir(_lib):
+    sys.path[:0] = [os.path.normpath(_lib), os.path.normpath(os.path.join(_here, "..", "vendor"))]
+else:
+    _repo = os.path.dirname(os.path.dirname(_here))
+    sys.path[:0] = [os.path.join(_repo, "dashboard"), os.path.join(_repo, "shared", "python")]
+
+from exp_dashboard.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

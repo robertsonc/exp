@@ -1,0 +1,17 @@
+#!/usr/bin/python3
+"""exp-probe entry point. Works in the release tarball (bin/ + lib/ + vendor/) and in the dev tree."""
+import os
+import sys
+
+_here = os.path.dirname(os.path.realpath(__file__))
+_lib = os.path.join(_here, "..", "lib")
+if os.path.isdir(_lib):                                     # tarball layout
+    sys.path[:0] = [os.path.normpath(_lib), os.path.normpath(os.path.join(_here, "..", "vendor"))]
+else:                                                       # dev tree: <repo>/probe/bin
+    _probe = os.path.normpath(os.path.join(_here, ".."))
+    sys.path[:0] = [_probe, os.path.normpath(os.path.join(_probe, "..", "shared", "python"))]
+
+from exp_probe.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main(entry=os.path.realpath(__file__)))
