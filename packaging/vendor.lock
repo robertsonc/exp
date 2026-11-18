@@ -1,74 +1,75 @@
 {
-  "schema": "exp.vendor.lock/1",
-  "comment": "Every vendored artifact is pinned by version AND sha256 (SR-11). Item 'sha256' is the CANONICAL hash of the file used: the wheel, or the binary inside the upstream release archive (checked against upstream's published *_checksums.txt; the archive itself is pinned as 'archive_sha256'). Sources are tried in order; unreachable sources fall through, but a sha256 MISMATCH always aborts. The docker-image source exists for hosts that cannot reach GitHub; the image's binary is a different build and carries its own pin ('sha256' on the source): it is NON-CANONICAL and only usable with EXP_ALLOW_FALLBACK_VENDOR=1 (never for official releases). See packaging/README.md.",
-  "items": [
+ "schema": "exp.vendor.lock/1",
+ "comment": "Every vendored artifact is pinned by version AND sha256 (SR-11). Item 'sha256' is the CANONICAL hash of the file used: the wheel, or the binary inside the upstream release archive (checked against upstream's published *_checksums.txt; the archive itself is pinned as 'archive_sha256'). Sources are tried in order; unreachable sources fall through, but a sha256 MISMATCH always aborts. The docker-image source exists for hosts that cannot reach GitHub; the image's binary is a different build and carries its own pin ('sha256' on the source): it is NON-CANONICAL and only usable with EXP_ALLOW_FALLBACK_VENDOR=1 (never for official releases). See packaging/README.md.",
+ "items": [
+  {
+   "name": "dnspython",
+   "version": "2.9.2",
+   "kind": "wheel",
+   "component": "probe",
+   "arch": "noarch",
+   "file": "dnspython-2.9.2-py3-none-any.whl",
+   "sha256": "af15f7d385a6ae2fb35a796fde2138004c8c42c7389090e2addc83e3b3340fd8",
+   "license": "ISC",
+   "sources": [
     {
-      "name": "dnspython",
-      "version": "2.7.0",
-      "kind": "wheel",
-      "component": "probe",
-      "arch": "noarch",
-      "file": "dnspython-2.7.0-py3-none-any.whl",
-      "sha256": "b4c34b7d10b51bcc3a5071e7b8dee77939f1e878477eeecc965e9835f63c6c86",
-      "license": "ISC",
-      "sources": [
-        {
-          "type": "url",
-          "url": "https://files.pythonhosted.org/packages/68/1b/e0a87d256e40e8c888847551b20a017a6b98139178505dc7ffb96f04e954/dnspython-2.7.0-py3-none-any.whl"
-        }
-      ]
-    },
-    {
-      "name": "victoria-metrics",
-      "version": "v1.106.1",
-      "kind": "binary",
-      "component": "collector",
-      "arch": "amd64",
-      "file": "victoria-metrics-prod",
-      "install_as": "victoria-metrics",
-      "sha256": "f459722b9fb9473c9f377f465a0b75ef8b3309089fd8b454a083907399dd6413",
-      "license": "Apache-2.0",
-      "sources": [
-        {
-          "type": "url",
-          "url": "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.106.1/victoria-metrics-linux-amd64-v1.106.1.tar.gz",
-          "extract": "victoria-metrics-prod",
-          "archive_sha256": "f8b9473446e0283e1a7959755ec3adee85a49161d07020410c2a0b893fd226ef"
-        },
-        {
-          "type": "docker",
-          "image": "victoriametrics/victoria-metrics:v1.106.1@sha256:4f0a1e7175ba1835c6da1dd9debea2d6952d3349ea1ab86f2ee2915b0560c19b",
-          "platform": "linux/amd64",
-          "path": "/victoria-metrics-prod",
-          "sha256": "26be614890005bda4176674e4481fecdb4f055ad9c635eb813e2272480fb6b67"
-        }
-      ]
-    },
-    {
-      "name": "victoria-metrics",
-      "version": "v1.106.1",
-      "kind": "binary",
-      "component": "collector",
-      "arch": "arm64",
-      "file": "victoria-metrics-prod",
-      "install_as": "victoria-metrics",
-      "sha256": "2dc6b5e200ab99e52646b5a3b8cd554f88dbaf3161b3139a0085781f6f37350b",
-      "license": "Apache-2.0",
-      "sources": [
-        {
-          "type": "url",
-          "url": "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.106.1/victoria-metrics-linux-arm64-v1.106.1.tar.gz",
-          "extract": "victoria-metrics-prod",
-          "archive_sha256": "42c7bc1fb0f28399743d85202472b88649e552ba5eb3984a12f52f859f51d9b2"
-        },
-        {
-          "type": "docker",
-          "image": "victoriametrics/victoria-metrics:v1.106.1@sha256:f0b824bbd6e75224597c8303ecd47c4b5e252cddd8767ee2c4f7242cb8319087",
-          "platform": "linux/arm64",
-          "path": "/victoria-metrics-prod",
-          "sha256": "4b468a6efe9066cd2233468a9eb59fe36bc2ecb2e9b81322a4e8788d3dd57f70"
-        }
-      ]
+     "type": "url",
+     "url": "https://files.pythonhosted.org/packages/1e/0c/5346358b3a20275d256978c35203ddc2c8617f78c1b23795b79ba22ced6d/dnspython-2.9.2-py3-none-any.whl"
     }
-  ]
+   ],
+   "note": "2.9.x declares requires_python>=3.11 (upstream dropped 3.10 after its Oct 2026 EOL) but is pure Python; exp still supports Ubuntu 22.04 (python3.10, SPEC D7). 2.9.2 is vendored on 3.10 deliberately because it fixes GHSA-45c3-73f7-pv4m (crafted DNS reply -> CPU DoS in name decompression; reachable: the probe parses replies from resolvers on the untrusted event LAN). Guarded by the probe suite and an import-every-module smoke test on Python 3.10 in CI (packaging/tests via test/package). Revisit when 22.04 support ends."
+  },
+  {
+   "name": "victoria-metrics",
+   "version": "v1.106.1",
+   "kind": "binary",
+   "component": "collector",
+   "arch": "amd64",
+   "file": "victoria-metrics-prod",
+   "install_as": "victoria-metrics",
+   "sha256": "f459722b9fb9473c9f377f465a0b75ef8b3309089fd8b454a083907399dd6413",
+   "license": "Apache-2.0",
+   "sources": [
+    {
+     "type": "url",
+     "url": "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.106.1/victoria-metrics-linux-amd64-v1.106.1.tar.gz",
+     "extract": "victoria-metrics-prod",
+     "archive_sha256": "f8b9473446e0283e1a7959755ec3adee85a49161d07020410c2a0b893fd226ef"
+    },
+    {
+     "type": "docker",
+     "image": "victoriametrics/victoria-metrics:v1.106.1@sha256:4f0a1e7175ba1835c6da1dd9debea2d6952d3349ea1ab86f2ee2915b0560c19b",
+     "platform": "linux/amd64",
+     "path": "/victoria-metrics-prod",
+     "sha256": "26be614890005bda4176674e4481fecdb4f055ad9c635eb813e2272480fb6b67"
+    }
+   ]
+  },
+  {
+   "name": "victoria-metrics",
+   "version": "v1.106.1",
+   "kind": "binary",
+   "component": "collector",
+   "arch": "arm64",
+   "file": "victoria-metrics-prod",
+   "install_as": "victoria-metrics",
+   "sha256": "2dc6b5e200ab99e52646b5a3b8cd554f88dbaf3161b3139a0085781f6f37350b",
+   "license": "Apache-2.0",
+   "sources": [
+    {
+     "type": "url",
+     "url": "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.106.1/victoria-metrics-linux-arm64-v1.106.1.tar.gz",
+     "extract": "victoria-metrics-prod",
+     "archive_sha256": "42c7bc1fb0f28399743d85202472b88649e552ba5eb3984a12f52f859f51d9b2"
+    },
+    {
+     "type": "docker",
+     "image": "victoriametrics/victoria-metrics:v1.106.1@sha256:f0b824bbd6e75224597c8303ecd47c4b5e252cddd8767ee2c4f7242cb8319087",
+     "platform": "linux/arm64",
+     "path": "/victoria-metrics-prod",
+     "sha256": "4b468a6efe9066cd2233468a9eb59fe36bc2ecb2e9b81322a4e8788d3dd57f70"
+    }
+   ]
+  }
+ ]
 }

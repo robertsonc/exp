@@ -134,7 +134,7 @@ def test_03_rerun_without_token_repairs_idempotently(world, host, st):
     r = run_install(host, world)
     assert r.rc == 0, r
     listing = host.run("ls -A /opt/exp/agent").out.split()
-    assert sorted(listing) == ["0.1.0", "current"], listing
+    assert sorted(listing) == ["0.1.0", "current", "rollback-check"], listing
     assert not host.exists("/opt/exp/agent/.staging-*")
     assert sha(host, "/etc/exp/agent.json") == before
     reports_grow(world, st.hid)

@@ -172,8 +172,10 @@ exactly three single-quoted literals once each, after validating them (refuse to
 
 **Unit layout.** `exp-agent.service` runs `/opt/exp/agent/current/bin/exp-agent run --config /etc/exp/agent.json`.
 Self-update keeps `/opt/exp/agent/previous` (symlink) and `/var/lib/exp/agent/pending.json`;
-`exp-agent-rollback.service` runs the **previous** tree's `exp-agent rollback-check` under
-`ConditionPathExists=/var/lib/exp/agent/pending.json`, so a broken new agent cannot block its own rollback.
+`exp-agent-rollback.service` runs `/opt/exp/agent/rollback-check`, a small version-independent, stdlib-only
+checker installed by `install.sh` and refreshed by every self-update (it imports nothing from either agent tree), so
+a broken new agent cannot block its own rollback and the unit verifies on a fresh install where no previous tree exists.
+With no pending marker, an unexpired window, or no previous tree it exits 0 and does nothing.
 `install.sh` creates `/opt/exp` and `/etc/exp` before the first start.
 
 ## 9. Acceptance tests (WP-6 definition of done)

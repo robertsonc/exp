@@ -66,7 +66,7 @@ environment-protected secret written to `$RUNNER_TEMP` (see `.github/workflows/r
 
 `vendor.lock` pins, per item, a **version and the sha256 of the file that is used**:
 
-* `dnspython 2.7.0` pure-Python wheel from PyPI (probe) → unpacked into `vendor/`.
+* `dnspython 2.9.2` pure-Python wheel from PyPI (probe) → unpacked into `vendor/`. 2.9.x declares Python ≥ 3.11; it is vendored on 3.10 (Ubuntu 22.04) on purpose to fix GHSA-45c3-73f7-pv4m, guarded by a 3.10 import smoke test — see the note in `vendor.lock`.
 * `VictoriaMetrics v1.106.1` `victoria-metrics-prod` for linux/amd64 and linux/arm64 (collector).
   The canonical `sha256` is the binary inside the **upstream GitHub release archive**
   (`victoria-metrics-linux-<arch>-v1.106.1.tar.gz`; the archive hash is pinned too as `archive_sha256`);

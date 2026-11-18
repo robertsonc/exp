@@ -438,8 +438,8 @@ def test_real_vendor_lock_is_well_formed():
     lock = vendor.load_lock(PKG / "vendor.lock")
     by = {(i["name"], i["arch"]): i for i in lock["items"]}
     dns = by[("dnspython", "noarch")]
-    assert dns["version"] == "2.7.0" and dns["component"] == "probe" and dns["kind"] == "wheel"
-    assert dns["sha256"] == "b4c34b7d10b51bcc3a5071e7b8dee77939f1e878477eeecc965e9835f63c6c86"
+    assert dns["version"] == "2.9.2" and dns["component"] == "probe" and dns["kind"] == "wheel"
+    assert dns["sha256"] == "af15f7d385a6ae2fb35a796fde2138004c8c42c7389090e2addc83e3b3340fd8"
     for arch in ("amd64", "arm64"):
         vm = by[("victoria-metrics", arch)]
         assert vm["version"] == "v1.106.1" and vm["component"] == "collector"
