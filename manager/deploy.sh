@@ -17,6 +17,10 @@
 #   --keep-workers-dev                 leave the *.workers.dev route enabled after the smoke tests
 #   --adopt-access-apps                allow taking over an EXISTING Access app for the host that this script did not create
 #                                      (default: refuse). An app named like ours but protecting another host is never repointed.
+#   --embed-ui                         bundle the built admin UI (ui/dist) INTO the Worker script and serve it from the Worker; the
+#                                      generated config has NO [assets] section / ASSETS binding. For environments where wrangler's
+#                                      Static Assets upload fails (a proxy that rewrites Authorization). Same headers, Access still
+#                                      protects the UI. Default: Static Assets binding. Safe to switch either way on re-runs.
 #   --dry-run                          print every API call and wrangler command; execute nothing, contact nothing
 #
 # Steps: (1) D1 + R2 (reuse or create), generated wrangler config; (2) migrations; (3) Cloudflare Access (app, owner
@@ -45,6 +49,7 @@ RELEASES_REPO="${RELEASES_REPO:-}"
 KEEP_WORKERS_DEV=0
 ADOPT_ACCESS_APPS=0
 DRY=0
+EMBED_UI=0
 DEPLOY_DIR="$HERE/.deploy"
 GEN="$DEPLOY_DIR/wrangler.generated.toml"
 
@@ -69,6 +74,7 @@ while [ $# -gt 0 ]; do
     --releases-repo) RELEASES_REPO="${2:?--releases-repo needs owner/repo}"; shift 2 ;;
     --keep-workers-dev) KEEP_WORKERS_DEV=1; shift ;;
     --adopt-access-apps) ADOPT_ACCESS_APPS=1; shift ;;
+    --embed-ui) EMBED_UI=1; shift ;;
     --dry-run) DRY=1; shift ;;
     --api-token|--token|--cloudflare-api-token) die "the API token is read from CLOUDFLARE_API_TOKEN only (a flag would leak it into shell history and ps)" ;;
     -h|--help) usage; exit 0 ;;
@@ -172,7 +178,7 @@ if [ -n "$DOMAIN" ]; then HOST="$DOMAIN"; else
   warn "no --domain: deploying to $HOST. A custom domain on a Cloudflare zone is strongly recommended (Access, enforcement test)."
 fi
 BASE="https://$HOST"
-log "plan: worker=$WORKER_NAME host=$HOST owner=$OWNER_EMAIL d1=$D1_NAME r2=$R2_BUCKET dry_run=$DRY"
+log "plan: worker=$WORKER_NAME host=$HOST owner=$OWNER_EMAIL d1=$D1_NAME r2=$R2_BUCKET dry_run=$DRY ui=$([ "$EMBED_UI" = 1 ] && echo embedded-in-worker || echo static-assets)"
 
 # ---- 1. D1 database and R2 bucket ---------------------------------------------------------------------------
 d1_id() {
@@ -221,7 +227,7 @@ custom_domain = true
 "; fi
   V_AUD="$(tq "$aud")" V_TEAM="$(tq "$team")" V_OWNER="$(tq "$OWNER_EMAIL")" V_ORG="$(tq "$ORG_NAME")" \
   V_PEM="$(tq "$RELEASE_PUBKEY_PEM")" V_REPO="$(tq "$RELEASES_REPO")" V_URL="$(tq "$BASE")" \
-  V_NAME="$(tq "$WORKER_NAME")" V_DB="$(tq "$D1_NAME")" V_DBID="$(tq "$D1_ID")" V_BUCKET="$(tq "$R2_BUCKET")" V_ROUTES="$routes" \
+  V_EMBED="$EMBED_UI" V_NAME="$(tq "$WORKER_NAME")" V_DB="$(tq "$D1_NAME")" V_DBID="$(tq "$D1_ID")" V_BUCKET="$(tq "$R2_BUCKET")" V_ROUTES="$routes" \
   awk '
     function reroot(line,   k, v) { # key = "path"  ->  key = "../path"
       k = line; sub(/ *=.*/, "", k); v = line; sub(/^[^=]*= *"/, "", v); sub(/".*$/, "", v); sub(/^\.\//, "", v)
@@ -231,7 +237,7 @@ custom_domain = true
     /^\[/ {
       if (!extras) { print "workers_dev = true  # enabled for the post-deploy smoke tests; deploy.sh disables it afterwards"; print ""; extras = 1 }
       section = $0
-      if (section == "[vars]") { skip = 1; next } else { skip = 0 }
+      if (section == "[vars]" || (section == "[assets]" && ENVIRON["V_EMBED"] == "1")) { skip = 1; next } else { skip = 0 }
       print; next
     }
     skip { next }
@@ -387,7 +393,11 @@ render_config "$ACCESS_AUD" "$TEAM_DOMAIN"
 if [ "$DRY" = 1 ]; then
   plan "(cd $HERE && npm ci)   (only when node_modules is missing)"
   [ ! -f "$HERE/ui/package.json" ] || plan "(cd $HERE/ui && npm ci && npm run build)"
-  plan "node scripts/prepare.mjs   (bundles agent/install/install.sh)"
+  if [ "$EMBED_UI" = 1 ]; then
+    plan "EXP_EMBED_UI=1 node scripts/prepare.mjs   (bundles agent/install/install.sh AND ui/dist into the Worker; no [assets] binding)"
+  else
+    plan "node scripts/prepare.mjs   (bundles agent/install/install.sh)"
+  fi
   plan "wrangler deploy -c $GEN"
 else
   [ -d "$HERE/node_modules" ] || { log "installing dependencies"; npm ci --no-audit --no-fund; }
@@ -396,7 +406,11 @@ else
     (cd "$HERE/ui" && npm ci --no-audit --no-fund && npm run build) || die "the UI build failed"
   fi
   [ -d "$HERE/ui/dist" ] || die "ui/dist does not exist: the admin UI must be built (manager/ui) before deploying"
-  node "$HERE/scripts/prepare.mjs" >&2
+  if [ "$EMBED_UI" = 1 ]; then
+    EXP_EMBED_UI=1 node "$HERE/scripts/prepare.mjs" >&2 || die "embedding the admin UI failed"
+  else
+    node "$HERE/scripts/prepare.mjs" >&2
+  fi
   "${WR[@]}" deploy -c "$GEN" </dev/null >&2 || die "wrangler deploy failed"
 fi
 

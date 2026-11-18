@@ -1,6 +1,6 @@
 // exp-manager Worker entry. Routes: /api/admin/v1/* (Access JWT verified here), /api/agent/v1/*
 // (per-agent bearer), /install.sh and /healthz (public). Everything else is served by the Static
-// Assets binding (the admin SPA) via the not-found fallthrough.
+// Assets binding (the admin SPA) via the not-found fallthrough, or from the embedded copy (--embed-ui).
 import { Hono } from "hono";
 import { adminRoutes } from "./admin/routes";
 import { agentRoutes } from "./agent/routes";
@@ -8,6 +8,8 @@ import { runScheduled } from "./cron";
 import type { AppBindings, Env } from "./env";
 import { ApiError, ConfigError, errorResponse, notFound } from "./errors";
 import { renderInstallSh } from "./install/install";
+import { UI_ASSETS, UI_HEADERS } from "../.generated/ui-assets";
+import { serveEmbedded } from "./ui/embedded";
 
 export const app = new Hono<AppBindings>();
 
@@ -35,8 +37,10 @@ app.route("/api/agent/v1", agentRoutes);
 app.notFound(async (c) => {
   const p = new URL(c.req.url).pathname;
   // anything outside the API is the SPA (served from static assets); the API itself answers 404 JSON
-  if (!p.startsWith("/api/") && p !== "/install.sh" && p !== "/healthz" && c.env.ASSETS) {
-    return c.env.ASSETS.fetch(c.req.raw);
+  if (!p.startsWith("/api/") && p !== "/install.sh" && p !== "/healthz") {
+    if (c.env.ASSETS) return c.env.ASSETS.fetch(c.req.raw);
+    // deploy.sh --embed-ui: no ASSETS binding, the UI is bundled into the script (empty map in the default build)
+    if (Object.keys(UI_ASSETS).length > 0) return serveEmbedded(c.req.raw, UI_ASSETS, UI_HEADERS);
   }
   return errorResponse(notFound("no such path"));
 });
