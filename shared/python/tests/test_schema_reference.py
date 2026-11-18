@@ -1,9 +1,9 @@
-"""Tests for the measurement schema. Run: python3 shared/test_exp_schema.py  (or pytest)."""
+"""Tests for the measurement schema. Run: python3 shared/python/tests/test_schema_reference.py  (or pytest)."""
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
-from exp_schema import Measurement, measure  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from exp_common.schema import Measurement, measure  # noqa: E402
 
 
 def test_happy_path_and_series():
