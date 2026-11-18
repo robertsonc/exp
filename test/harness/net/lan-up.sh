@@ -64,8 +64,8 @@ for ip in $TARGET_IPS; do
     ns isp ip addr add "$ip/32" dev lo
     ip route add "$ip/32" via 10.255.3.2
 done
-# the edge NATs the event LAN (an EC / firewall does in real life): the ISP only ever sees 10.255.2.1
-ns edge iptables -w -t nat -A POSTROUTING -s 10.1.0.0/24 -o edge-up -j MASQUERADE
+# the edge NATs everything behind it (an EC / firewall does in real life): the ISP only ever sees 10.255.2.1
+ns edge iptables -w -t nat -A POSTROUTING -s 10.0.0.0/8 -o edge-up -j MASQUERADE
 
 # --- fault chains (the fault API, lanctl, fills them; empty = no fault)
 for c in EXP_FAULT_IN EXP_FAULT_FWD; do ns gw iptables -w -N "$c"; done

@@ -71,7 +71,7 @@ start_host() {          # name last-octet nports idx
     local pid i
     pid=$(docker inspect -f '{{.State.Pid}}' "$c")
     for ((i = 0; i < nports; i++)); do
-        docker exec "$NETC" lanctl plug "$name-tp$i" --pid "$pid" --ifname "tp$i" \
+        docker exec "$NETC" /opt/lan/lanctl plug "$name-tp$i" --pid "$pid" --ifname "tp$i" \
             --mac "$(printf '02:ee:%02x:00:00:%02x' "$idx" "$i")"
     done
 }
@@ -82,7 +82,9 @@ cmd_up() {
     layout_hosts "$layout" >/dev/null
     cmd_down >/dev/null 2>&1 || true
     ensure_images
-    docker network create --internal --subnet "$SUBNET" --gateway "$BASE.1" "$MGMT" >/dev/null
+    # not --internal: docker drops (br_netfilter) anything leaving an internal network for a non-local destination,
+    # which would block the management path to the simulated internet; masquerade off = no NAT to the real one
+    docker network create -o com.docker.network.bridge.enable_ip_masquerade=false --subnet "$SUBNET" --gateway "$BASE.1" "$MGMT" >/dev/null
     docker run -d --name "$NETC" --hostname "$NETC" --privileged --pid=host --network "$MGMT" --ip "$NET_IP" \
         -v "$HERE/net:/opt/lan:ro" "$NET_IMG" >/dev/null
     for _ in $(seq 120); do
@@ -125,6 +127,6 @@ case "${1:-}" in
     down)   cmd_down ;;
     status) cmd_status ;;
     shell)  shift; cmd_shell "${1:-}" ;;
-    lanctl) shift; exec docker exec "$NETC" lanctl "$@" ;;
+    lanctl) shift; exec docker exec "$NETC" /opt/lan/lanctl "$@" ;;
     *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

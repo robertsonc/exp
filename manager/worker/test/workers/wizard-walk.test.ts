@@ -77,3 +77,16 @@ describe("wizard sequence", () => {
     expect(c.component_id).toBeTruthy();
   });
 });
+
+describe("GET /desired (CR-wp4-desired-404)", () => {
+  it("answers 404 not_found, not 503, while no desired document has been compiled for the host", async () => {
+    const h = await enrolHost("hall-b", "h-x");
+    await env.DB.prepare("DELETE FROM desired_docs WHERE host_id = ?1").bind(h.host_id).run();
+    await env.DB.prepare("UPDATE hosts SET desired_version = NULL, desired_hash = NULL WHERE host_id = ?1").bind(h.host_id).run();
+    // compile yields nothing for a host in state `pending` (and nothing may be invented): 404, so the agent retries next poll
+    await env.DB.prepare("UPDATE hosts SET state = 'pending' WHERE host_id = ?1").bind(h.host_id).run();
+    const r = await getDesired(h.secret);
+    expect(r.status).toBe(404);
+    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("not_found");
+  });
+});
