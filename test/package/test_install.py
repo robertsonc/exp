@@ -149,7 +149,8 @@ def install(host: str, tar: Path, component: str) -> dict:
             "@RUN@": "/run/exp/%s" % component}
     sed = " ".join("-e 's|%s|%s|g'" % (k, v) for k, v in subs.items())
     r = inc(host, "set -e; for u in %s/systemd/exp-*.service %s/systemd/exp-*.timer; do [ -e \"$u\" ] || continue; "
-                  "sed %s \"$u\" > /etc/systemd/system/$(basename \"$u\"); done; "
+                  "sed %s \"$u\" > /etc/systemd/system/$(basename \"$u\"); "
+                  "chmod 0644 /etc/systemd/system/$(basename \"$u\"); done; "
                   "grep -l '@[A-Z]*@' /etc/systemd/system/exp-* 2>/dev/null && exit 3; "
                   "systemctl daemon-reload" % (prefix, prefix, sed))
     assert r.returncode == 0, "unit render/daemon-reload failed (rc=%s): %s%s" % (r.returncode, r.stdout, r.stderr)
@@ -159,6 +160,16 @@ def install(host: str, tar: Path, component: str) -> dict:
                   "id -u $ug >/dev/null 2>&1 || useradd --system --no-create-home --gid $ug "
                   "-s /usr/sbin/nologin $ug; done" % prefix)
     assert r.returncode == 0, r.stderr
+    # 01-contracts.md section 11 host layout: /opt/exp/<c>/current -> the active version, /usr/local/bin/exp-<c> -> current
+    r = inc(host, "set -e; ln -sfn %s /opt/exp/%s/current; ln -sfn /opt/exp/%s/current/bin/exp-%s /usr/local/bin/exp-%s"
+            % (version, component, component, component, component))
+    assert r.returncode == 0, "current/bin links failed: %s" % r.stderr
+    if component == "agent":
+        # What agent/install/install.sh does besides unpacking: install the version-independent rollback checker
+        # that exp-agent-rollback.service runs (06-agent.md section 7), beside the versioned trees.
+        r = inc(host, "install -m 0755 -o root -g root -- %s/lib/exp_agent/rollback_check.py /opt/exp/agent/rollback-check"
+                % prefix)
+        assert r.returncode == 0, "installing the rollback checker failed: %s" % r.stderr
     provision(host, component, prefix)
     return {"version": version, "prefix": prefix, "top": top}
 
@@ -231,7 +242,9 @@ def test_install_and_run(component, host, dist, tmp_path, health_validator):
         pytest.fail("health --json printed no JSON (rc=%s): stdout=%r stderr=%r" % (r.returncode, r.stdout[:300], r.stderr[:300]))
     errs = sorted(health_validator.iter_errors(doc), key=lambda e: list(e.path))
     assert not errs, "not valid exp.health/1: %s" % "; ".join(e.message for e in errs[:5])
-    assert (r.returncode == 0) == (doc["status"] == "ok"), "exit code %s disagrees with status %s" % (r.returncode, doc["status"])
+    # health exit convention (01-contracts.md section 8.1, CR-wp1-health-exit): exit 0 for ok AND degraded, 1 only for fail
+    assert (r.returncode == 0) == (doc["status"] in ("ok", "degraded")), \
+        "exit code %s disagrees with status %s" % (r.returncode, doc["status"])
 
     # units
     r = inc(host, "ls /etc/systemd/system/exp-* 2>/dev/null")
