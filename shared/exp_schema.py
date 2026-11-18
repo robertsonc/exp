@@ -21,7 +21,7 @@ OUTCOMES = ("ok", "degraded", "fail", "error")
 TESTS = ("gateway", "dhcp", "dns", "app", "throughput", "heartbeat")
 
 _SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")          # probe / site ids
-_NAME = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*\Z")            # metric / label names (VM-safe)
+_NAME = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]{0,63}\Z")       # metric / label / test names (VM-safe, ≤64)
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")                     # control chars, rejected in free text
 
 # Probe input is untrusted. These labels are set by the trusted base in series() and must never
@@ -40,7 +40,34 @@ def utcnow() -> str:
 
 
 def iso_to_ms(ts: str) -> int:
-    return int(datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp() * 1000)
+    """Parse a tz-aware ISO-8601 string to epoch ms. Raises ValueError on bad input:
+    non-string, unparseable, naive (no timezone), or out of representable range."""
+    if not isinstance(ts, str):
+        raise ValueError(f"ts must be a string, got {type(ts).__name__}")
+    try:
+        dt = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"ts is not ISO-8601: {ts!r}") from exc
+    if dt.tzinfo is None:
+        raise ValueError(f"ts must include a timezone offset (naive timestamps rejected): {ts!r}")
+    try:
+        return int(dt.timestamp() * 1000)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValueError(f"ts out of representable range: {ts!r}") from exc
+
+
+def _as_finite_float(v: Any, what: str) -> float:
+    """A finite float, or ValueError. Rejects bool/non-number, NaN/inf, and ints so large
+    that converting to float would overflow (a fail-late DoS at series() time)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise ValueError(f"{what} must be a number, got {type(v).__name__}")
+    try:
+        fv = float(v)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{what} is out of range") from exc
+    if not math.isfinite(fv):
+        raise ValueError(f"{what} must be finite, got {v!r}")
+    return fv
 
 
 @dataclasses.dataclass
@@ -70,9 +97,8 @@ class Measurement:
             raise ValueError(f"too many metrics (>{MAX_METRICS})")
         for k, v in self.metrics.items():
             if not _NAME.match(k):
-                raise ValueError(f"metric name {k!r} is not a valid series name")
-            if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
-                raise ValueError(f"metric {k} must be a finite number, got {v!r}")
+                raise ValueError(f"metric name {k!r} is not a valid series name (≤64 chars)")
+            _as_finite_float(v, f"metric {k!r}")
         # target can become a series label, so treat it as untrusted free text
         if not isinstance(self.target, str):
             raise ValueError("target must be a string")
@@ -94,21 +120,14 @@ class Measurement:
                 raise ValueError(f"label {k!r} value exceeds {MAX_LABEL_LEN} characters")
             if _CTRL.search(v):
                 raise ValueError(f"label {k!r} value contains control characters")
-        if self.duration_ms is not None and (
-                not isinstance(self.duration_ms, (int, float)) or isinstance(self.duration_ms, bool)
-                or not math.isfinite(self.duration_ms)):
-            raise ValueError("duration_ms must be a finite number or None")
-        # ts: fill when empty, else require a parseable ISO-8601 string (fail here, not later in
-        # series()). Clock-skew bounding is the collector's job — probes backfill old spool records.
+        if self.duration_ms is not None:
+            _as_finite_float(self.duration_ms, "duration_ms")
+        # ts: fill when empty, else require a parseable, tz-aware ISO-8601 string (fail here, not
+        # later in series()). Clock-skew bounding is the collector's job — probes backfill spool.
         if not self.ts:
             self.ts = utcnow()
-        elif not isinstance(self.ts, str):
-            raise ValueError("ts must be an ISO-8601 string")
         else:
-            try:
-                iso_to_ms(self.ts)
-            except (ValueError, TypeError) as exc:
-                raise ValueError(f"ts is not a valid ISO-8601 timestamp: {self.ts!r}") from exc
+            iso_to_ms(self.ts)
         return self
 
     def to_dict(self) -> dict[str, Any]:

@@ -54,8 +54,10 @@ Probe reports are **untrusted** at the collector. `Measurement.validate()` enfor
 - **Reserved labels** — a probe may not set `probe`, `site`, `outcome`, `target`, or any
   `__`-prefixed key in `labels`; those are set by the trusted base in `series()`. (And `series()`
   applies the trusted labels last, so they win even on an un-validated record.)
-- **Bounds** — ≤ 20 labels, ≤ 50 metrics, label values ≤ 128 chars, `target` ≤ 256 chars; no
-  control characters in `target` or label values; metrics must be finite numbers.
-- **Timestamp** — `ts` must be a parseable ISO-8601 string (validated up front, not at write
-  time). Clock-skew bounding is a **collector** policy, not the schema's — probes legitimately
-  backfill old records from their local spool after an outage.
+- **Bounds** — ≤ 20 labels, ≤ 50 metrics; metric/label/test **names ≤ 64 chars**, label values
+  ≤ 128 chars, `target` ≤ 256 chars; no control characters in `target` or label values.
+- **Numbers** — metric values and `duration_ms` must be finite and representable as a float;
+  giant ints that would overflow on conversion are rejected at `validate()` (not later at write).
+- **Timestamp** — `ts` must be a parseable, **timezone-aware** ISO-8601 string (naive timestamps
+  are rejected so they're never read as local time), validated up front. Clock-skew bounding is a
+  **collector** policy, not the schema's — probes legitimately backfill from their spool after an outage.

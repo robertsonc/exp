@@ -34,6 +34,12 @@ def test_rejections():
     assert _rejected(metrics={f"m{i}": 1.0 for i in range(51)})  # too many metrics
     assert _rejected(labels={"n": 5})                    # non-string label value
     assert _rejected(metrics={"x": float("nan")})        # non-finite metric
+    assert _rejected(metrics={"x": float("inf")})        # infinity
+    assert _rejected(metrics={"x": 10 ** 400})           # giant int → float overflow (fail-late DoS)
+    assert _rejected(metrics={"x" * 65: 1.0})            # over-long metric name
+    assert _rejected(labels={"k" * 65: "v"})             # over-long label key
+    assert _rejected(ts="2026-11-18T00:00:00")           # naive timestamp (no timezone)
+    assert _rejected(duration_ms=10 ** 400)              # giant int duration
     for bad in (("BAD ID", "dns", "ok"), ("p", "dns", "nope"), ("p", "bad test", "ok")):
         try:
             measure(*bad); assert False, bad
