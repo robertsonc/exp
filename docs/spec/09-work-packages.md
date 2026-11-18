@@ -34,7 +34,7 @@ milestones.
 | WP-7 | Packaging, release, CI | `packaging/`, `.github/workflows/`, `test/package/` | M1 (tarballs), M2 (signing/release/CI) |
 | WP-8 | Integration & e2e (integrator) | `test/harness/`, `test/e2e/`, `test/load/` | every milestone gate |
 | WP-9 | Runner: drills & correlation | `runner/`, `test/fakes/orchestrator/` | M5, M6 (correlation connectors, syslog receiver) |
-| WP-10 | Speedtest shape + page | `speedtest/`, `manager/worker/src/speedtest/` (internet-leg routes, by CR with WP-4) | M6 |
+| WP-10 | Speedtest shape + page | `speedtest/` (server, DNS-leg authority, path timer, page) | M6 |
 | WP-11 | Speedtest analytics | collector `speedtests` storage/rules/API (in `collector/exp_collector/speedtest/`), dashboard views (`dashboard/static/speedtest/`), `test/fakes/mist/` | M6 |
 
 ## 3. Dependency graph and waves
@@ -124,11 +124,14 @@ intents) + `test/fakes/orchestrator/` built from the Orchestrator API documentat
 DoD: `10-drills-integrations.md` §8; SR-12/15. M6: `12-speedtest-analytics.md` §5 connectors and
 syslog receiver, fakes built from vendor docs/recordings; A6.4–A6.6; SR-24.
 
-### WP-10 — Speedtest shape + page · size M (M6)
-Scope: `12-speedtest-analytics.md` §3–4, §7.3, §7.5 — server (sessions, tokens, local-leg endpoints
-with `sendfile`, validation, limits/queue/pause), the branded page, the internet-leg Worker routes
-(manager CR), agent unit + fleet-health metrics.
-DoD: A6.1–A6.3, A6.7; SR-21/22/23.
+### WP-10 — Speedtest shape + page · size L (M6)
+Scope: `12-speedtest-analytics.md` §3–4, §7.3, §7.5 — server in the probe target-port namespace
+(sessions, tokens, local-leg endpoints with `sendfile`, validation, limits/slots/pause), the DNS-leg
+authoritative server, the box-side path timer (gateway/edge/edge+1, device ICMP), the self-contained
+page built to `docs/spec/prototypes/speed-check.html` (vendored Cloudflare speed-test library, local
+fonts, CSP hashes), agent unit + fleet-health metrics, and the kit profile (probe + collector +
+runner on one box, stand-alone config).
+DoD: A6.1–A6.3, A6.7, A6.9, A6.10; SR-21/22/23.
 
 ### WP-11 — Speedtest analytics · size M (M6)
 Scope: `12-speedtest-analytics.md` §5.3, §6, §7.4, §8, §9 — collector storage, VM aggregates,

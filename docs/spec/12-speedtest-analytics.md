@@ -24,49 +24,61 @@ Goals
 - G5. Same exp mantra: one more shape (`speedtest`) the manager deploys; no hand configuration.
 
 Non-goals (v1)
-- Native apps or background sensors (Orb App / Orb Sensor equivalents). Web only.
+- **Any app install or cloud deployment.** No native app, no app-store, no Worker or other cloud
+  service of our own: the page is a **self-contained web page served by a dedicated exp box**
+  (a probe + collector host) on the event network, and the internet leg uses Cloudflare's public
+  speed-test endpoints directly from the browser.
+- Background sensors on user devices (Orb Sensor equivalent).
 - Packet-loss measurement in the browser (needs WebRTC/UDP; see §12 future).
-- Public-internet hosting of the page. It is served **on the event network** (see D15).
 
 ## 2. Decision D15
 
-**The speedtest is an on-prem shape with two legs; correlation runs asynchronously in the runner;
-results and evidence stay on-prem.**
-- Served on-prem because the server must see the client's **real LAN IP** (behind any NAT) — the key
-  that joins the test to Wi-Fi, flow, and security data — and because it must keep working when the
-  internet is down (Principle 2).
-- **Local leg** (browser ↔ `exp-speedtest` on the LAN) isolates the Wi-Fi/LAN; **internet leg**
-  (browser ↔ Cloudflare edge, a Worker route of the manager's own account) measures the venue WAN +
-  ISP. The difference between the legs localizes the problem.
-- Correlation is done by the **runner**, which already holds the Mist/Orchestrator credentials and
-  pullers (`10-drills-integrations.md`). It attaches evidence to the test after the fact (≤ 5 min).
+**The speedtest is a self-contained page served by a dedicated exp box — a "speedtest kit" host
+running the probe, collector, and runner shapes — on the attendee network. The browser measures
+the LAN leg to the box, DNS through the device's own resolver, and the internet leg to Cloudflare's
+public speed-test service; the box times the gateway, the edge, and one hop past the edge from the
+same network at the same moment, and gathers all correlation telemetry itself.**
+- **No app, no cloud component of ours.** The kit works stand-alone with a local config (M1-style
+  install from tarballs); when a manager exists it deploys and configures the kit like any host.
+- **Served from a probe port on the attendee VLAN** (a `target`-role port with a static IP and a
+  DNS name, e.g. `speed.<event-domain>`), so the LAN leg is the real access network and the box sees
+  the device's real IP without NAT — the key that joins the test to Wi-Fi, flow, and security data.
+  Multiple VLANs = one target port per VLAN (same page, per-VLAN name or a redirect).
+- **Works with the internet down** (Principle 2): page, LAN leg, DNS and path legs, and the
+  diagnosis all keep working; the internet leg reports "unavailable".
+- Correlation runs on the **same box** (the runner shape, `10-drills-integrations.md`), which holds
+  the Mist/Orchestrator credentials and the syslog receiver.
 
 ## 3. Components and data flow
 
 ```
- attendee phone ──(QR / portal link)──▶ https://speed.<event>/        exp-speedtest (on-prem shape)
-   │  1. GET page, POST /st/api/v1/sessions  (consent, zone)  ─────────▶  issues session + leg tokens
-   │  2. local leg:   down/up/latency ◀─────────────────────────────▶   same host (sendfile / discard)
-   │  3. internet leg: down/up/latency ◀──── Cloudflare Worker /st/* (manager account, token-checked)
-   │  4. POST /st/api/v1/sessions/{id}/result ─────────────────────▶   validates, quick diagnosis
-   │  5. GET /st/r/{id} (poll) ◀── diagnosis + evidence status         → collector ingest (records + VM)
-   │                                                                       │
-   │                                     runner: on new test ◀──────────────┘ (collector API)
-   │                                       Mist client stats · EC flows · syslog/SSE policy hits ·
-   │                                       wired port · nearest probe state  → POST evidence
-   ▼                                       → final diagnosis (rules) → collector → dashboard
- result page shows final diagnosis (≤ 5 min)
+ attendee phone (attendee VLAN) ──QR / portal link──▶ https://speed.<event-domain>/
+   │                                            ┌──────── speedtest kit (one Ubuntu box) ──────────┐
+   │ 1. page (one self-contained file)  ◀───────│ probe target port on the attendee VLAN           │
+   │ 2. LAN leg: ping/down/up  ◀──────────────▶ │   exp-speedtest (page, sessions, LAN endpoints)  │
+   │ 3. DNS leg: fetch https://<nonce>.t.speed… │   tiny authoritative DNS for t.speed.<domain>    │
+   │      (device resolver ─▶ box DNS)  ───────▶│   sees the query: resolver IP, arrival time      │
+   │ 4. path legs (box-timed, same VLAN):       │   gateway · edge · edge+1, idle and while the    │
+   │      shown live on the page  ◀─────────────│   user's test is loading the link                │
+   │ 5. internet leg ──────────────▶ speed.cloudflare.com (public; down/up/latency, colo)          │
+   │ 6. result ─────────────────────────────────▶ collector (records + VM aggregates)             │
+   │ 7. diagnosis, evidence progress  ◀──────── │ runner: Mist · EC flows/WAN · syslog/SSE ·       │
+   │                                            │ nearest probe → evidence → diagnosis rules       │
+   ▼                                            └──────────────────────────────────────────────────┘
+ result page: legs, speeds, "where your time goes", what the network team sees (≤ 5 min)
 ```
 
-- **`exp-speedtest`** (new component type `speedtest`, usually co-located with a collector): serves the
-  page and the local-leg endpoints, issues sessions, validates results, sends them to its collector.
+- **`exp-speedtest`** (component type `speedtest`) runs inside the probe's target-port namespace
+  (like the M4 target servers): serves the page and LAN-leg endpoints, issues sessions, runs the
+  box-side path timer and the DNS-leg authoritative server, validates results, sends them to the
+  collector on the same host.
 - **Collector**: stores tests, evidence, and diagnoses (SQLite `speedtests`, `evidence`), writes
   low-cardinality aggregates to VictoriaMetrics, exposes the query API (§7.4), runs the diagnosis
-  rules (server-side, like line rules — D3).
-- **Runner**: correlation connectors (§5).
-- **Dashboard**: Speedtest analytics views (§8).
-- **Manager**: branding/config, connector credentials as secrets, the internet-leg Worker routes,
-  QR signage, fleet health for the new component.
+  rules (server-side — D3).
+- **Runner**: correlation connectors and syslog receiver (§5).
+- **Dashboard** (optional on the kit or elsewhere): speedtest analytics views (§8).
+- **Manager** (optional): branding/config, connector credentials as secrets, zones and QR signage,
+  fleet health for the kit. Without a manager the same settings live in the kit's local config.
 
 ## 4. The test
 
@@ -79,10 +91,13 @@ results and evidence stay on-prem.**
   email, company/booth, seat/row) / **Cancel**. The choice is stored with the test.
 - **Zone**: from the QR code (`/?z=hallb-row12`, zones defined per site in the manager) or a picker;
   unknown if skipped.
-- Results show Download, Upload, **Responsiveness** (latency under load), idle latency, jitter, the
-  **exp score** (0–100), a plain-language verdict ("Good for video calls and uploads"), and the
-  **diagnosis** ("Weak Wi-Fi signal near you. The internet connection is fine.") with what to try.
-  Network details (AP name, channel) are shown to the user only if the event enables it.
+- Results show the **path of legs** with each leg's time (§4.2), Download/Upload for the local and
+  internet legs, **Responsiveness** (latency under load), the **exp score** (0–100), "where your time
+  goes" (a waterfall of the latency each segment adds on the way to Cloudflare), "good for" (video
+  calls, HD streaming, large uploads), a plain-language verdict, the **diagnosis** ("Your Wi-Fi is
+  strong. The venue's internet link is busy, so uploads suffer."), and **what the network team sees**
+  as correlation completes (Wi-Fi signal, venue internet, security policy, hall sensor). Network
+  details (AP name, channel) are shown to the user only if the event enables it.
 - **Report a problem**: optional free text (≤ 500 chars) attached to the test.
 - **Share with support**: an unguessable link (`/st/r/{id}#k=…`, key in the fragment) the user can
   give to the help desk; operators open it in the dashboard with full evidence.
@@ -90,30 +105,73 @@ results and evidence stay on-prem.**
   scripts, fonts, or analytics; CSP as the dashboard (`04-dashboard.md` §5); all user text rendered
   with `textContent`.
 
-### 4.2 Measurement method (both legs; ported ideas from `reference/perf` and Cloudflare's method)
-| Metric | Method |
-|---|---|
-| Idle latency, jitter | 20 × small HTTP GET (`/st/ping`) over a warm connection; median and mean absolute successive difference |
-| Download | Parallel streams (start 4, grow to 8 while throughput rises) of `GET /st/down?bytes=N`; size ramps (100 kB → 25 MB) until each request ≥ 1 s or 8 s elapsed; report the 90th percentile of 250-ms throughput samples after the ramp |
-| Upload | Same with `POST /st/up` (server discards); browser generates random payloads once and reuses them |
-| Responsiveness (loaded latency) | `/st/ping` every 100 ms *during* download and upload; report median loaded latency and the increase over idle (bufferbloat); also as RPM (round trips per minute, IETF responsiveness draft) |
-| Stability | coefficient of variation of throughput samples; aborted/failed requests |
+### 4.2 Legs and measurement method
 
-Implementation is the Resource Timing API + `fetch` streams; no WebSockets needed. Total transfer
-is capped per test (default 400 MB local, 200 MB internet) and adapts down on slow links.
+The test runs ~18 s: latency legs first (≈ 4 s), then local download/upload, then internet
+download/upload. Every leg is shown on the page as a node on the **path**
+(device → Wi-Fi/LAN → DNS → gateway → edge → edge+1 → Cloudflare) and timed idle and, where it
+matters, **loaded** (while the user's own download/upload is running — this is what exposes a
+congested venue link).
+
+| Leg | Measured by | Method |
+|---|---|---|
+| **Wi-Fi / LAN** (device ↔ box) | browser | 20 × `GET /st/ping` on a warm HTTP connection to the box: median RTT and jitter, idle and loaded; local download/upload (below). The box also sends ICMP echo to the device during the test (many phones answer) for the reverse view. |
+| **DNS** (device's own resolver) | browser + box | The page fetches `https://<nonce>.t.speed.<event-domain>/st/px` for 2 fresh nonces (cold: resolver must recurse to the box's authoritative server) and 1 repeated name (warm: cached). Lookup time = Resource Timing `domainLookupEnd − domainLookupStart` (the box sends `Timing-Allow-Origin`). The box's DNS server sees the query arrive, which identifies the **resolver IP** and splits the cold time into device→resolver and resolver→authority. Requires: a delegated `t.speed.<event-domain>` (NS → box) and a wildcard TLS cert for it (§7.5). Without them: fallback to the probe's own DNS line at that moment, labelled "measured by the hall sensor". |
+| **Gateway** | box | From the target port (same VLAN as the user): ICMP (fallback TCP SYN to a configured port) to the default gateway, every 200 ms from session start to end; idle and loaded medians. |
+| **Edge** | box | Same to the EdgeConnect LAN-side address (from config or the EC Orchestrator inventory). |
+| **Edge + 1** | box | Same to the **first hop past the edge** (the ISP / underlay next hop): discovered by a TTL-limited trace from the target port (hop after the edge address) and cached, or taken from the EC WAN next hop via the Orchestrator. Loaded edge+1 RTT rising while idle stays flat = the WAN link is congested. |
+| **Internet** (device ↔ Cloudflare) | browser | Cloudflare's public speed-test endpoints (`speed.cloudflare.com` `__down?bytes=` / `__up`), the method of Cloudflare's own open-source speed-test library (MIT-licensed `@cloudflare/speedtest`, **vendored into the page** — no CDN): idle/loaded latency, download, upload; the serving location (colo) from `/cdn-cgi/trace`. Header and timing behaviour of these endpoints MUST be confirmed from a live recording during the build, not assumed. |
+| **Local speed** | browser + box | Parallel streams (start 4, up to 8) of `GET /st/down?bytes=N` (box uses `sendfile`) and `POST /st/up` (box discards and counts bytes); sizes ramp 100 kB → 25 MB until each request ≥ 1 s or 8 s elapsed; report the 90th percentile of 250-ms samples after the ramp. Box byte counters cross-check the browser's numbers. |
+
+Box-measured legs are sent to the page live over `GET /st/api/v1/sessions/{id}/path` (polled every
+500 ms or SSE), so the page animates them in step with the browser-measured legs. "Where your time
+goes" is computed as: Wi-Fi/LAN = device↔box RTT; + gateway; + (edge − gateway); + (edge+1 − edge);
++ internet remainder = Cloudflare RTT − (device↔box + edge+1). It is labelled an estimate.
+
+Implementation uses `fetch` streams and the Resource Timing API; no WebSockets or WebRTC. Total
+transfer is capped per test (default 400 MB local, 200 MB internet) and adapts down on slow links.
 
 **exp score** (0–100) = 40 × speed (min(down/target_down, 1) and min(up/target_up, 1), averaged) +
 40 × responsiveness (100 % at ≤ 30 ms loaded latency, 0 % at ≥ 300 ms, linear) + 20 × stability
 (CV and failures). Targets per event (default 25 / 10 Mb/s). Shown with its three parts.
 
-### 4.3 Abuse and capacity protection (an event WAN is shared)
-- Per client IP: ≤ 6 tests per 10 min, ≤ 1 concurrent; per site: ≤ `max_concurrent` internet legs
-  (default 10) — extra users get the local leg immediately and a queue position for the internet leg.
+### 4.3 The page: self-contained, mobile-first, and it has to look great
+
+- **One self-contained file** served by the box: HTML with inline CSS/JS/SVG and locally served
+  fonts (variable condensed display face for numerals + a text face, subset, ≤ 120 KB), no CDN or
+  third-party script, no analytics. CSP `default-src 'self'; script-src 'sha256-…'` (hashes computed
+  at build), `connect-src 'self' https://*.t.speed.<event-domain> https://speed.cloudflare.com`,
+  `img-src 'self' data:`. Page weight ≤ 200 KB gzip including fonts and the vendored library.
+- **Mobile first**: designed at 390 × 844 first; one-thumb layout (big start button in the lower
+  half of the gauge), 44-px targets, safe-area insets, no horizontal scroll, portrait and landscape,
+  dark and light themes following the device; two-column layout from 900 px.
+- **Animation is part of the product**, not decoration:
+  - the **gauge**: a 270° arc on a perceptual (piecewise-log) scale 0–1,000 Mb/s with a glowing
+    leading tip, a counter that eases to each sample, green for download, violet for upload, pulse
+    rings while running, and a live throughput trace under it;
+  - the **path**: each leg is a node; the active leg pulses and "packets" run down the rail to the
+    next node; each node settles to its time and a state colour (ok / slow) as it completes;
+  - **results**: the score ring sweeps in, speed bars and the time waterfall grow from zero,
+    correlation checks flip from "checking…" to their findings as the evidence arrives.
+  - 60 fps on a mid-range phone (transform/opacity and SVG attribute updates only, one
+    `requestAnimationFrame` loop); `prefers-reduced-motion` turns animation off and keeps every
+    number; the screen wake lock is held during a test where allowed.
+- **Reference prototype:** `docs/spec/prototypes/speed-check.html` (demo data) is the visual and
+  interaction reference WP-10 builds to; the production page replaces its demo engine with the real
+  legs above and loads fonts locally.
+
+### 4.4 Abuse and capacity protection (an event WAN is shared)- Per client IP: ≤ 6 tests per 10 min, ≤ 1 concurrent; per site: ≤ `max_concurrent` internet legs
+  (default 10) — extra users get the local and path legs immediately and a queue position for the
+  internet leg (the page asks the box for an internet slot before calling Cloudflare).
 - Admin switch **Pause internet leg** (e.g., during a keynote) and an automatic pause when the EC WAN
-  utilization from the runner exceeds a threshold (default 80 %).
-- Leg tokens: the session endpoint issues a short-lived HMAC token (60 s, single session, byte budget);
-  the Worker refuses requests without a valid token (key = per-site secret shared by manager and
-  speedtest). The Worker is therefore not an open bandwidth sink; Cloudflare Rate Limiting backs it.
+  utilization from the runner exceeds a threshold (default 80 %); the page then shows the local and
+  path legs and says why the internet leg was skipped.
+- The internet leg goes to Cloudflare's public service, which is ordinary internet use from the
+  device; the box cannot technically stop a modified client calling Cloudflare directly, so the
+  slot mechanism protects the event WAN from **well-behaved** pages at scale, and the volume caps
+  keep each test bounded.
+- Local-leg endpoints require the session's short-lived token (60 s, byte budget) so the box is not
+  an open bandwidth sink on the LAN.
 
 ## 5. Correlation (runner connectors)
 
@@ -186,6 +244,9 @@ Like line verdicts, the user text is plain and blame-free; the NOC text names th
 ## 7. Contracts (to be moved into `01-contracts.md` and `contracts/` by WP-0 at M6)
 
 ### 7.1 `exp.speedtest/1` (result, client → speedtest → collector)
+`legs` also carries `dns` (`cold_ms`, `warm_ms`, `resolver_ip`, `source: browser|probe`) and `path`
+(`gateway_ms`, `edge_ms`, `edge1_ms` each `{idle, loaded, samples}`, `edge1_addr`, `device_icmp_ms`)
+filled in by the box.
 ```json
 {"schema": "exp.speedtest/1", "id": "st_01JDF…", "site": "hall-b", "zone": "hallb-row12",
  "started": "2026-11-18T14:02:11.120Z", "ended": "2026-11-18T14:02:27.540Z",
@@ -216,13 +277,16 @@ fixed in WP-0 from the vendor docs/recordings.
 | Route | Purpose |
 |---|---|
 | `GET /` · `GET /st/r/{id}` | page; result page (the `#k=` fragment key authorizes the full view) |
-| `POST /st/api/v1/sessions` | consent + zone → `{session_id, leg_tokens, limits, internet_leg: "ok|queued|paused"}` |
+| `POST /st/api/v1/sessions` | consent + zone → `{session_id, leg_token, limits, dns_nonces, internet_leg: "ok|queued|paused"}` |
+| `GET /st/api/v1/sessions/{id}/path` | box-timed legs so far: gateway, edge, edge+1 (idle/loaded, samples), resolver seen by the DNS leg, device ICMP RTT |
+| `POST /st/api/v1/sessions/{id}/internet-slot` | ask for / release an internet-leg slot (queue position) |
+| `GET https://<nonce>.t.speed.<domain>/st/px` | DNS-leg target (204, `Timing-Allow-Origin`), answered by the box |
 | `GET /st/ping` · `GET /st/down?bytes=` · `POST /st/up` | local leg endpoints (token required) |
 | `POST /st/api/v1/sessions/{id}/result` | submit `exp.speedtest/1` |
 | `GET /st/api/v1/sessions/{id}` | status: quick diagnosis, evidence progress, final diagnosis (user-safe fields only) |
 | `POST /st/api/v1/sessions/{id}/comment` | report-a-problem text |
 
-The Worker exposes the same `ping/down/up` routes for the internet leg under `https://<manager>/st/*`.
+There is no cloud component: the internet leg calls Cloudflare's public speed-test endpoints directly.
 
 ### 7.4 Collector query API additions (`01-contracts.md` §5 style, `expd_` tokens)
 `GET speedtests?site&zone&ap&ssid&cause&from&to&min_score&max_score&q&limit&cursor` ·
@@ -233,9 +297,14 @@ The Worker exposes the same `ping/down/up` routes for the internet leg under `ht
 `{site, zones:[{id,name}], branding:{title, logo_artifact, colors, languages, copy}, consent:{text, version,
 contact_fields:[…], default_mode}, show_network_details:false, targets:{down_mbps:25, up_mbps:10},
 limits:{tests_per_10min_per_ip:6, max_concurrent_internet:10, bytes_local:400e6, bytes_internet:200e6},
-internet_leg:{enabled:true, auto_pause_wan_util_pct:80}, tls:{mode:"provided|self_signed"}, collector:{…}}`.
-TLS: a publicly trusted certificate for `speed.<event-domain>` is **strongly recommended** (a browser
-warning on a user-facing page defeats the purpose); `self_signed` is allowed for labs.
+internet_leg:{enabled:true, provider:"cloudflare", auto_pause_wan_util_pct:80},
+serve:{port_id:"t01", hostname:"speed.summit.example", vlan_ports:[…]},
+dns_leg:{zone:"t.speed.summit.example", enabled:true}, path:{gateway:"auto", edge:"10.60.0.2", edge1:"auto|<ip>"},
+tls:{mode:"provided|self_signed"}, collector:{…}}`.
+TLS: a publicly trusted certificate for `speed.<event-domain>` **and** `*.t.speed.<event-domain>` is
+**required** for production (a browser warning on a user-facing page defeats the purpose, and the
+DNS leg needs the wildcard); `self_signed` is allowed for labs, with the DNS leg falling back to the
+probe's measurement.
 
 ### 7.6 Runner config additions (`exp.runner.config/1`)
 `correlation: {enabled, window_before_s: 300, window_after_s: 120, sources: {mist:{sites:[…]},
@@ -270,8 +339,10 @@ sse:{…}}}`; credentials in `integrations.json` (adds `sse`), never in config.
 ## 10. Security requirements (added to `07-security.md` as SR-21 … SR-25)
 - **SR-21** Public speedtest endpoints are unauthenticated by design: strict input validation, size
   and rate limits (§4.3), no reflection of internal data except to the test's own key holder.
-- **SR-22** The internet-leg Worker requires a valid short-lived HMAC leg token; it is not usable as
-  an open download/upload service; budgets are enforced server-side.
+- **SR-22** Local-leg endpoints require a short-lived session token with a byte budget; the box is
+  not an open download/upload service. The box-side path timer only probes the configured gateway,
+  edge, and edge+1 addresses and the requesting client — never a target chosen by the client. The
+  DNS-leg authoritative server answers only its own zone (no recursion, no zone transfer, rate-limited).
 - **SR-23** User-entered text (comment, contact) is untrusted: stored as text, rendered only with
   `textContent`, length-bounded; never used in log formats or queries without parameterization.
 - **SR-24** The syslog receiver accepts only allowlisted sources, is rate-limited, bounds line
@@ -286,8 +357,15 @@ sse:{…}}}`; credentials in `integrations.json` (adds `sse`), never in config.
    comment and contact passes.
 2. Local-leg server sustains ≥ 2 Gb/s aggregate download on a 4-core host (bench) with ≤ 1 core
    per Gb/s; byte counters agree with client numbers within 5 %.
-3. Rate limits and internet-leg concurrency/queue/pause work; the Worker refuses requests without or
-   with expired/over-budget tokens.
+3. Rate limits and internet-leg slots/queue/pause work; local-leg endpoints refuse requests
+   without or with expired/over-budget tokens; the path timer refuses client-chosen targets.
+9. Legs: on the harness, added delay on the gateway, the edge, and the WAN side each moves only the
+   matching leg (and the right waterfall segment); the DNS leg reports the resolver IP and cold/warm
+   times via the delegated zone, and falls back to the probe measurement without it.
+10. Page quality: self-contained (no request leaves for any host but the box, its DNS-leg names, and
+    Cloudflare — asserted by capture); ≤ 200 KB gzip; 60 fps animation on a reference mid-range
+    phone (CDP trace); reduced-motion mode shows the same numbers with no animation; matches the
+    reference prototype's layout at 390 px.
 4. Drills as ground truth (M5 harness): with RSSI attenuated → `wifi_signal`; with `local.netem` on
    the WAN side → `wan_saturation` or `internet_path`; with a firewall deny for the client →
    `policy_block` citing the matching syslog line; with a probe failing at the same time →
@@ -308,8 +386,8 @@ sse:{…}}}`; credentials in `integrations.json` (adds `sse`), never in config.
 - Native sensor mode (a probe running the same test on a schedule = synthetic user test parity).
 
 ## 13. Open questions for the owner (defaults assumed)
-1. Domain and certificate for `speed.<event-domain>` (default: provided cert per event; DNS on the
-   event resolver).
+1. Domain, DNS delegation of `t.speed.<event-domain>` to the box, and a certificate covering
+   `speed.` and `*.t.speed.` (default: provided per event; without them the DNS leg falls back).
 2. Which security log sources exist at your events (default: EC firewall syslog + generic CEF; SSE
    via API if credentials are configured).
 3. Identity: is 802.1X / guest-portal identity available via Mist (default: use it when present)?

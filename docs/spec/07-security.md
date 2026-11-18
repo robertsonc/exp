@@ -50,7 +50,7 @@ test.
 | T15 | Address theft / network harm by probes | **SR-18** target ports claim an address only after an RFC 5227 probe gets no reply (fail closed); DHCP heartbeat is DISCOVER-only; traceroute pacing; throughput tests serialized and rate-bounded; preflight never touches the mgmt interface. |
 | T16 | Clock manipulation | **SR-19** ingest time window; skew metric; NTP status in facts. |
 | T17 | Privacy | **SR-20** telemetry stays on-prem; the manager stores host facts only; probe DHCP hostnames carry no personal data; Wi-Fi credentials are secrets. |
-| T18 | Public speedtest abuse (bandwidth sink, DoS of the event WAN, injected text) — M6 | **SR-21** strict validation and rate/size limits on the unauthenticated page; **SR-22** internet-leg Worker requires short-lived HMAC leg tokens with byte budgets; **SR-23** user text is untrusted, `textContent` only. (`12-speedtest-analytics.md` §10) |
+| T18 | Public speedtest abuse (bandwidth sink, DoS of the event WAN, injected text) — M6 | **SR-21** strict validation and rate/size limits on the unauthenticated page; **SR-22** local-leg endpoints need short-lived session tokens with byte budgets, the path timer probes only configured hops, the DNS-leg server answers only its zone; **SR-23** user text is untrusted, `textContent` only. (`12-speedtest-analytics.md` §10) |
 | T19 | Personal data in speedtest evidence (IP, MAC, username, flows, security logs) — M6 | **SR-24** syslog receiver allowlisted, rate-limited, bounded, 60-min expiry unless attached; **SR-25** anonymous-by-default retention, keyed `device_key`, purge tooling, exports without raw identifiers. (`12-speedtest-analytics.md` §9–10) |
 
 ## 4. Lessons carried in as requirements

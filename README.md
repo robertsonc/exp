@@ -32,7 +32,7 @@ Resilience drills prove the monitoring and the network's failover actually work.
 | **Collector** | ingest, VictoriaMetrics, rules engine (state, verdict, where), incidents, alerts, query API | Python + VictoriaMetrics |
 | **Dashboard** | auth, federated queries, the Pulse board, overview, incidents, NOC/kiosk mode | Python + static SPA |
 | **Runner** | resilience drills (EC Orchestrator) and Mist/EC event correlation, on-prem | Python |
-| **Speedtest** (M6) | branded speedtest for attendees; each result correlated with that device's Wi-Fi, flows, and security logs | Python + static page |
+| **Speedtest** (M6) | self-contained, branded speedtest page served by an exp box; times Wi-Fi/LAN, DNS, gateway, edge, edge+1, and Cloudflare, and correlates each result with that device's Wi-Fi, flows, and security logs | Python + one-file page |
 | **Central manager** | SaaS control plane: intent, desired state, signed releases, secrets, users, audit — and the **fleet health roll-up** (CPU/memory/disk/uptime, pps/bps, measurements, storage runway, issues) | Cloudflare Workers (TS), D1, R2, Access |
 | **Agent** | enrols a host with one command and keeps it converged to desired state | Python |
 
