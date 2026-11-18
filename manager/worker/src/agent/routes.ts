@@ -2,6 +2,7 @@
 import { Hono } from "hono";
 import type { ZodError } from "zod";
 import { auditStmt } from "../audit/audit";
+import { factsForCompile } from "../compile/load";
 import { openDesiredDoc, recompile } from "../compile/recompile";
 import type { AppBindings, Env } from "../env";
 import { DEFAULT_ORG } from "../env";
@@ -223,7 +224,7 @@ authed.post("/status", async (c) => {
   const now = isoNow();
   const hostId = agent.hostId;
 
-  const host = await env.DB.prepare("SELECT host_id, site, state FROM hosts WHERE host_id = ?1").bind(hostId).first<{ host_id: string; site: string; state: string }>();
+  const host = await env.DB.prepare("SELECT host_id, site, state, facts_json FROM hosts WHERE host_id = ?1").bind(hostId).first<{ host_id: string; site: string; state: string; facts_json: string }>();
   if (!host) throw invalidToken();
   const existing = await env.DB.prepare("SELECT component_id, type, slug, facts_json FROM components WHERE host_id = ?1")
     .bind(hostId)
@@ -256,7 +257,10 @@ authed.post("/status", async (c) => {
     ),
   );
 
-  let wiringChanged = false;
+  // The one-liner enrols with minimal facts (no interfaces): the management address a collector listens on and a dashboard is
+  // reached at is only known from the first full report. A change in what the compiler reads from the host facts (mgmt
+  // address, default route, interface roles, arch) therefore recompiles, or a host without a probe would never converge.
+  let wiringChanged = JSON.stringify(factsForCompile(host.facts_json)) !== JSON.stringify(factsForCompile(JSON.stringify(report.facts)));
   for (const rc of report.components) {
     const row = byKey.get(`${rc.type}/${rc.id}`);
     if (!row) continue; // reported components we do not know are ignored, never created

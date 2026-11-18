@@ -137,7 +137,12 @@ def test_no_collector_configured_is_degraded_not_failed(paths):
     e = Env(paths, collector=None)
     e.ship.update(state="no_collector", collector_reachable=None, last_ok=None)
     doc = e.health()
-    assert doc["status"] == "degraded" and doc["facts"]["collector_url"] is None and health.exit_code(doc) == 0
+    assert doc["status"] == "degraded" and "collector_url" not in doc["facts"] and health.exit_code(doc) == 0
+    # regression (e2e m2): a null collector_url made the document invalid exp.health/1, so the agent refused the
+    # first probe start (the manager compiles a probe without collector until the collector has reported)
+    from exp_common import config as exp_config
+
+    exp_config.validate(doc, "health.schema.json")
 
 
 def test_shipper_stuck_with_backlog_fails(paths):

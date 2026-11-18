@@ -9,7 +9,7 @@ from hypothesis import strategies as st
 from netfakes import FakePacketIO, frame_summary, server_frame
 
 from exp_probe import dhcpwire as W
-from exp_probe.tests import dhcp as dhcp_mod
+from exp_probe.checks import dhcp as dhcp_mod
 
 MAC = b"\x02\xaa\xbb\xcc\xdd\x01"
 

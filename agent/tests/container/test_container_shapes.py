@@ -35,12 +35,19 @@ def _why_skip() -> str | None:
 pytestmark = pytest.mark.skipif(_why_skip() is not None, reason=_why_skip() or "")
 
 
-def healthy(world, hid, *types):
+def healthy(world, hid, *types, allow_degraded=()):
+    """The last report when every named component is healthy. `allow_degraded` names types for which the
+    contract's `degraded` (exit 0, "healthy per section 9") also counts: a veth test port has no DHCP server
+    or internet behind it, which 02-probe.md defines as degraded, not failed."""
     rep = world.last_report(hid)
     if not rep:
         return None
     by = {c["type"]: c for c in rep["components"]}
-    return rep if all(t in by and by[t]["health"] == "ok" for t in types) else None
+
+    def good(t):
+        return t in by and (by[t]["health"] == "ok" or (t in allow_degraded and by[t]["health"] == "degraded"))
+
+    return rep if all(good(t) for t in types) else None
 
 
 def test_all_shapes_converge_and_probe_data_reaches_the_collector(world, host24):
@@ -51,11 +58,15 @@ def test_all_shapes_converge_and_probe_data_reaches_the_collector(world, host24)
 
     hid, token = world.add_host("srv-shapes")
     probe_token = exp_ids.new_token("expi")
+    dcfg_src = fc.load_fixture("desired/dashboard-host.json")["components"][0]
     col = world.collector_component(
         version,
         creds={
             "ingest_tokens.json": json.dumps({"probe-a1": exp_ids.token_hash(probe_token)}),
-            "dashboard_tokens.json": "{}",
+            # the dashboard authenticates to the collector with the token its creds carry for this collector
+            "dashboard_tokens.json": json.dumps(
+                {dcfg_src["id"]: exp_ids.token_hash(json.loads(dcfg_src["creds"]["collector_tokens.json"])["col-hallb"])}
+            ),
             "webhooks.json": "[]",
         },
     )
@@ -73,7 +84,6 @@ def test_all_shapes_converge_and_probe_data_reaches_the_collector(world, host24)
     pcfg["collector"] = {"url": "https://" + listen, "tls_fingerprint_sha256": fp, "fallback": []}
     pcfg["mgmt_iface"] = "eth0"
     pcfg["ports"][0]["iface"], pcfg["ports"][1]["iface"] = "vp0", "vp1"
-    dcfg_src = fc.load_fixture("desired/dashboard-host.json")["components"][0]
     dcfg = dict(dcfg_src["config"])
     dcfg["collectors"] = [
         {
@@ -88,11 +98,28 @@ def test_all_shapes_converge_and_probe_data_reaches_the_collector(world, host24)
     probe = world.component("probe", version, pcfg, {"ingest_token": probe_token}, "probe-a1")
     world.set_desired(hid, version, components=[col, dash, probe])
     wait_for(
-        lambda: healthy(world, hid, "collector", "dashboard", "probe"),
+        lambda: healthy(world, hid, "collector", "dashboard", "probe", allow_degraded=("probe",)),
         420,
         5,
         "collector, dashboard and probe healthy",
         host24.agent_log,
     )
-    probe_h = next(c for c in world.last_report(hid)["components"] if c["type"] == "probe")
-    assert probe_h["health"] == "ok"
+    # probe data reaches the collector through the compiled wiring (pin + ingest token): the probe's shipper is
+    # healthy and authenticated, and the collector counts the probe as reporting and ingests its records
+    def delivered():
+        comps = {c["type"]: c for c in world.last_report(hid)["components"]}
+        pf, cm = comps["probe"]["facts"], comps["collector"]["metrics"]
+        ok = (
+            pf["collector_reachable"]
+            and pf["shipper_state"] == "ok"
+            and not pf["auth_failed"]
+            and not pf["tls_pin_mismatch"]
+            and cm["probes_reporting"] >= 1
+        )
+        return comps if ok else None
+
+    wait_for(delivered, 180, 5, "probe records ingested by the collector", host24.agent_log)
+    comps = {c["type"]: c for c in world.last_report(hid)["components"]}
+    assert comps["probe"]["health"] in ("ok", "degraded")
+    assert comps["dashboard"]["health"] == "ok"
+    assert comps["dashboard"]["metrics"]["collectors_reachable"] == 1

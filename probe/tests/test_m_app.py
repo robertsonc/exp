@@ -11,8 +11,8 @@ from httpstub import HttpStub
 from measure_support import make_ctx
 from netfakes import ScriptRunner, recorded, validate_measurements
 
+from exp_probe.checks import app as A
 from exp_probe.runner import CommandRunner
-from exp_probe.tests import app as A
 
 HAVE_CURL = shutil.which("curl") is not None
 needs_curl = pytest.mark.skipif(not HAVE_CURL, reason="needs curl >= 7.81")

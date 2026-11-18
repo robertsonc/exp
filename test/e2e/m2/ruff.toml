@@ -1,0 +1,9 @@
+extend = "../../../ruff.toml"
+line-length = 130
+
+[lint]
+ignore = ["UP031", "S603", "S607", "S104", "S608", "B904", "SIM115", "E402"]
+
+[lint.per-file-ignores]
+"*.py" = ["S101", "S105", "S106", "S108"]
+"m2lib.py" = ["E501"]  # the SQL literals that mirror publish-release.sh

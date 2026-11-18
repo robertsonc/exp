@@ -81,7 +81,7 @@ def test_test_command_with_unavailable_test(cfgfile, paths, capsys):
 
 
 def test_test_command_runs_a_registered_test_without_spooling(cfgfile, paths, capsys):
-    from exp_probe.tests import register_all
+    from exp_probe.checks import register_all
     register_all()                                  # load the real modules first, then override one
     saved = dict(scheduler.REGISTRY)
     scheduler.register_test("gateway", lambda ctx: [ctx.measure("gateway", "ok", metrics={"rtt_ms": 2.0},

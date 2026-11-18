@@ -8,7 +8,6 @@ ConditionPathExists=/var/lib/exp/agent/pending.json
 Type=oneshot
 # Runs from the PREVIOUS agent tree: a broken new version cannot prevent its own rollback.
 ExecStart=/opt/exp/agent/previous/bin/exp-agent rollback-check --config /etc/exp/agent.json
-User=root
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes

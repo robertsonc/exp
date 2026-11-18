@@ -22,15 +22,15 @@ from httpstub import HttpStub
 from netfakes import validate_measurements
 
 from exp_probe import netns
+from exp_probe.checks import register_all
+from exp_probe.checks.app import app
+from exp_probe.checks.dhcp import dhcp, dhcp_hb
+from exp_probe.checks.dns import dns_hb
+from exp_probe.checks.gateway import gateway
+from exp_probe.checks.trace import trace
 from exp_probe.config import parse_config
 from exp_probe.runner import CommandRunner
 from exp_probe.scheduler import REGISTRY, Rotation, Scheduler, TestContext, WorkerPool
-from exp_probe.tests import register_all
-from exp_probe.tests.app import app
-from exp_probe.tests.dhcp import dhcp, dhcp_hb
-from exp_probe.tests.dns import dns_hb
-from exp_probe.tests.gateway import gateway
-from exp_probe.tests.trace import trace
 
 pytestmark = [pytest.mark.harness,
               pytest.mark.skipif(not shutil.which("dnsmasq") or not shutil.which("busybox") or not shutil.which("curl"),

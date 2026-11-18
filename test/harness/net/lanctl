@@ -134,6 +134,14 @@ def cmd_status(_a: argparse.Namespace) -> None:
 
 
 def cmd_canary(a: argparse.Namespace) -> None:
+    """Asked from the gateway namespace: the event-LAN side of the simulation, never affected by a fault that only
+    matches a test port's MAC."""
+    r = run(["ip", "netns", "exec", "gw", sys.executable, __file__, "_canary", a.ip], check=False)
+    if r.returncode != 0:
+        raise SystemExit((r.stderr or r.stdout).strip() or "canary failed")
+
+
+def cmd_canary_raw(a: argparse.Namespace) -> None:
     q = b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06canary\x03exp\x04test\x00\x00\x01\x00\x01"
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(2)
@@ -175,6 +183,9 @@ def main(argv: list[str]) -> int:
     p = sub.add_parser("canary")
     p.add_argument("ip")
     p.set_defaults(fn=cmd_canary)
+    p = sub.add_parser("_canary")
+    p.add_argument("ip")
+    p.set_defaults(fn=cmd_canary_raw)
     sub.add_parser("ca").set_defaults(fn=cmd_ca)
     a = ap.parse_args(argv)
     a.fn(a)

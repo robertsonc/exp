@@ -18,7 +18,7 @@ probe/
   exp_probe/                 config preflight netns lease scheduler spool shipper selftel health runner daemon cli
     hooks/udhcpc-hook        busybox udhcpc event hook -> `exp-probe udhcpc-hook`
     netio.py icmp.py dhcpwire.py   namespace sockets (setns thread), ICMP echo + paced TTL sweep, DHCP on the wire
-    tests/                   measurement tests: gateway dhcp dns trace ping app (+ common.py)
+    checks/                  measurement tests: gateway dhcp dns trace ping app (+ common.py); NOT named tests/ (packaging drops tests/)
   systemd/                   exp-probe.service, exp-probe-netns.service, exp-probe-lease@.service, exp-probe-target@.service
   requirements.apt           busybox iproute2 iputils-ping curl openssl iperf3
   tests/                     unit tests (fake `ip`, fake clock, fake_collector over TLS); tests/harness/ = real namespaces

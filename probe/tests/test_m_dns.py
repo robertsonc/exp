@@ -6,7 +6,7 @@ from dnsstub import DnsStub
 from measure_support import BOUND, make_ctx
 from netfakes import FakeEnv, FakeIcmp, answer_all, silent, validate_measurements
 
-from exp_probe.tests import dns as D
+from exp_probe.checks import dns as D
 
 ALT_HB = {"interval_s": 10, "alternate_resolver": "127.0.0.2", "dns_names": ["a.example", "b.example", "c.example"]}
 

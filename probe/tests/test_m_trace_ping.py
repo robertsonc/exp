@@ -18,10 +18,10 @@ from netfakes import (
     validate_measurements,
 )
 
+from exp_probe.checks import dns as dns_mod
+from exp_probe.checks import ping as ping_mod
+from exp_probe.checks import trace as trace_mod
 from exp_probe.scheduler import ManualPool, Scheduler, TestSpec, register_test
-from exp_probe.tests import dns as dns_mod
-from exp_probe.tests import ping as ping_mod
-from exp_probe.tests import trace as trace_mod
 
 T = "8.8.8.8"
 GOOD_PATH = ["10.1.0.2", "10.1.0.1", None]

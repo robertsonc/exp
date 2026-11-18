@@ -131,6 +131,9 @@ class Container:
         self.ca_pem = ca_pem
         if systemd:
             self._wait_booted()
+            # A real host's / is a shared mount; docker's is private, which makes systemd's per-unit
+            # credentials mount (LoadCredential=) silently vanish from the service's namespace.
+            self.run("mount --make-rshared /", timeout=20)
         if ca_pem:
             self.install_ca(ca_pem)
 

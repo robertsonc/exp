@@ -9,7 +9,7 @@ from measure_support import BOUND, make_ctx
 from netfakes import FakeEnv, FakePacketIO, frame_summary, validate_measurements
 
 from exp_probe import dhcpwire as W
-from exp_probe.tests import dhcp as D
+from exp_probe.checks import dhcp as D
 
 S1 = {"ip": "10.1.0.2", "offer_delay": 0.0124, "ack_delay": 0.025, "yiaddr": "10.1.0.31", "dns": ["8.8.8.8"]}
 ROGUE = {"ip": "10.1.0.66", "offer_delay": 0.4, "ack_delay": 0.4, "yiaddr": "10.1.0.200", "mac": b"\x02\x66\x66\x66\x66\x66",

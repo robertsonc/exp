@@ -52,3 +52,14 @@ def test_tarball_layout(tmp_path):
 def test_health_json_cli_contract_from_the_entry_script(tmp_path):
     r = run(REPO / "agent" / "bin" / "exp-agent", "--root", str(tmp_path / "root"), "health", "--json")
     assert r.returncode == 1 and '"schema": "exp.health/1"' in r.stdout
+
+
+def test_agent_units_do_not_set_user_root():
+    """Regression (e2e m2): `User=root` makes systemd drop CAP_SETUID from the service, so `apt-get` run by the
+    agent could not switch its http method to `_apt` ("setresuid (1: Operation not permitted)") and no apt
+    requirement (iperf3, busybox) could ever be installed. Root is the default for a system service."""
+    from pathlib import Path
+
+    for name in ("exp-agent.service", "exp-agent-rollback.service"):
+        text = (Path(__file__).resolve().parents[1] / "systemd" / name).read_text()
+        assert not [ln for ln in text.splitlines() if ln.strip().startswith("User=")], name

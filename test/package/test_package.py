@@ -288,6 +288,7 @@ def test_exp_common_is_identical_in_every_tarball(stub, built):
     ("badapt", "allowlist"),
     ("syntax", "byte-compile"),
     ("symlink", "symlink"),
+    ("tests_package", "named like an excluded directory"),
 ])
 def test_malformed_component_fails_clearly(stub, tmp_path, breakage, needle):
     d = stub["repo"] / "agent"
@@ -312,6 +313,12 @@ def test_malformed_component_fails_clearly(stub, tmp_path, breakage, needle):
         (d / "exp_agent" / "bad.py").write_text("def (:\n")
     elif breakage == "symlink":
         (d / "exp_agent" / "ln.py").symlink_to("cli.py")
+    elif breakage == "tests_package":
+        # regression (M1 e2e): exp_probe/tests/ held the probe's MEASUREMENT code and was silently dropped from
+        # the tarball by the "never package tests/" rule, so the released probe measured nothing
+        (d / "exp_agent" / "tests" / "test_x.py").unlink()
+        (d / "exp_agent" / "tests" / "__init__.py").write_text("")
+        (d / "exp_agent" / "tests" / "gateway.py").write_text("X = 1\n")
     out = tmp_path / "dist"
     r = stub["run"](out)
     assert r.returncode != 0, r.stderr
@@ -495,3 +502,19 @@ def test_real_lock_fetch_and_build_with_stub_components(stub, tmp_path):
         m = tf.open(out / ("exp-collector-%s-%s.tar.gz" % (VERSION, arch))).getmember(
             "exp-collector-%s/vendor/victoria-metrics" % VERSION)
         assert m.mode == 0o755 and m.size > 10_000_000
+
+
+def test_real_components_have_no_package_named_like_an_excluded_directory():
+    """Static guard on the real tree (no build needed): a product package called tests/ (or any other name in
+    pack.EXCLUDE_DIRS) is dropped from the tarball, so the component would ship without it."""
+    import pack
+    bad = []
+    for c in COMPONENTS:
+        pkg = REPO / c / ("exp_" + c)
+        if not pkg.is_dir():
+            continue
+        for init in pkg.rglob("__init__.py"):
+            d = init.parent
+            if d != pkg and d.name in pack.EXCLUDE_DIRS and not any(f.name.startswith("test_") for f in d.iterdir()):
+                bad.append(str(d.relative_to(REPO)))
+    assert not bad, "product packages that packaging would drop: %s" % bad

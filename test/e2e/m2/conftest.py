@@ -1,4 +1,4 @@
-"""Fixtures for the M2 control-plane end-to-end suite (SPEC.md section 9, M2: A2.2, A2.3, A2.4).
+"""Fixtures for the M2 control-plane end-to-end suite (SPEC.md section 9, M2: A2.2 - A2.8).
 
 What runs, all local:
   * the manager Worker under `wrangler dev` (local D1/R2, HTTPS, throwaway CA + server cert);
@@ -13,6 +13,7 @@ Opt out / configure with environment variables:
   EXP_E2E=0                   skip the suite
   EXP_E2E_ARTIFACTS=<dir>     keep logs/diagnostics there (default: a tmp dir)
   EXP_E2E_DIST=<dir> EXP_E2E_RELEASE_PUBKEY=<pem>   use an already built signed release instead of building one
+                              (the upgrade / rollback tests then skip: they need the signing key to build more releases)
 """
 
 from __future__ import annotations
@@ -63,6 +64,8 @@ class Stack:
     version: str
     ca_pem: str
     dist: Path
+    pub: Path
+    key: Path | None  # the throwaway release signing key (None when EXP_E2E_DIST supplied a prebuilt release)
 
     def token(self, email: str = OWNER) -> str:
         return self.issuer.mint(email)
@@ -95,7 +98,11 @@ def _build_release(tmp: Path) -> tuple[Path, Path]:
     r = subprocess.run(  # noqa: S603
         [str(REPO / "packaging" / "build.sh"), "--release", "0.1.0", "--out", str(out)],
         env=clean_env(EXP_RELEASE_KEY=str(priv), EXP_RELEASE_PUBKEY=str(pub)),
-        capture_output=True, text=True, timeout=600, check=False, cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+        cwd=REPO,
     )
     assert r.returncode == 0, f"packaging/build.sh failed: {(r.stdout + r.stderr)[-800:]}"
     return out, pub
@@ -113,12 +120,17 @@ def stack() -> Iterator[Stack]:
     dist, pub = _build_release(tmp)
     issuer = AccessIssuer(tmp / "access", TEAM_DOMAIN, AUD)
     mgr = ManagerDev(
-        tmp, host=MANAGER_NAME, team_domain=TEAM_DOMAIN, aud=AUD, owner_email=OWNER,
-        ca_pem=pki.ca_pem, cert=pki.cert, key=pki.key, release_pubkey=pub,
+        tmp,
+        host=MANAGER_NAME,
+        team_domain=TEAM_DOMAIN,
+        aud=AUD,
+        owner_email=OWNER,
+        ca_pem=pki.ca_pem,
+        cert=pki.cert,
+        key=pki.key,
+        release_pubkey=pub,
     )
-    hosts = hostsfile.HostsEntries(
-        {MANAGER_NAME: "127.0.0.1", TEAM_DOMAIN: JWKS_BIND}, tag=f"m2-{os.getpid()}"
-    )
+    hosts = hostsfile.HostsEntries({MANAGER_NAME: "127.0.0.1", TEAM_DOMAIN: JWKS_BIND}, tag=f"m2-{os.getpid()}")
     jwks = JwksServer(issuer.key.jwks, pki.cert, pki.key, JWKS_BIND)
     try:
         hosts.__enter__()
@@ -129,7 +141,8 @@ def stack() -> Iterator[Stack]:
         mgr.start()
         version = next(iter(sorted(p.name for p in dist.glob("exp-*-manifest.json")))).split("-")[1]
         admin = AdminClient(mgr, lambda: issuer.mint(OWNER))
-        yield Stack(tmp, artifacts, mgr, issuer, jwks, admin, version, pki.ca_text, dist)
+        key = tmp / "releasekey" / "release.pem"
+        yield Stack(tmp, artifacts, mgr, issuer, jwks, admin, version, pki.ca_text, dist, pub, key if key.is_file() else None)
     finally:
         mgr.stop()
         try:

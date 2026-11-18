@@ -129,6 +129,13 @@ def component_arches(lock: dict[str, Any], component: str) -> list[str]:
 def _copy_tree(src: Path, dst: Path, what: str) -> int:
     n = 0
     for root, dirs, files in os.walk(src, followlinks=False):
+        for d in dirs:
+            # A product PACKAGE (has __init__.py) whose name collides with the exclusion list would be silently
+            # dropped from the tarball (the probe's measurement tests once lived in exp_probe/tests/): refuse.
+            if d in EXCLUDE_DIRS and (Path(root) / d / "__init__.py").is_file() and (Path(root) / "__init__.py").is_file() \
+                    and not any(f.startswith("test_") for f in os.listdir(Path(root) / d)):
+                raise PackError("%s: package %s/ is named like an excluded directory (%s) and would be dropped from "
+                                "the tarball; rename it" % (what, Path(root) / d, d))
         dirs[:] = sorted(d for d in dirs if d not in EXCLUDE_DIRS)
         rel = Path(root).relative_to(src)
         for d in dirs:

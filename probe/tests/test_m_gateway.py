@@ -4,7 +4,7 @@ from __future__ import annotations
 from measure_support import make_ctx
 from netfakes import FakeEnv, FakeIcmp, ScriptRunner, answer_all, echo_reply, link_rules, silent, validate_measurements
 
-from exp_probe.tests.gateway import classify, gateway
+from exp_probe.checks.gateway import classify, gateway
 
 
 def run(tmp_path, responder, **kw):

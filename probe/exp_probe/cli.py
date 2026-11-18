@@ -121,8 +121,8 @@ def _dispatch(args: argparse.Namespace, runner: Any, entry: str) -> int:
     cfg = _load(args)
     paths = _paths(args)
     if cmd == "run":
+        from .checks import register_all
         from .daemon import Daemon
-        from .tests import register_all
         register_all()
         d = Daemon(cfg, runner, paths)
         d.install_signals()
@@ -208,8 +208,8 @@ def _spool_stat(paths: Paths, as_json: bool) -> int:
 def _test(cfg: ProbeConfig, runner: Any, paths: Paths, args: argparse.Namespace) -> int:
     import time
 
+    from .checks import register_all
     from .scheduler import REGISTRY, TestContext
-    from .tests import register_all
     register_all()
     spec = REGISTRY.get(args.test)
     if spec is None:
@@ -292,8 +292,8 @@ def selftest() -> int:
 
     def c_wire() -> None:
         from . import dhcpwire
+        from .checks.app import apdex, parse_curl
         from .icmp import build_echo, checksum
-        from .tests.app import apdex, parse_curl
         mac = bytes.fromhex("02aabbccdd01")
         d = dhcpwire.build_discover(mac, 7, hostname="selftest", vendor="exp-probe")
         _ensure(dhcpwire._decode_opts(d[240:])[53] == bytes([dhcpwire.MSG_DISCOVER]), "heartbeat builds DISCOVER only")

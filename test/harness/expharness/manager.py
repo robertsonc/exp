@@ -120,8 +120,13 @@ class ManagerDev:
     def wrangler(self, *args: str, timeout: float = 180) -> subprocess.CompletedProcess[str]:
         return subprocess.run(  # noqa: S603
             ["npx", "--no-install", "wrangler", *args],  # noqa: S607
-            cwd=MANAGER_DIR, env=self._env(), capture_output=True, text=True, timeout=timeout,
-            stdin=subprocess.DEVNULL, check=False,
+            cwd=MANAGER_DIR,
+            env=self._env(),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+            check=False,
         )
 
     # ---- lifecycle
@@ -135,11 +140,23 @@ class ManagerDev:
         """manager/scripts/publish-release.sh --local against this instance's local D1/R2."""
         return subprocess.run(  # noqa: S603
             [
-                str(MANAGER_DIR / "scripts" / "publish-release.sh"), "--dist", str(dist),
-                "--pubkey", str(pubkey or self.release_pubkey), "--config", str(MANAGER_DIR / "wrangler.toml"),
-                "--local", "--persist-to", str(self.state),
+                str(MANAGER_DIR / "scripts" / "publish-release.sh"),
+                "--dist",
+                str(dist),
+                "--pubkey",
+                str(pubkey or self.release_pubkey),
+                "--config",
+                str(MANAGER_DIR / "wrangler.toml"),
+                "--local",
+                "--persist-to",
+                str(self.state),
             ],
-            cwd=MANAGER_DIR, env=self._env(), capture_output=True, text=True, timeout=300, check=False,
+            cwd=MANAGER_DIR,
+            env=self._env(),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
             stdin=subprocess.DEVNULL,
         )
 
@@ -148,14 +165,35 @@ class ManagerDev:
         self.log = open(self.log_path, "wb")  # noqa: SIM115
         self.proc = subprocess.Popen(  # noqa: S603
             [
-                "npx", "--no-install", "wrangler", "dev",  # noqa: S607
-                "--ip", "0.0.0.0", "--port", str(self.port), "--inspector-port", str(free_port()),
-                "--local-protocol", "https", "--https-key-path", str(self.key), "--https-cert-path", str(self.cert),
-                "--persist-to", str(self.state), "--env-file", str(env_file),
+                "npx",
+                "--no-install",
+                "wrangler",
+                "dev",  # noqa: S607
+                "--ip",
+                "0.0.0.0",
+                "--port",
+                str(self.port),
+                "--inspector-port",
+                str(free_port()),
+                "--local-protocol",
+                "https",
+                "--https-key-path",
+                str(self.key),
+                "--https-cert-path",
+                str(self.cert),
+                "--persist-to",
+                str(self.state),
+                "--env-file",
+                str(env_file),
                 "--show-interactive-dev-session=false",
+                "--test-scheduled",
             ],
-            cwd=MANAGER_DIR, env=self._env(), stdout=self.log, stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL, start_new_session=True,
+            cwd=MANAGER_DIR,
+            env=self._env(),
+            stdout=self.log,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
         )
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -189,7 +227,12 @@ class ManagerDev:
 
     # ---- HTTP
     def request(
-        self, method: str, path: str, *, headers: dict[str, str] | None = None, body: bytes | None = None,
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        body: bytes | None = None,
         timeout: float = 30,
     ) -> ApiResponse:
         ctx = ssl.create_default_context(cafile=str(self.ca_pem))
@@ -204,10 +247,25 @@ class ManagerDev:
     def get(self, path: str, **kw: Any) -> ApiResponse:
         return self.request("GET", path, **kw)
 
+    def run_cron(self, cron: str = "*/5 * * * *") -> ApiResponse:
+        """Fire a scheduled event (wrangler dev --test-scheduled): the Worker's own `scheduled()` handler runs."""
+        q = cron.replace("/", "%2F").replace(" ", "+")
+        # workerd's built-in /cdn-cgi handlers only answer to a loopback Host header
+        return self.get(f"/cdn-cgi/handler/scheduled?cron={q}", headers={"Host": f"localhost:{self.port}"}, timeout=60)
+
     # ---- D1 (direct, for the things the API cannot do: simulate time)
     def sql(self, statement: str) -> list[dict[str, Any]]:
         r = self.wrangler(
-            "d1", "execute", "DB", "--local", "--persist-to", str(self.state), "--json", "--yes", "--command", statement,
+            "d1",
+            "execute",
+            "DB",
+            "--local",
+            "--persist-to",
+            str(self.state),
+            "--json",
+            "--yes",
+            "--command",
+            statement,
         )
         if r.returncode != 0:
             raise RuntimeError(f"d1 execute failed: {(r.stdout + r.stderr)[-500:]}")
@@ -222,7 +280,9 @@ class AdminClient:
     def __init__(self, mgr: ManagerDev, token_fn: Callable[[], str]) -> None:
         self.mgr, self.token_fn = mgr, token_fn
 
-    def call(self, method: str, path: str, payload: Any = None, *, ok: tuple[int, ...] | None = None) -> ApiResponse:
+    def call(
+        self, method: str, path: str, payload: Any = None, *, ok: tuple[int, ...] | None = None
+    ) -> ApiResponse:
         headers = {"Cf-Access-Jwt-Assertion": self.token_fn(), "Accept": "application/json"}
         body = None
         if payload is not None:

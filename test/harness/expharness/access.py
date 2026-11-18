@@ -38,8 +38,12 @@ class AccessKey:
         self.jwks: dict[str, Any] = {
             "keys": [
                 {
-                    "kty": "RSA", "kid": kid, "alg": "RS256", "use": "sig",
-                    "n": _b64u(bytes.fromhex(mod)), "e": "AQAB",
+                    "kty": "RSA",
+                    "kid": kid,
+                    "alg": "RS256",
+                    "use": "sig",
+                    "n": _b64u(bytes.fromhex(mod)),
+                    "e": "AQAB",
                 }
             ]
         }
@@ -47,7 +51,10 @@ class AccessKey:
     def sign(self, signing_input: bytes) -> bytes:
         r = subprocess.run(  # noqa: S603
             ["openssl", "dgst", "-sha256", "-sign", str(self.path)],  # noqa: S607
-            input=signing_input, capture_output=True, timeout=30, check=False,
+            input=signing_input,
+            capture_output=True,
+            timeout=30,
+            check=False,
         )
         if r.returncode != 0:
             raise RuntimeError("openssl dgst -sign failed")

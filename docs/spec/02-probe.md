@@ -18,7 +18,7 @@ apps, speedtest, server), `reference/netvitals/netquality.py` (path quality, MOS
 | `exp-probe.service` | the daemon: scheduler, test workers, spool, shipper, `probe_self`. Runs as root with hardening (`ProtectSystem=strict`, `ReadWritePaths=/var/lib/exp/probe /run/exp/probe`, `NoNewPrivileges=yes`, `PrivateTmp=yes`). |
 
 Package layout: `probe/exp_probe/{config,netns,lease,scheduler,spool,shipper,tlspin,target,selftel,cli}.py`,
-`probe/exp_probe/tests/{gateway,dhcp,dns,trace,ping,app,throughput,path,wifi}.py`, unit tests in
+`probe/exp_probe/checks/{gateway,dhcp,dns,trace,ping,app,throughput,path,wifi}.py`, unit tests in
 `probe/tests/`. Python 3.10+, stdlib plus vendored `dnspython`. External tools used: `ip`
 (iproute2), busybox `udhcpc`, `curl` (≥ 7.81, for `-w '%{json}'`), `iperf3`, `iw`/`wpa_supplicant`
 (Wi-Fi only), `tc` (faults), `openssl`. They are listed in `requirements.apt`.

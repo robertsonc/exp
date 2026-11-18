@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import ssl
-import hashlib
 import subprocess
 import time
 import uuid
@@ -20,7 +20,9 @@ HERE = Path(__file__).resolve().parent
 TOKEN_RE = re.compile(r"exp[aeidn]_[A-Za-z0-9_-]{8,}")
 
 
-def sh(argv: list[str], *, timeout: float = 120, input_: str | None = None) -> subprocess.CompletedProcess[str]:
+def sh(
+    argv: list[str], *, timeout: float = 120, input_: str | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603
         argv, capture_output=True, text=True, timeout=timeout, input=input_, check=False, env=clean_env()
     )
@@ -31,7 +33,11 @@ def docker_unavailable() -> str | None:
         r = sh(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"docker is not usable: {exc}"
-    return None if r.returncode == 0 else f"docker daemon is not reachable: {(r.stderr or r.stdout).strip()[:200]}"
+    return (
+        None
+        if r.returncode == 0
+        else f"docker daemon is not reachable: {(r.stderr or r.stdout).strip()[:200]}"
+    )
 
 
 _image_cache: dict[str, str | None] = {}
@@ -47,16 +53,34 @@ def ensure_image(ubuntu: str = "24.04") -> str | None:
     try:
         if sh(["docker", "image", "inspect", base], timeout=30).returncode != 0:
             r = sh(
-                ["docker", "build", "-q", "--build-arg", f"UBUNTU={ubuntu}", "-t", base,
-                 str(REPO / "agent" / "tests" / "container")],
+                [
+                    "docker",
+                    "build",
+                    "-q",
+                    "--build-arg",
+                    f"UBUNTU={ubuntu}",
+                    "-t",
+                    base,
+                    str(REPO / "agent" / "tests" / "container"),
+                ],
                 timeout=900,
             )
             if r.returncode != 0:
                 reason = f"cannot build {base}: {(r.stderr or r.stdout).strip()[-300:]}"
         if reason is None:
             r = sh(
-                ["docker", "build", "-q", "--build-arg", f"BASE={base}", "-t", tag, "-f",
-                 str(HERE / "docker" / "Dockerfile.host"), str(HERE / "docker")],
+                [
+                    "docker",
+                    "build",
+                    "-q",
+                    "--build-arg",
+                    f"BASE={base}",
+                    "-t",
+                    tag,
+                    "-f",
+                    str(HERE / "docker" / "Dockerfile.host"),
+                    str(HERE / "docker"),
+                ],
                 timeout=900,
             )
             if r.returncode != 0:
@@ -92,13 +116,25 @@ class Host:
         for n, ip in add_hosts.items():
             argv += ["--add-host", f"{n}:{ip}"]
         argv += [
-            "--privileged", "--cgroupns=host", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
-            "--tmpfs", "/run", "--tmpfs", "/run/lock", f"exp-e2e-host:{ubuntu}",
+            "--privileged",
+            "--cgroupns=host",
+            "-v",
+            "/sys/fs/cgroup:/sys/fs/cgroup:rw",
+            "--tmpfs",
+            "/run",
+            "--tmpfs",
+            "/run/lock",
+            f"exp-e2e-host:{ubuntu}",
         ]
         r = sh(argv, timeout=120)
         if r.returncode != 0:
             raise RuntimeError(f"docker run failed: {(r.stderr or r.stdout).strip()[:300]}")
         self._wait_booted()
+        # systemd builds LoadCredential= directories in a helper mount namespace and MS_MOVEs them into place; that
+        # only reaches the service when / is a shared mount, which it is on a VM but not in a container. Without
+        # this units start with a missing $CREDENTIALS_DIRECTORY (a property of the container, not of the product).
+        r0 = self.run("mount --make-rshared /", timeout=30)
+        assert r0.rc == 0, r0
         self.write("/usr/local/share/ca-certificates/exp-e2e-ca.crt", ca_pem)
         r2 = self.run("update-ca-certificates", timeout=60)
         assert r2.rc == 0, r2
@@ -120,7 +156,16 @@ class Host:
 
     @property
     def ip(self) -> str:
-        r = sh(["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", self.name], timeout=30)
+        r = sh(
+            [
+                "docker",
+                "inspect",
+                "-f",
+                "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                self.name,
+            ],
+            timeout=30,
+        )
         return r.stdout.strip()
 
     def remove(self) -> None:
@@ -162,7 +207,10 @@ class Host:
 
 
 def wait_for(
-    fn: Callable[[], Any], timeout: float, interval: float = 2.0, what: str = "condition",
+    fn: Callable[[], Any],
+    timeout: float,
+    interval: float = 2.0,
+    what: str = "condition",
     diag: Callable[[], str] | None = None,
 ) -> Any:
     deadline = time.monotonic() + timeout
@@ -219,8 +267,17 @@ def fingerprint_of_der(der: bytes) -> str:
     return ":".join(h[i : i + 2] for i in range(0, 64, 2))
 
 
-def pinned_get(ip: str, port: int, path: str, fingerprint: str, headers: dict[str, str] | None = None) -> tuple[int, dict[str, str], bytes]:
-    """HTTPS GET to a self-signed component, accepting only the certificate with the given SHA-256 fingerprint."""
+def pinned_request(
+    ip: str,
+    port: int,
+    method: str,
+    path: str,
+    fingerprint: str,
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+) -> tuple[int, dict[str, list[str]], bytes]:
+    """HTTPS request to a self-signed component, accepting only the certificate with the given SHA-256
+    fingerprint (the pin the manager compiles into every consumer). Returns (status, headers (multi), body)."""
     import http.client
 
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -233,11 +290,18 @@ def pinned_get(ip: str, port: int, path: str, fingerprint: str, headers: dict[st
         got = fingerprint_of_der(der)
         if got != fingerprint.upper():
             raise AssertionError(f"certificate fingerprint {got} != pinned {fingerprint}")
-        conn.request("GET", path, headers=headers or {})
+        conn.request(method, path, body=body, headers=headers or {})
         r = conn.getresponse()
-        return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read()
+        hdrs: dict[str, list[str]] = {}
+        for k, v in r.getheaders():
+            hdrs.setdefault(k.lower(), []).append(v)
+        return r.status, hdrs, r.read()
     finally:
         conn.close()
+
+
+def pinned_get(ip: str, port: int, path: str, fingerprint: str, headers: dict[str, str] | None = None):
+    return pinned_request(ip, port, "GET", path, fingerprint, headers)
 
 
 def jget(*a: Any, **kw: Any) -> Any:

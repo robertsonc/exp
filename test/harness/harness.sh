@@ -63,6 +63,10 @@ start_host() {          # name last-octet nports idx
         -v /sys/fs/cgroup:/sys/fs/cgroup:rw --tmpfs /run --tmpfs /run/lock \
         --network "$MGMT" --ip "$BASE.$oct" "$HOST_IMG" >/dev/null
     wait_systemd "$c"
+    # systemd builds LoadCredential= directories in a helper mount namespace and MS_MOVEs them into place; that
+    # only reaches the service when / is a shared mount, which it is on a VM but not in a container. Without this
+    # the service starts with a missing $CREDENTIALS_DIRECTORY (harmless to the product, fatal to the test).
+    docker exec "$c" mount --make-rshared /
     # the management path to the "internet" (1.1.1.1, 8.8.8.8, app servers) is through the net container,
     # a different route than the event LAN: that is what the probe's control-path trace uses
     docker exec "$c" ip route replace default via "$NET_IP"

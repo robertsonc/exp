@@ -174,6 +174,7 @@ class Stack:
     dash_token: str = ""
     started_at: float = 0.0
     log_dir: Path = ARTIFACTS
+    notes: dict[str, Any] = field(default_factory=dict)
     _dash: Dash | None = field(default=None, repr=False)
 
     # --- addresses

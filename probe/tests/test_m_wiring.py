@@ -12,11 +12,11 @@ from measure_support import BOUND, PORTS2
 from netfakes import FakeEnv, FakeIcmp, FakePacketIO, ScriptRunner, link_rules, path_responder, validate_measurements
 
 from exp_probe import cli, scheduler
+from exp_probe.checks import dns as dns_mod
+from exp_probe.checks import register_all
 from exp_probe.config import Paths
 from exp_probe.lease import write_lease
 from exp_probe.scheduler import BEAT_PARALLEL, REGISTRY, SCHEDULED, ManualPool, Rotation, Scheduler
-from exp_probe.tests import dns as dns_mod
-from exp_probe.tests import register_all
 
 S1 = {"ip": "10.1.0.2", "offer_delay": 0.01, "ack_delay": 0.02, "yiaddr": "10.1.0.31"}
 M1 = {"gateway", "dhcp_hb", "dhcp", "dns_hb", "dns", "trace", "ping", "app"}

@@ -13,7 +13,7 @@
 * A bounded priority worker pool caps concurrency; heartbeat work has priority over scheduled work.
 
 Tests register with `register_test`; step 2 of WP-1 provides the measurement modules
-(``exp_probe/tests/*``). A configured test that is not registered is logged once and skipped.
+(``exp_probe/checks/*``). A configured test that is not registered is logged once and skipped.
 Scheduler concepts ported from reference/exm/lib/exm/heartbeat.py (`run`, rotation, sequential traces).
 """
 from __future__ import annotations

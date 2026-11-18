@@ -129,7 +129,7 @@ echo $! > "$RUN/targets.pid"
 
 # wait until the things the tests depend on really answer (known-good before any fault is injected)
 for _ in $(seq 40); do
-    if ns gw ping -c1 -W1 -q 8.8.8.8 >/dev/null 2>&1 && ns gw python3 "$LAN/lanctl" canary 10.1.0.1 >/dev/null 2>&1 \
+    if ns gw ping -c1 -W1 -q 8.8.8.8 >/dev/null 2>&1 && ns gw python3 "$LAN/lanctl" _canary 10.1.0.1 >/dev/null 2>&1 \
        && ns gw curl -sf -m 2 -o /dev/null http://142.250.80.46/; then
         touch "$RUN/ready"
         break

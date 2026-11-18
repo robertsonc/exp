@@ -185,9 +185,11 @@ def collect(cfg: ProbeConfig | None, config_error: str | None, runner: Any, path
         "dropped_total": sp.get("dropped_total", 0),
         "ports": ports_out}
     doc["facts"] = {"collector_reachable": bool(reachable) if reachable is not None else False,
-                    "collector_url": cfg.collector.url if cfg.collector else None, "mode": cfg.mode,
+                    "mode": cfg.mode,
                     "shipper_state": state or "unknown", "tls_pin_mismatch": state == "tls_pin_mismatch",
                     "auth_failed": state == "auth_failed"}
+    if cfg.collector:  # health.schema.json: collector_url is an https URL; with no collector the key is absent, never null
+        doc["facts"]["collector_url"] = cfg.collector.url
     return doc
 
 
