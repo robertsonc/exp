@@ -97,6 +97,24 @@ no JWT and with a forged JWT (both must be 401 from the Worker), `/install.sh` i
 token gets 401. The workers.dev route is disabled again afterwards unless `--keep-workers-dev`. Finally it prints
 the URL and "sign in as <owner email>".
 
+### Deploying through a proxy that rewrites Authorization (`--embed-ui`)
+
+Wrangler's Static Assets upload authenticates with a one-time upload JWT in the `Authorization` header. If your
+environment's HTTPS proxy overwrites every `Authorization` header sent to `api.cloudflare.com` with the account API
+token, that upload fails with 401 while everything else in `deploy.sh` works. In that case add `--embed-ui`:
+
+    CLOUDFLARE_API_TOKEN=... ./deploy.sh --embed-ui --account-id <id> --domain ... --owner-email ... --org-name ...
+
+What changes: the built admin UI (`ui/dist`, about 70 KB gzip) is bundled into the Worker script
+(`EXP_EMBED_UI=1 node scripts/prepare.mjs` generates `worker/.generated/ui-assets.ts`) and served by the Worker; the
+generated wrangler config has no `[assets]` section and no `ASSETS` binding. The SPA gets the same headers as the
+default mode (the `/*` rules of `ui/public/_headers`: CSP with `frame-ancestors 'none'`, `X-Frame-Options: DENY`,
+`Referrer-Policy`, `Permissions-Policy`), plus `nosniff`, ETag/304 and immutable caching for `/assets/*`. Only GET and
+HEAD are served; a missing `/assets/*.js` is a 404, never `index.html`. The admin and agent APIs, `/install.sh`,
+`/healthz` and the Access JWT/CSRF checks are untouched. Cloudflare Access still protects the UI exactly as before: the
+UI is served from the same Access-protected host. `--dry-run --embed-ui` shows the mode. The default (Static Assets) is
+unchanged, and re-running with or without the flag on an existing deployment is safe.
+
 ### Back up EXP_MASTER_KEY
 
 On first deploy the key (32 random bytes, base64) is printed once, to the terminal only. **Copy it to an offline

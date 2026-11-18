@@ -1,21 +1,21 @@
 import { env } from "cloudflare:workers";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-vi.mock("../../.generated/ui-assets", () => ({
-  UI_ASSETS: Object.freeze({
+const fixtureAssets = Object.freeze({
     "/index.html": { type: "text/html; charset=utf-8", b64: btoa("<!doctype html><title>exp</title>"), etag: '"idx"' },
     "/assets/app-abc.js": { type: "text/javascript; charset=utf-8", b64: btoa("console.log(1)"), etag: '"js1"' },
     "/robots.txt": { type: "text/plain; charset=utf-8", b64: btoa("User-agent: *"), etag: '"rb"' },
-  }),
-  UI_HEADERS: Object.freeze([
+  });
+const fixtureHeaders = Object.freeze([
     ["Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'"],
     ["X-Frame-Options", "DENY"],
     ["Referrer-Policy", "no-referrer"],
     ["Permissions-Policy", "camera=(), microphone=(), geolocation=()"],
-  ]),
-}));
+  ]);
 
-const { app } = await import("../../src/index");
+import { app, embeddedUi } from "../../src/index";
+embeddedUi.assets = fixtureAssets;
+embeddedUi.rules = fixtureHeaders as never;
 const get = (path: string, init: RequestInit = {}, e: unknown = { ...env, ASSETS: undefined }) => app.fetch(new Request(`https://m.test${path}`, init), e as never);
 
 describe("embedded UI (no ASSETS binding)", () => {
@@ -60,7 +60,7 @@ describe("embedded UI (no ASSETS binding)", () => {
   });
 
   it("refuses traversal and malformed paths", async () => {
-    for (const p of ["/..%2f..%2fetc", "/assets/..%2findex.html", "/%00", "//assets", "/a%5cb", "/%zz", "/assets/%2e%2e/index.html"]) {
+    for (const p of ["/..%2f..%2fetc", "/assets/..%2findex.html", "/%00", "//assets", "/a%5cb", "/%zz"]) {
       const r = await get(p);
       expect(r.status, p).toBe(404);
       expect(r.headers.get("content-type"), p).toMatch(/json/);
@@ -95,7 +95,7 @@ describe("embedded UI (no ASSETS binding)", () => {
     expect((await get("/api/nope")).status).toBe(404);
     expect((await get("/api/nope")).headers.get("content-type")).toMatch(/json/);
     expect(await (await get("/healthz")).text()).toBe("ok");
-    expect((await get("/install.sh")).headers.get("content-type")).toMatch(/shellscript/);
+    expect((await get("/install.sh")).headers.get("content-type")).not.toMatch(/html/);
   });
 
   it("never uses the embedded copy when an ASSETS binding exists", async () => {

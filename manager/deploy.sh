@@ -511,8 +511,10 @@ else
   fi
 
   bogus="expe_$(printf 'A%.0s' $(seq 1 43))"
-  code="$(http "$body" --request POST --header 'Content-Type: application/json' --data "{\"token\":\"$bogus\",\"facts\":{\"hostname\":\"smoke-test\",\"arch\":\"amd64\"}}" "$BASE/api/agent/v1/enrol")"
-  [ "$code" = 401 ] || die "POST /api/agent/v1/enrol with a bogus token answered $code, expected 401 (body: $(head -c 160 "$body")). If it is 3xx/403 the Access bypass for /api/agent did not apply."
+  # retried like the other checks: right after a deploy the edge can answer a transient Worker error (e.g. 1104)
+  # while the new version propagates. Only a 401 from the Worker passes; anything else after ~2 min fails.
+  code="$(retry_http "$body" 401 "$BASE/api/agent/v1/enrol" --request POST --header 'Content-Type: application/json' --data "{\"token\":\"$bogus\",\"facts\":{\"hostname\":\"smoke-test\",\"arch\":\"amd64\"}}")" || true
+  [ "$code" = 401 ] && grep -q 'invalid_token' "$body" || die "POST /api/agent/v1/enrol with a bogus token answered $code, expected 401 (body: $(head -c 160 "$body")). If it is 3xx/403 the Access bypass for /api/agent did not apply."
   log "ok: enrol refuses a bogus token (401)"
 
   if [ -n "$DOMAIN" ] && [ "$KEEP_WORKERS_DEV" = 0 ]; then
