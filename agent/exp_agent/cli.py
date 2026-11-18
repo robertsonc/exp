@@ -56,8 +56,11 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("facts", parents=[common()], help="print host facts as JSON")
     p = sub.add_parser("enrol", parents=[common()], help="enrol this host with a one-time token")
     # the one-time token is a secret: never a positional argument (it would sit in /proc/<pid>/cmdline, SR-14)
-    p.add_argument("--token-file", metavar="PATH", help="read the token from PATH ('-' = stdin); "
-                   "default: $EXP_ENROL_TOKEN, else stdin")
+    p.add_argument(
+        "--token-file",
+        metavar="PATH",
+        help="read the token from PATH ('-' = stdin); default: $EXP_ENROL_TOKEN, else stdin",
+    )
     p.add_argument("--manager", help="manager URL (https://host)")
     p = sub.add_parser("uninstall", parents=[common()], help="remove everything exp installed")
     p.add_argument("--local", action="store_true", help="do not contact the manager")

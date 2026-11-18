@@ -397,3 +397,47 @@ def test_full_queue_drops_instead_of_blocking():
     for _ in range(5):
         s.post(msg())
     assert s.dropped == 3
+
+
+def test_webhook_allow_comes_from_the_validated_config(hook, tmp_path):
+    """alerts.webhook_allow in the schema-validated config permits a private (loopback) destination;
+    without the entry the same destination is refused (CR-wp2-webhook-allowlist)."""
+    import copy
+
+    from colhelpers import Env
+    from exp_common import config as exp_config
+
+    from exp_collector.app import CollectorApp
+    from exp_collector.config import CredStore, load_config
+
+    h = hook()
+    e = Env(tmp_path / "e", "http://127.0.0.1:1")
+    e.write_creds({}, {}, [{"id": "wh_1", "format": "json", "url": h.url}])
+    outcomes = {}
+    for name, allow in (("allowed", ["127.0.0.1", "Chat.Corp"]), ("refused", ["10.0.0.0/8", "other.example"])):
+        doc = copy.deepcopy(e.cfg_doc)
+        doc.setdefault("alerts", {})["webhook_allow"] = allow
+        cfg_path = tmp_path / f"{name}.json"
+        cfg_path.write_text(json.dumps(doc))
+        cfg = load_config(cfg_path)                               # schema-validated
+        assert list(cfg.alerts["webhook_allow"]) == allow
+        a = CollectorApp(cfg, e.paths(), creds=CredStore(e.creds, poll_s=1), vm_url=e.vm_url,
+                         listen=("127.0.0.1", 0))
+        try:
+            a.creds.load()
+            a.webhooks.transport.ssl_context = h.client_ctx()
+            a.webhooks.backoff_s = (0,)
+            a.webhooks.start()
+            a.webhooks.post(msg())
+            assert a.webhooks.drain()
+            outcomes[name] = (a.webhooks.sent, a.webhooks.failed, len(h.requests))
+        finally:
+            a.webhooks.stop()
+            a.store.close()
+    assert outcomes["allowed"] == (1, 0, 1)
+    assert outcomes["refused"][:2] == (0, 1) and outcomes["refused"][2] == 1     # no new request arrived
+
+    bad = copy.deepcopy(e.cfg_doc)
+    bad.setdefault("alerts", {})["webhook_allow"] = ["not a host!"]
+    with pytest.raises(exp_config.ConfigError):
+        exp_config.validate(bad, "exp.collector.config/1")

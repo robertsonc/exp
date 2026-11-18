@@ -67,6 +67,13 @@ def build_status(ctx: Context, hm: HostMetrics, interval_s: int = 60) -> dict[st
             futures = {c: pool.submit(run_health, ctx, c, r["version"]) for c, r in recs.items()}
             results = {c: f.result() for c, f in futures.items()}
         for c in sorted(recs):
+            for fact in results[c].dropped_facts:
+                if (c, fact) not in ctx.warned_facts:  # once per component+fact (re-armed when it recovers)
+                    ctx.warned_facts.add((c, fact))
+                    st.event("warn", f"component {c}: dropped malformed fact {fact!r} from its health output")
+            ctx.warned_facts -= {
+                k for k in ctx.warned_facts if k[0] == c and k[1] not in results[c].dropped_facts
+            }
             comps.append(_component_entry(ctx, hm, c, recs[c], results[c]))
     for ig in st.data.get("ignored", []):
         comps.append(

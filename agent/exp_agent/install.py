@@ -10,9 +10,9 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-from .errors import AgentError, Refused
+from .errors import AgentError, AptError, Refused
 from .pathguard import SafeFS
-from .runner import Runner
+from .runner import Result, Runner
 
 log = logging.getLogger(__name__)
 
@@ -77,22 +77,36 @@ def check_requirements(names: list[str]) -> list[str]:
     return names
 
 
-def apt_install(runner: Runner, names: list[str]) -> list[str]:
-    """Install the not-yet-installed subset of `names`; returns what was installed."""
-    missing: list[str] = []
-    for n in names:
-        r = runner.run(["dpkg-query", "-W", "-f=${Status}", n], timeout=20)
-        if not (r.rc == 0 and r.stdout.strip().endswith("installed")):
-            missing.append(n)
+def _installed(runner: Runner, name: str) -> bool:
+    r = runner.run(["dpkg-query", "-W", "-f=${Status}", name], timeout=20)
+    return r.rc == 0 and r.stdout.strip().endswith("installed")
+
+
+def apt_install(runner: Runner, names: list[str], session: dict[str, bool] | None = None) -> list[str]:
+    """Install the not-yet-installed subset of `names`; returns what was installed.
+
+    Fresh and cloud images often ship no (or stale) package lists, so when something must be installed
+    the lists are refreshed first (`apt-get update`, never when nothing is missing, and only once per
+    `session` dict, which the reconciler shares across its components)."""
+    missing = [n for n in names if not _installed(runner, n)]
     if not missing:
         return []
-    r = runner.run(
-        ["apt-get", "install", "-y", "--no-install-recommends", *missing],
-        timeout=900,
-        env={"DEBIAN_FRONTEND": "noninteractive"},
-    )
+    env = {"DEBIAN_FRONTEND": "noninteractive"}
+    sess = session if session is not None else {}
+    if sess.get("updated"):
+        upd = Result(0, "", "")
+    else:
+        upd = runner.run(["apt-get", "update", "-q"], timeout=300, env=env)
+        sess["updated"] = True
+    if upd.rc != 0:
+        # not fatal by itself: cached lists may still carry the packages; the install below decides
+        log.warning("apt-get update failed (rc=%s): %s", upd.rc, upd.stderr.strip()[-200:])
+    r = runner.run(["apt-get", "install", "-y", "--no-install-recommends", *missing], timeout=900, env=env)
     if r.rc != 0:
-        raise AgentError("apt-get install failed for " + ", ".join(missing) + ": " + r.stderr.strip()[-200:])
+        why = r.stderr.strip()[-200:]
+        if upd.rc != 0:
+            why += f" (apt-get update also failed: {upd.stderr.strip()[-120:]})"
+        raise AptError("apt-get install failed for " + ", ".join(missing) + ": " + why)
     return missing
 
 

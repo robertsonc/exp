@@ -19,6 +19,10 @@ def need(value, what: str):
     return value
 
 
+class AptError(AgentError):
+    """`apt-get install` of an allowlisted package failed (reported once per desired version)."""
+
+
 class Refused(AgentError):  # noqa: N818 - domain term
     """A safety rule or verification refused the operation; nothing was changed."""
 

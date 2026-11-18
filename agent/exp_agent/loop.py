@@ -39,6 +39,7 @@ class Agent:
         self.last_status_at: float = 0.0
         self._warned_401 = False
         self._warned_down = False
+        self._warned_404 = False
         self._confirmed = False
         self.retry_at: float | None = None
         self.retry_backoff = Backoff()
@@ -101,6 +102,15 @@ class Agent:
         self._warned_down = False
         self._warned_401 = False
         st.data["last_poll"] = iso_now(ctx.clock())
+        if code == 404:
+            # nothing compiled for this host yet (CR-wp4-desired-404): keep the applied state, no backoff
+            if not self._warned_404:
+                st.event(
+                    "info", "manager has no desired state for this host yet; will retry at the next poll"
+                )
+                self._warned_404 = True
+        else:
+            self._warned_404 = False
         if code == 200 and doc is not None:
             self._apply_intervals(doc)
             st.cache_desired(doc)

@@ -195,19 +195,33 @@ def _parse_json_text(text: str, name: str) -> Any:
         raise exp_creds.CredentialError(f"credential {name!r} is nested too deeply") from None
 
 
-def parse_token_hashes(obj: Any, name: str) -> dict[str, str]:
-    """`{id: sha256hex}` -> normalised lower-case map. Errors name the file and the id, never a hash."""
+def parse_token_hashes(obj: Any, name: str) -> dict[str, tuple[str, ...]]:
+    """`{id: sha256hex | [current, previous]}` -> normalised lower-case map of digest tuples
+    (CR-wp4-token-overlap: the list form exists only during a rotation overlap).
+
+    Whole-file problems and a malformed digest string raise (the previous good set stays active); an entry of
+    any other shape (wrong type, bad list, empty or oversized list) is ignored with one log line per file, never accepted. Errors name the file and id, never a hash."""
     if obj is None:
         return {}
     if not isinstance(obj, dict):
         raise exp_creds.CredentialError(f"credential {name!r} must be a JSON object {{id: sha256}}")
-    out: dict[str, str] = {}
-    for ident, digest in obj.items():
+    out: dict[str, tuple[str, ...]] = {}
+    ignored: list[str] = []
+    for ident, value in obj.items():
         if not exp_ids.is_slug(ident):
             raise exp_creds.CredentialError(f"credential {name!r}: identity {str(ident)[:40]!r} is not a slug")
-        if not isinstance(digest, str) or not _HEX64.match(digest):
+        if isinstance(value, str) and not _HEX64.match(value):
             raise exp_creds.CredentialError(f"credential {name!r}: entry for {ident!r} is not a sha256 hex digest")
-        out[ident] = digest.lower()
+        values = [value] if isinstance(value, str) else value
+        if (not isinstance(values, list) or not 1 <= len(values) <= 2
+                or not all(isinstance(v, str) and _HEX64.match(v) for v in values)):
+            ignored.append(ident)
+            continue
+        out[ident] = tuple(dict.fromkeys(v.lower() for v in values))
+    if ignored:
+        log.error("credential %r: ignoring %d entr%s with an unsupported shape (%s); expected a sha256 hex "
+                  "string or [current, previous]", name, len(ignored), "y" if len(ignored) == 1 else "ies",
+                  ", ".join(i[:40] for i in ignored[:5]))
     return out
 
 
@@ -226,12 +240,12 @@ def parse_webhooks(obj: Any, name: str = CRED_WEBHOOKS) -> list[dict[str, str]]:
 
 
 class TokenTable:
-    """Immutable id -> sha256 table with constant-time lookup."""
+    """Immutable id -> sha256 digests table (one, or two during a rotation overlap) with constant-time lookup."""
 
     __slots__ = ("_entries",)
 
-    def __init__(self, hashes: Mapping[str, str]) -> None:
-        self._entries = tuple(hashes.items())
+    def __init__(self, hashes: Mapping[str, str | tuple[str, ...] | list[str]]) -> None:
+        self._entries = tuple((i, (h,) if isinstance(h, str) else tuple(h)) for i, h in hashes.items())
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -244,9 +258,10 @@ class TokenTable:
         time, so timing reveals neither which entry matched nor how many exist."""
         digest = exp_ids.token_hash(token).encode("ascii")
         found: str | None = None
-        for ident, stored in self._entries:
-            if hmac.compare_digest(digest, stored.encode("ascii")) and found is None:
-                found = ident
+        for ident, stored_all in self._entries:
+            for stored in stored_all:
+                if hmac.compare_digest(digest, stored.encode("ascii")) and found is None:
+                    found = ident
         return found
 
 

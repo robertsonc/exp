@@ -340,7 +340,10 @@ def test_apt_allowlisted_packages_are_installed_with_argv(env):
     out = Reconciler(env.ctx).run(fetch(env, one_collector(env)))
     assert out.result == "ok"
     apt = env.runner.argvs("apt-get")
-    assert apt == [["apt-get", "install", "-y", "--no-install-recommends", "iperf3", "curl"]]
+    assert apt == [
+        ["apt-get", "update", "-q"],
+        ["apt-get", "install", "-y", "--no-install-recommends", "iperf3", "curl"],
+    ]
 
 
 @pytest.mark.parametrize(
@@ -371,15 +374,44 @@ def test_creds_pruned_and_referenced_files_created_empty(env):
     assert all(mode(cd / n) == 0o600 for n in os.listdir(cd)) and mode(cd) == 0o700
 
 
-def test_creds_only_change_reloads_when_declared_else_restarts(env):
+def test_creds_only_change_restarts_even_when_reload_is_declared(env):
+    """systemd re-reads LoadCredential= only at unit start: a credential change never uses reload/SIGHUP."""
     env.standard_release(comps=("collector",), reload_=True)
     assert Reconciler(env.ctx).run(fetch(env, one_collector(env, creds={"t": "1"}))).result == "ok"
     n = len(env.runner.calls)
     assert Reconciler(env.ctx).run(fetch(env, one_collector(env, creds={"t": "2"}))).result == "ok"
     new = env.runner.calls[n:]
+    assert ["systemctl", "restart", "exp-collector.service"] in new
+    assert not [c for c in new if c[:2] == ["systemctl", "reload"]]
+
+
+def test_config_only_change_reloads_when_declared(env):
+    env.standard_release(comps=("collector",), reload_=True)
+    assert Reconciler(env.ctx).run(fetch(env, one_collector(env, creds={"t": "1"}))).result == "ok"
+    n = len(env.runner.calls)
+    doc = one_collector(env, creds={"t": "1"})
+    doc["components"][0]["config"] = {**doc["components"][0]["config"], "extra_setting": 7}
+    assert Reconciler(env.ctx).run(fetch(env, doc)).result == "ok"
+    new = env.runner.calls[n:]
     assert ["systemctl", "reload", "exp-collector.service"] in new
     assert not [c for c in new if c[:2] == ["systemctl", "restart"]]
 
+
+def test_apt_failure_reported_once_per_desired_version_and_others_converge(env):
+    env.standard_release(comps=("collector", "dashboard"), requirements=("iperf3",))
+    env.runner.fail[("apt-get", "install")] = Result(100, "", "E: Unable to locate package iperf3")
+    rec = Reconciler(env.ctx)
+    doc = fetch(env, env.desired([env.comp("collector"), env.comp("dashboard")]))
+    out = rec.run(doc)
+    assert out.result == "error" and "iperf3" in out.error
+    assert len([c for c in env.runner.argvs("apt-get") if c[1] == "update"]) == 1  # once per reconcile
+    out = rec.run(doc)
+    assert out.result == "error"
+    events = [e for e in env.ctx.state.pending_events() if "apt-get install failed" in e["message"]]
+    assert len(events) == 2 and events[0]["message"].startswith(("collector", "dashboard"))
+    assert len({e["message"] for e in events}) == 2  # one per component, not repeated on the 2nd poll
+    env.runner.fail.clear()
+    assert rec.run(doc).result == "ok"
 
 def test_creds_only_change_restarts_without_reload_support(env):
     env.standard_release(comps=("collector",))

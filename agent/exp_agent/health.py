@@ -24,6 +24,7 @@ class HealthResult:
     metrics: dict[str, Any] = field(default_factory=dict)
     facts: dict[str, Any] = field(default_factory=dict)
     timed_out: bool = False
+    dropped_facts: list[str] = field(default_factory=list)
 
 
 _FACT_REFS = {
@@ -33,15 +34,18 @@ _FACT_REFS = {
 }
 
 
-def clean_facts(doc: Any) -> Any:
+def clean_facts(doc: Any, dropped: list[str] | None = None) -> Any:
     """Drop wiring facts that would make the manager reject the WHOLE status report
-    (CR-wp4-status-component-facts): a malformed tls_fingerprint_sha256 / listen / url is removed."""
+    (CR-wp4-status-component-facts): a malformed tls_fingerprint_sha256 / listen / url is removed (its
+    name, never its value, is appended to `dropped`)."""
     if isinstance(doc, dict) and isinstance(doc.get("facts"), dict):
         facts = dict(doc["facts"])
         for key, ref in _FACT_REFS.items():
             if key in facts and exp_config.iter_errors(facts[key], {"$ref": ref}):
                 log.warning("dropping malformed component fact %r from a health document", key)
                 del facts[key]
+                if dropped is not None:
+                    dropped.append(key)
         doc = {**doc, "facts": facts}
     return doc
 
@@ -57,12 +61,13 @@ def run_health(ctx: Context, component: str, version: str) -> HealthResult:
         return HealthResult(False, "degraded", "health timeout", timed_out=True)
     out = res.stdout
     parsed: dict[str, Any] | None = None
+    dropped: list[str] = []
     problem = ""
     if len(out.encode("utf-8", "replace")) > MAX_HEALTH_BYTES:
         problem = "health output too large"
     else:
         try:
-            doc = clean_facts(exp_config.parse_json(out, "health output"))
+            doc = clean_facts(exp_config.parse_json(out, "health output"), dropped)
             exp_config.validate(doc, "health.schema.json")
             parsed = doc
         except exp_config.ConfigError:
@@ -77,7 +82,14 @@ def run_health(ctx: Context, component: str, version: str) -> HealthResult:
     # Reconcile gate: "ok" and "degraded" mean the service is up and answering (a degraded dashboard may
     # only be missing a collector that arrives later); "fail" never passes, even with exit code 0.
     passed = parsed["status"] == "degraded" or (parsed["status"] == "ok" and res.rc == 0)
-    return HealthResult(passed, parsed["status"], scrub(str(parsed.get("detail", "")))[:1000], metrics, facts)
+    return HealthResult(
+        passed,
+        parsed["status"],
+        scrub(str(parsed.get("detail", "")))[:1000],
+        metrics,
+        facts,
+        dropped_facts=dropped,
+    )
 
 
 def wait_healthy(ctx: Context, component: str, version: str) -> HealthResult:

@@ -76,11 +76,30 @@ def test_apt_install_only_missing_and_noninteractive():
     r = ScriptedRunner()
     r.installed_pkgs.add("curl")
     assert install.apt_install(r, ["curl", "iperf3"]) == ["iperf3"]
-    assert r.argvs("apt-get") == [["apt-get", "install", "-y", "--no-install-recommends", "iperf3"]]
+    # package lists are refreshed before installing (fresh images have none), then install
+    assert r.argvs("apt-get") == [
+        ["apt-get", "update", "-q"],
+        ["apt-get", "install", "-y", "--no-install-recommends", "iperf3"],
+    ]
+    n = len(r.argvs("apt-get"))
     assert install.apt_install(r, ["curl", "iperf3"]) == []
-    r.fail[("apt-get",)] = Result(100, "", "E: unable to locate")
-    with pytest.raises(AgentError):
+    assert len(r.argvs("apt-get")) == n  # nothing missing: no update either
+    r.fail[("apt-get", "install")] = Result(100, "", "E: unable to locate")
+    with pytest.raises(AgentError, match="unable to locate"):
         install.apt_install(r, ["tcpdump"])
+
+
+def test_apt_update_once_per_session_and_failure_is_reported():
+    r = ScriptedRunner()
+    sess: dict[str, bool] = {}
+    install.apt_install(r, ["iperf3"], sess)
+    install.apt_install(r, ["tcpdump"], sess)
+    assert [c[1] for c in r.argvs("apt-get")] == ["update", "install", "install"]
+    r2 = ScriptedRunner()
+    r2.fail[("apt-get", "update")] = Result(100, "", "E: Failed to fetch")
+    r2.fail[("apt-get", "install")] = Result(100, "", "E: Unable to locate package iperf3")
+    with pytest.raises(install.AptError, match="Unable to locate package iperf3.*update also failed"):
+        install.apt_install(r2, ["iperf3"])
 
 
 def test_service_users_created_once():
@@ -260,13 +279,19 @@ def test_tls_generated_with_san_cn_key_owner_and_never_regenerated(fs):
     assert tls.ensure_tls(fs, r, "collector", cfg, lookup) is True
     d = fs.paths.state_dir("collector") / "tls"
     key, cert = d / "key.pem", d / "cert.pem"
-    assert mode(key) == 0o600 and mode(cert) == 0o644 and mode(d) == 0o755
+    assert mode(key) == 0o600 and mode(cert) == 0o644 and mode(d) == 0o700
     assert [c for c in fs.chowns if c[0].endswith("key.pem")][0][1:] == (4242, 4242)
+    # state layout (CR-wp2-state-layout-and-wrappers): tls/ and vm/ 0700, owned by their service users
+    st = fs.paths.state_dir("collector")
+    assert mode(st / "vm") == 0o700 and mode(st) == 0o755
+    owned = {os.path.basename(c[0]) for c in fs.chowns}
+    assert {"tls", "vm", "collector"} <= owned
     text = subprocess.run(
         ["openssl", "x509", "-in", str(cert), "-noout", "-text"], capture_output=True, text=True, check=True
     ).stdout
     assert "CN = col-hallb" in text and "IP Address:10.32.98.25" in text and "prime256v1" in text
-    assert os.listdir(fs.paths.state_dir("collector")) == ["tls"]  # private temp dir removed
+    assert sorted(os.listdir(fs.paths.state_dir("collector"))) == ["tls", "vm"]
+    assert not [n for n in os.listdir(fs.paths.agent_state) if n.startswith(".tls-")]  # temp dir removed
     before = (cert.read_bytes(), key.read_bytes(), os.stat(cert).st_mtime_ns)
     assert tls.tls_is_valid(fs, r, "collector", cfg)
     assert tls.ensure_tls(fs, r, "collector", cfg, lookup) is False
@@ -299,22 +324,41 @@ def test_tls_dashboard_san_from_url_and_provided_mode_skipped(fs):
     assert tls.wants_tls("dashboard", cfg2) is False and tls.wants_tls("runner", {}) is False
 
 
-def test_tls_refuses_a_service_writable_tls_dir_and_symlinks(fs, tmp_path):
+def test_tls_repairs_a_loose_tls_dir_and_replaces_planted_symlinks(fs, tmp_path):
     r = ScriptedRunner()
     cfg = {"collector_id": "col-a", "listen": "10.0.0.1:8443"}
     d = fs.mkdir(fs.paths.state_dir("collector") / "tls", 0o755)
     os.chmod(d, 0o777)  # a service could plant symlinks here
-    with pytest.raises(Refused, match="not writable"):
-        tls.ensure_tls(fs, r, "collector", cfg, lookup)
-    os.chmod(d, 0o755)
     outside = tmp_path / "outside.pem"
     outside.write_text("x")
     os.symlink(outside, d / "key.pem")
     os.symlink(outside, d / "cert.pem")
     assert not tls.tls_is_valid(fs, r, "collector", cfg)
-    with pytest.raises(PathRefused):  # the symlink target is outside the allowed roots
-        tls.ensure_tls(fs, r, "collector", cfg, lookup)
+    assert tls.ensure_tls(fs, r, "collector", cfg, lookup) is True  # rename replaces the links, never follows
+    assert mode(d) == 0o700 and not os.path.islink(d / "key.pem") and not os.path.islink(d / "cert.pem")
     assert outside.read_text() == "x"
+
+
+def test_state_dir_symlink_and_tls_symlink_are_refused(fs, tmp_path):
+    r = ScriptedRunner()
+    cfg = {"collector_id": "col-a", "listen": "10.0.0.1:8443"}
+    st = fs.paths.state_dir("collector")
+    fs.mkdir(st, 0o755)
+    os.symlink(tmp_path, st / "tls")
+    with pytest.raises(Refused, match="real directory"):
+        tls.ensure_tls(fs, r, "collector", cfg, lookup)
+    os.unlink(st / "tls")
+    os.symlink(tmp_path, st / "vm")
+    with pytest.raises(Refused, match="real directory"):
+        tls.ensure_tls(fs, r, "collector", cfg, lookup)
+
+
+def test_dashboard_state_layout_is_0700_and_provided_tls_has_no_tls_dir(fs):
+    r = ScriptedRunner()
+    cfg = {"dashboard_id": "d", "url": "https://10.0.0.5", "tls": {"mode": "provided"}}
+    assert tls.ensure_tls(fs, r, "dashboard", cfg, lookup) is False
+    st = fs.paths.state_dir("dashboard")
+    assert mode(st) == 0o700 and os.listdir(st) == []
 
 
 def test_tls_needs_the_service_user_and_a_usable_address(fs):

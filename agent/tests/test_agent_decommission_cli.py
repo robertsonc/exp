@@ -182,6 +182,7 @@ def test_enrol_writes_agent_json_0600_and_never_prints_the_secret(env, capsys, m
 
 def test_enrol_refuses_a_token_on_argv_and_reads_stdin(env, capsys, monkeypatch):
     import io
+
     monkeypatch.delenv("EXP_ENROL_TOKEN", raising=False)
     pend = env.app.add_host(name="srv-10")
     token = env.app.issue_enrol_token(pend["host_id"])

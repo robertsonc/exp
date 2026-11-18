@@ -18,7 +18,7 @@ from exp_common.log import scrub
 
 from . import artifacts, creds, decommission, desired, install, selfupdate, tls, units
 from .context import Context
-from .errors import AgentError, Refused, Transient, Unauthorized, need
+from .errors import AgentError, AptError, Refused, Transient, Unauthorized, need
 from .health import wait_healthy
 from .state import iso_now
 from .verify import Manifest, check_artifact, version_lt
@@ -79,11 +79,14 @@ def _config_bytes(config: dict[str, Any]) -> bytes:
 class Reconciler:
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx
+        self._apt: dict[str, bool] = {}  # per reconcile: has `apt-get update` run yet
+        self._apt_reported: set[tuple[Any, str]] = set()  # (desired version, message) already reported
 
     # ===================================================================== entry point
     def run(self, doc: Any) -> Outcome:
         ctx = self.ctx
         t0 = ctx.monotonic()
+        self._apt = {}
         try:
             out = self._run(doc)
         except Unauthorized:
@@ -163,7 +166,11 @@ class Reconciler:
                 raise
             except AgentError as exc:
                 errors.append(f"{c}: {exc}")
-                st.event("error", f"{c}: {exc}")
+                key = (doc.get("version"), str(exc))
+                if not isinstance(exc, AptError) or key not in self._apt_reported:
+                    st.event("error", f"{c}: {exc}")  # an apt failure is reported once per desired version
+                if isinstance(exc, AptError):
+                    self._apt_reported.add(key)
         wanted = {c["type"] for c in comps}
         for c in list(st.data["components"]):
             if c not in wanted and not any(i["type"] == c for i in ignored):
@@ -223,9 +230,7 @@ class Reconciler:
             cred_map.setdefault(n, b"")
         config = comp["config"]
         instances = units.instance_units(c, config, set(rendered))
-        return Plan(
-            c, version, config, _config_bytes(config), cred_map, rendered, infos, instances
-        )
+        return Plan(c, version, config, _config_bytes(config), cred_map, rendered, infos, instances)
 
     def _primary(self, plan: Plan) -> list[str]:
         names = [n for n, i in plan.infos.items() if i.has_install and not units.is_template(n)]
@@ -254,7 +259,7 @@ class Reconciler:
             reqs = install.check_requirements(install.read_requirements(root))
             plan = self._plan(comp, root, ver)
             if staging is not None:
-                install.apt_install(ctx.runner, reqs)
+                install.apt_install(ctx.runner, reqs, self._apt)
             install.ensure_users(ctx.runner, c, ctx.user_exists)
             if staging is not None:
                 install.commit_staging(fs, staging, vdir)

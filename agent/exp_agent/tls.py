@@ -135,7 +135,9 @@ def _open_dir(fs: SafeFS, path: Any, dir_fd: int | None = None, name: str | None
             return os.open(fs.g(path), _DIRFLAGS)
         return os.open(name or "", _DIRFLAGS, dir_fd=dir_fd)
     except OSError as exc:
-        raise Refused(f"{fs.paths.logical(path)} must be a real directory, not a link ({exc.strerror})") from None
+        raise Refused(
+            f"{fs.paths.logical(path)} must be a real directory, not a link ({exc.strerror})"
+        ) from None
 
 
 def _settle_dir(fs: SafeFS, fd: int, path: Any, ids: tuple[int, int], mode: int) -> None:

@@ -331,3 +331,37 @@ def test_wildcard_listen_is_refused(env):
 
 def test_binds_only_the_configured_address(env, app):
     assert app.address[0] == "127.0.0.1"
+
+
+# ------------------------------------------------------- rotation overlap (CR-wp4-token-overlap)
+def test_rotation_overlap_accepts_both_tokens_then_only_the_new_one(env, app, port):
+    old = env.ingest_token
+    new = ids.new_token("expi")
+    dash_old = env.dash_token
+    dash_new = ids.new_token("expd")
+    (env.creds / "ingest_tokens.json").write_text(json.dumps(
+        {"probe-a1": [ids.token_hash(new), ids.token_hash(old)]}))
+    (env.creds / "dashboard_tokens.json").write_text(json.dumps(
+        {"dash-main": [ids.token_hash(dash_new), ids.token_hash(dash_old)]}))
+    assert wait_for(lambda: ingest(port, new, [rec()]).status == 200, 10)
+    assert ingest(port, old, [rec()]).status == 200                       # previous still valid in the overlap
+    assert https(port, "GET", "/api/v1/health", headers=auth(dash_new)).status == 200
+    assert https(port, "GET", "/api/v1/health", headers=auth(dash_old)).status == 200
+    assert ingest(port, env.ingest_token2, [rec()]).status == 401         # identity absent from the file
+    env.write_creds({"probe-a1": ids.token_hash(new)}, {"dash-main": ids.token_hash(dash_new)}, [])
+    assert wait_for(lambda: ingest(port, old, [rec()]).status == 401, 10)
+    assert ingest(port, new, [rec()]).status == 200
+    assert https(port, "GET", "/api/v1/health", headers=auth(dash_old)).status == 401
+    assert https(port, "GET", "/api/v1/health", headers=auth(dash_new)).status == 200
+
+
+@pytest.mark.parametrize("bad", [123, None, [], ["a" * 64, "b" * 64, "c" * 64], [1, 2],
+                                 {"x": "y"}, True, ["zz"]])
+def test_unknown_token_shapes_are_ignored_with_one_log_line_never_accepted(env, app, port, log_capture, bad):
+    good = ids.new_token("expi")
+    (env.creds / "ingest_tokens.json").write_text(json.dumps(
+        {"probe-a1": ids.token_hash(good), "probe-a2": bad}))
+    assert wait_for(lambda: ingest(port, good, [rec()]).status == 200, 10)   # file still loads
+    assert ingest(port, env.ingest_token2, [rec(probe="probe-a2")]).status == 401
+    assert log_capture().count("unsupported shape") == 1
+    assert ids.token_hash(good) not in log_capture()

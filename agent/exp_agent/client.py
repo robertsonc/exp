@@ -316,6 +316,8 @@ class ManagerClient:
             self.request("GET", API_PREFIX + "desired", headers={"If-None-Match": '"exp-auth-probe"'})
         except Unauthorized:
             return False
+        except ManagerUnreachable:
+            return True  # cannot tell; do not undo a rotation over a network blip
         except ClientError:
             return True  # authenticated, the answer was something else (e.g. 404 nothing compiled)
         return True

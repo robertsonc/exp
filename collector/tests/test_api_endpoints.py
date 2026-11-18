@@ -373,3 +373,14 @@ def test_records_roundtrip_matches_what_was_ingested(env, port):
     now = int(time.time() * 1000)
     items = get(port, env, f"/records?probe=probe-a1&from={iso(now - 60_000)}&to={iso(now + 5000)}").json()["items"]
     assert items[0]["id"] == m["id"] and items[0]["metrics"] == {"rtt_ms": 3.25}
+
+
+def test_silent_probe_incident_has_line_probe_and_validates(env, app, port):
+    now = make_incident(env, app, port)
+    app.rules.tick(now + 400_000)                                     # no records for > 90 s
+    items = get(port, env, "/incidents").json()["items"]
+    probe_inc = [i for i in items if i["line"] == "probe"]
+    assert probe_inc and probe_inc[0]["kind"] == "down"
+    check_openapi("collector", "/incidents", "get", 200, {"items": items, "next_cursor": None})
+    for i in items:
+        check_schema_file("incident.schema.json", i)

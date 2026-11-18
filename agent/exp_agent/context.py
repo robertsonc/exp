@@ -51,6 +51,7 @@ class Context:
     health_poll_s: float = 2.0
     health_timeout_s: float = 5.0
     started: float = field(default_factory=time.monotonic)
+    warned_facts: set[tuple[str, str]] = field(default_factory=set)  # (component, fact) already reported
 
     def attach_manager(self, cfg: AgentConfig, client: Any) -> None:
         self.cfg, self.client = cfg, client
