@@ -7,12 +7,17 @@ import { SEMVER_RE } from "../util/ids";
 
 const PEM_RE = /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]+\n-----END PUBLIC KEY-----\n?$/;
 
+// CR-wp6-install-sh-serving: the three values sit inside single quotes in the script, so they are validated, never escaped.
+const URL_RE = /^https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$|^http:\/\/\[::1\](:[0-9]{1,5})?$/;
+const TOKENS = ["@@MANAGER_URL@@", "@@AGENT_VERSION@@", "@@RELEASE_PUBKEY_PEM@@"] as const;
+
 function managerUrl(req: Request): string {
   const u = new URL(req.url);
   const host = u.hostname;
   const local = host === "localhost" || host === "127.0.0.1" || host === "[::1]";
   if (u.protocol !== "https:" && !(local && u.protocol === "http:")) throw new ApiError(503, "unavailable", "manager URL is not https");
   if (!/^[A-Za-z0-9.-]+$/.test(host) && !local) throw new ApiError(503, "unavailable", "unsupported manager host name");
+  if (!URL_RE.test(u.origin)) throw new ApiError(503, "unavailable", "manager origin is not a plain https://host[:port]");
   return u.origin;
 }
 
@@ -32,11 +37,14 @@ export async function latestVersion(env: Env): Promise<string> {
 export async function renderInstallSh(env: Env, req: Request): Promise<string> {
   const url = managerUrl(req);
   const version = await latestVersion(env);
-  if (version && !SEMVER_RE.test(version)) throw new ApiError(503, "unavailable", "invalid release version");
+  if (!SEMVER_RE.test(version)) throw new ApiError(503, "unavailable", "no valid release version is imported yet");
   const pem = (env.RELEASE_PUBKEY_PEM ?? "").replace(/\r\n/g, "\n").trim();
-  if (pem && !PEM_RE.test(pem + "\n")) throw new ApiError(503, "unavailable", "RELEASE_PUBKEY_PEM is not a public key PEM");
+  if (!PEM_RE.test(pem + "\n")) throw new ApiError(503, "unavailable", "RELEASE_PUBKEY_PEM is not a public key PEM");
+  for (const [t, v] of [[TOKENS[0], url], [TOKENS[1], version], [TOKENS[2], pem]] as const) {
+    if (v.includes("'") || v.includes("@@") || v.includes("\\") || v.includes("$") || v.includes("`")) throw new ApiError(503, "unavailable", `unsafe value for ${t}`);
+  }
+  // the template must carry each token exactly once
+  for (const t of TOKENS) if (INSTALL_SH.split(t).length !== 2) throw new ApiError(503, "unavailable", `install.sh template is malformed (${t})`);
   // function replacers: the values are never interpreted as replacement patterns
-  return INSTALL_SH.replaceAll("@@MANAGER_URL@@", () => url)
-    .replaceAll("@@AGENT_VERSION@@", () => version)
-    .replaceAll("@@RELEASE_PUBKEY_PEM@@", () => pem);
+  return INSTALL_SH.replace(TOKENS[0], () => url).replace(TOKENS[1], () => version).replace(TOKENS[2], () => pem);
 }

@@ -21,4 +21,5 @@ markers = [
   "internet: needs the public internet (excluded by default; run with -m internet)",
   "slow: slow test",
   "harness: needs the full test harness / fakes stack",
+  "e2e: end-to-end suites under test/e2e (local wrangler dev, docker systemd hosts); run explicitly",
 ]

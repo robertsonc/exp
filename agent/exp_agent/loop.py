@@ -169,9 +169,9 @@ class Agent:
     def _post_status(self) -> None:
         ctx, st = self.ctx, self.ctx.state
         client = need(ctx.client, "manager client")
-        n = len(st.pending_events())
         try:
             doc = build_status(ctx, self.metrics, int(self.status_s))
+            n = len(st.pending_events())  # after the build: it may add events that go out in this report
             client.post_status(doc)
         except Unauthorized:
             self._handle_401()

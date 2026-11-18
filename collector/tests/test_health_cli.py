@@ -56,6 +56,21 @@ def test_health_json_ok_validates_and_has_every_contract_key(env, vm):
     blob = json.dumps(doc)
     for secret in (env.ingest_token, env.dash_token):
         assert secret not in blob
+    _check_component_facts(doc["facts"])
+
+
+def _check_component_facts(facts: dict) -> None:
+    """The manager rejects a whole status report when a component's facts are malformed
+    (CR-wp4-status-component-facts), so the facts of a real health run must satisfy status.schema.json."""
+    from colhelpers import REGISTRY
+    from jsonschema import Draft202012Validator
+    v = Draft202012Validator({"$ref": "status.schema.json#/$defs/component/properties/facts"}, registry=REGISTRY)
+    errs = [f"{list(e.path)}: {e.message[:120]}" for e in v.iter_errors(facts)]
+    assert not errs, errs
+    assert {"listen", "tls_fingerprint_sha256"} <= set(facts)
+    import re
+    assert re.fullmatch(r"([0-9A-F]{2}:){31}[0-9A-F]{2}", facts["tls_fingerprint_sha256"])
+    assert re.fullmatch(r"[^:]+:\d{1,5}", facts["listen"])
 
 
 def test_health_degraded_when_vm_down_and_exit_nonzero(env, vm):

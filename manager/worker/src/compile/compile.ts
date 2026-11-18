@@ -145,6 +145,11 @@ function buildProbe(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | null
   const kept = ports.filter((p) => !(isObj(p) && p.iface === iface));
   if (kept.length !== ports.length) ctx.warnings.push(`probe ${c.slug}: dropped port(s) on management interface ${iface}`);
   ports = kept;
+  if (ports.length === 0) {
+    // CR-wp5-admin-ui-intent: ports are assigned after enrolment; exp.probe.config/1 needs >= 1 port, so the probe is not started yet
+    ctx.warnings.push(`probe ${c.slug}: no test ports assigned yet; component not compiled`);
+    return null;
+  }
   const base = probePeers(ctx, { ...cfg, ports }, collector);
   const config: Obj = {
     schema: "exp.probe.config/1",
@@ -179,9 +184,10 @@ function buildCollector(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
   const withUrl = dashes.map((d) => dashboardUrl(ctx, d)).find((u) => !!u) ?? null;
   const rulesCfg = isObj(cfg.rules) ? cfg.rules : {};
   const alerts: Obj = {
-    ...(isObj(site.alerts) ? pick(site.alerts, ["enabled", "board_url", "timezone", "voice", "hold_down_s", "hold_back_s", "reopen_s", "calm_s"]) : {}),
+    ...(isObj(site.alerts) ? pick(site.alerts, ["enabled", "board_url", "timezone", "voice", "hold_down_s", "hold_back_s", "reopen_s", "calm_s", "webhook_allow"]) : {}),
     ...(isObj(cfg.alerts) ? cfg.alerts : {}),
   };
+  if (Array.isArray(alerts.webhook_allow) && alerts.webhook_allow.length === 0) delete alerts.webhook_allow;
   if (alerts.board_url === undefined && withUrl) alerts.board_url = withUrl;
   if (alerts.timezone === undefined) alerts.timezone = site.timezone;
   const config: Obj = {

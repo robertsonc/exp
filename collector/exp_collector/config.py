@@ -200,7 +200,8 @@ def parse_token_hashes(obj: Any, name: str) -> dict[str, tuple[str, ...]]:
     (CR-wp4-token-overlap: the list form exists only during a rotation overlap).
 
     Whole-file problems and a malformed digest string raise (the previous good set stays active); an entry of
-    any other shape (wrong type, bad list, empty or oversized list) is ignored with one log line per file, never accepted. Errors name the file and id, never a hash."""
+    any other shape (wrong type, bad list, empty or oversized list) is ignored with one log line per file,
+    never accepted. Errors name the file and id, never a hash."""
     if obj is None:
         return {}
     if not isinstance(obj, dict):

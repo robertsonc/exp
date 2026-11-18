@@ -257,6 +257,21 @@ export async function deleteDashboardUser(env: Env, actor: Actor, dashboardSlug:
 export const nocIdOk = (id: string): boolean => NOC_ID_RE.test(id);
 
 // ---- site alerts -------------------------------------------------------------------------------------
+/** CR-wp2-webhook-allowlist entry: IPv4/IPv6 address, CIDR, or host name (exact match, case-insensitive). */
+export function isWebhookAllowEntry(v: string): boolean {
+  if (v.length < 1 || v.length > 253 || !/^[A-Za-z0-9.:/-]+$/.test(v)) return false;
+  const [addr, mask, extra] = v.split("/");
+  if (extra !== undefined) return false;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(addr ?? "");
+  if (v4) return v4.slice(1).every((o) => Number(o) <= 255) && (mask === undefined || (/^\d{1,2}$/.test(mask) && Number(mask) <= 32));
+  if ((addr ?? "").includes(":")) {
+    if (!/^[0-9A-Fa-f:]+$/.test(addr!) || addr!.split("::").length > 2 || !/^[0-9A-Fa-f]{0,4}(:[0-9A-Fa-f]{0,4}){2,7}$/.test(addr!)) return false;
+    return mask === undefined || (/^\d{1,3}$/.test(mask) && Number(mask) <= 128);
+  }
+  if (mask !== undefined) return false;
+  return /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(addr ?? "") && !/^[\d.]+$/.test(addr ?? "");
+}
+
 export const AlertsConfigSchema = z
   .object({
     enabled: z.boolean(),
@@ -267,6 +282,7 @@ export const AlertsConfigSchema = z
     hold_back_s: z.number().int().min(0).max(3600),
     reopen_s: z.number().int().min(0).max(86400),
     calm_s: z.number().int().min(0).max(86400),
+    webhook_allow: z.array(z.string().refine(isWebhookAllowEntry, "must be an IP address, a CIDR or a host name")).max(16).optional(),
   })
   .strict();
 export const WebhookWriteSchema = z

@@ -214,7 +214,7 @@ def ensure_tls(
     config: dict[str, Any],
     lookup: Callable[[str], tuple[int, int] | None] = lookup_user,
 ) -> bool:
-    """Prepare the state layout and ensure a valid key/cert pair exists. True when a new pair was generated."""
+    """Prepare the state layout, ensure a valid key/cert pair. True when a new pair was generated."""
     tls_fd = prepare_state(fs, component, config, lookup)
     if tls_fd is None:
         return False

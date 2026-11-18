@@ -251,3 +251,63 @@ def test_malformed_component_facts_are_dropped_not_sent(env):
     col = next(c for c in rep["components"] if c["type"] == "collector")
     assert col["health"] == "ok" and col["facts"] == {"listen": "10.0.0.1:8443", "extra": 1}
     assert col["metrics"] == {"vm_up": 1}
+
+
+def test_desired_404_keeps_state_without_escalating_backoff_and_logs_once(env):
+    publish(env)
+    agent = Agent(env.ctx)
+    agent.startup()
+    agent.tick()
+    applied = env.ctx.state.data["applied_version"]
+    agent.client = None
+    real = env.client.get_desired
+    env.client.get_desired = lambda etag: (404, None, None)
+    try:
+        delays = [agent.tick() for _ in range(3)]
+    finally:
+        env.client.get_desired = real
+    assert all(agent.poll_s * 0.8 <= d <= agent.poll_s * 1.2 or d <= 6 for d in delays)  # normal poll cadence
+    assert agent.backoff.next() <= 31  # not escalated: the first backoff step
+    assert env.ctx.state.data["applied_version"] == applied
+    msgs = [e["msg"] for e in env.ctx.state.pending_events() + [e for r in reports(env) for e in r["events"]]]
+    assert len([m for m in msgs if "no desired state" in m]) == 1
+
+
+def test_client_get_desired_maps_404_not_found(env):
+    from exp_agent.errors import ClientError
+
+    def boom(*a, **k):
+        raise ClientError(404, "not_found", "x")
+
+    env.client.request = boom
+    assert env.client.get_desired(None) == (404, None, None)
+
+    def other(*a, **k):
+        raise ClientError(404, "something_else")
+
+    env.client.request = other
+    with pytest.raises(ClientError):
+        env.client.get_desired(None)
+
+
+def test_dropped_fact_adds_one_warn_event_naming_component_and_fact_not_value(env):
+    bad = {
+        "schema": "exp.health/1",
+        "status": "ok",
+        "detail": "",
+        "version": "0.1.0",
+        "uptime_s": 1,
+        "metrics": {},
+        "facts": {"tls_fingerprint_sha256": "SECRET-LOOKING-VALUE", "listen": "10.0.0.1:8443"},
+    }
+    env.runner.health["collector"] = Result(0, json.dumps(bad), "")
+    publish(env, [env.comp("collector")])
+    agent = Agent(env.ctx)
+    agent.startup()
+    agent.tick()
+    agent.last_status_at = -1e9
+    agent._post_status()
+    warns = [e for r in reports(env) for e in r["events"] if e["level"] == "warn" and "dropped" in e["msg"]]
+    assert len(warns) == 1  # once, even though several reports went out
+    assert "collector" in warns[0]["msg"] and "tls_fingerprint_sha256" in warns[0]["msg"]
+    assert "SECRET-LOOKING-VALUE" not in warns[0]["msg"]

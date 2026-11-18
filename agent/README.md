@@ -75,8 +75,8 @@ argv, status reports or diagnostics (`AgentConfig.__repr__` hides it too).
   self-signed cert for collector/dashboard (P-256, SAN = listen IP, key `lchown`ed to the service user, never regenerated while valid)
   → probe `exp-probe preflight --config <new>` (a refusal keeps the previous config) → render units (only `@VERSION@ @PREFIX@
   @CONFIG@ @CREDS@ @STATE@ @RUN@`; names must match `exp-*.service|timer`) → flip `current` and `/usr/local/bin/exp-<c>` →
-  enable/restart only what changed (creds-only change: `systemctl reload` when the unit has `ExecReload=`, else restart) →
-  `exp-<c> health --json` within 60 s (poll 2 s) → **on failure restore the previous version, config and creds from
+  enable/restart only what changed (a changed credential file always restarts the unit: systemd re-reads `LoadCredential=` only at unit start; a config-only change gets `systemctl reload` when the unit has `ExecReload=`, else a restart) →
+  `exp-<c> health --json` within 60 s (poll 2 s; the document's `status` decides: `ok`/`degraded` pass whatever the exit code, `fail`, a timeout or unparsable output fail) → **on failure restore the previous version, config and creds from
   `/var/lib/exp/agent/previous/<c>/`**, report `rolled_back`, and never retry that desired version.
 * Components no longer desired are stopped, disabled and removed (data under `/var/lib/exp/<c>` is kept). Actions run once per id
   (`actions.json`): `rotate_agent_secret`, `restart_component`, `collect_diagnostics` (sanitized, `/var/lib/exp/agent/diagnostics/<id>.txt`).
@@ -96,7 +96,7 @@ argv, status reports or diagnostics (`AgentConfig.__repr__` hides it too).
 | Release signature, sha256 vs the signed manifest, arch, `min_agent_version`; nothing unpacked before verification | `verify.py`, `artifacts.py` |
 | Safe unpack: absolute paths, `..`, symlink/hardlink escapes, symlink chains, devices/FIFOs, setuid/setgid/sticky, duplicates | `artifacts.safe_unpack` |
 | Apt allowlist, no shell, no secrets in argv | `install.py`, `runner.py` |
-| `lchown` only on files root just created in a root-owned, non-service-writable dir; no recursive chown | `pathguard.SafeFS.lchown`, `tls.py` |
+| `lchown`/`fchown` only on objects root just created or opened with `O_NOFOLLOW`; never recursive | `pathguard.SafeFS.lchown/fchown`, `tls.py` |
 | Secrets never logged / in status / in diagnostics | `exp_common.log` scrubber on every handler; leak scan in `tests/test_security_logs.py` |
 
 ## Layout
@@ -157,3 +157,33 @@ against real built tarballs (§9 item 2).
 | 9 | lifecycle 07 (creds modes) and 12 (journal + reports scan for token patterns) |
 | prompt | `test_container_prompt.py`: no argument -> token read from /dev/tty with echo off (pty-driven) |
 | preflight | `test_container_refusals.py`: no systemd, non-root, wrong OS, bad token, placeholders, unreachable manager, untrusted certificate |
+
+
+## State layout (CR-wp2-state-layout-and-wrappers)
+
+The collector and dashboard units use `StateDirectory=exp/<c>`, which chowns the directory to the service user and
+recurses only when the top-level owner differs. The agent therefore creates the layout itself, as root, before the first
+start, through `O_NOFOLLOW` directory descriptors (a service user that owns its state dir can never turn a path into a
+link under the agent), so systemd never needs to recurse into `exp-vm`'s data:
+
+| path | owner | mode |
+|---|---|---|
+| `/var/lib/exp/collector/` | `exp-collector` | 0755 (= `StateDirectoryMode`) |
+| `/var/lib/exp/collector/tls/` | `exp-collector` | 0700; `key.pem` 0600, `cert.pem` 0644 |
+| `/var/lib/exp/collector/vm/` | `exp-vm` | 0700 |
+| `/var/lib/exp/dashboard/` | `exp-dashboard` | 0700 (= `StateDirectoryMode`) |
+| `/var/lib/exp/dashboard/tls/` (self-signed mode only) | `exp-dashboard` | 0700; `key.pem` 0600, `cert.pem` 0644 |
+
+New key pairs are generated in a root-only temp directory under `/var/lib/exp/agent/` and renamed into the pinned `tls/`
+descriptor (a planted symlink is replaced, never followed). `records.db`/`sessions.db` are created by the services.
+
+## Other behaviour worth knowing
+
+* `GET desired` -> `404 not_found` means "nothing compiled for this host yet": the applied state is kept, the next poll is
+  at the normal cadence (no backoff), and one info event is logged (CR-wp4-desired-404).
+* Before a status report each component's wiring facts (`tls_fingerprint_sha256`, `listen`, `url`) are validated against
+  `status.schema.json`; an invalid one is dropped and one warn event names the component and fact (never the value).
+* `POST rotate` returns `grace_s`; the agent stores the new secret atomically, proves it with an authenticated call and, if
+  the manager refuses it, restores the old one (still valid for the grace) and reports the failure.
+* Package lists: when an allowlisted package is missing, `apt-get update` runs once per reconcile, then `apt-get install`;
+  an apt failure is reported once per desired version (retries continue with backoff; other components still converge).

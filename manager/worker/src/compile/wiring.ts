@@ -35,12 +35,18 @@ export function collectorFor(w: World, c: WComponent): WComponent | null {
   return cols.find((x) => hostOf(w, x)?.site === site) ?? null;
 }
 
-/** Collectors a dashboard federates: config.collectors (slugs) else all collectors of its site(s). */
+/**
+ * Collectors a dashboard federates (CR-wp5-admin-ui-intent): config.collector_ids (slugs, the admin UI's intent), else
+ * config.collectors as slugs or as full-document entries `{collector_id, ...}` (url/pin are always taken from the
+ * collector's reported facts, never from the stored entry), else all collectors of its site(s).
+ */
 export function collectorsOfDashboard(w: World, d: WComponent): WComponent[] {
   const cols = componentsOf(w, "collector").sort(byCreated);
-  const list = d.config.collectors;
-  if (Array.isArray(list)) {
-    const wanted = list.filter((x): x is string => typeof x === "string");
+  const ids = Array.isArray(d.config.collector_ids) ? d.config.collector_ids : d.config.collectors;
+  if (Array.isArray(ids)) {
+    const wanted = ids
+      .map((x) => (typeof x === "string" ? x : x && typeof x === "object" && typeof (x as { collector_id?: unknown }).collector_id === "string" ? (x as { collector_id: string }).collector_id : null))
+      .filter((x): x is string => x !== null);
     return cols.filter((c) => wanted.includes(c.slug));
   }
   const sites = Array.isArray(d.config.sites)

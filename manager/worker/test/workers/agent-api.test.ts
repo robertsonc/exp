@@ -14,6 +14,8 @@ beforeEach(async () => {
   rel = await seedSiteWithRelease("hall-b", "0.1.0");
 });
 
+const PORTS_CFG = { ports: [{ id: "c01", iface: "enp10s0f0", role: "client", vlan: null, dhcp: { hostname: "exp-c01", vendor_class: "exp-probe", client_id: "mac" } }] };
+
 describe("GET desired", () => {
   it("401 without / with wrong / with malformed secret", async () => {
     const h = await enrolHost("hall-b");
@@ -66,7 +68,7 @@ describe("GET desired", () => {
 
   it("creds are decrypted at serve time and stored encrypted", async () => {
     const h = await enrolHost("hall-b");
-    const { component_id } = await addComponent(env, ADMIN_ACTOR, h.host_id, { type: "probe", id: "probe-a1", config: {} });
+    const { component_id } = await addComponent(env, ADMIN_ACTOR, h.host_id, { type: "probe", id: "probe-a1", config: PORTS_CFG });
     const doc = (await (await getDesired(h.secret)).json()) as Record<string, any>;
     const probe = doc.components.find((c: any) => c.component_id === component_id);
     expect(probe.creds.ingest_token).toMatch(/^expi_[A-Za-z0-9_-]{43}$/);
@@ -143,7 +145,7 @@ describe("artifacts (SR-6)", () => {
   it("403 unless referenced by THIS host's current desired state; streams bytes with Content-Length and sha256 ETag", async () => {
     const h = await enrolHost("hall-b");
     const other = await enrolHost("hall-b", "srv-03");
-    await addComponent(env, ADMIN_ACTOR, h.host_id, { type: "probe", id: "probe-a1", config: {} });
+    await addComponent(env, ADMIN_ACTOR, h.host_id, { type: "probe", id: "probe-a1", config: PORTS_CFG });
     const doc = (await (await getDesired(h.secret)).json()) as { components: Array<{ artifact: { id: string; sha256: string } }>; agent: { artifact: string } };
     const probeArt = doc.components[0]!.artifact;
     const r = await call(`/api/agent/v1/artifacts/${probeArt.id}`, { headers: bearer(h.secret) });
@@ -168,7 +170,7 @@ describe("artifacts (SR-6)", () => {
 
   it("a superseded release's artifacts stop being downloadable", async () => {
     const h = await enrolHost("hall-b");
-    await addComponent(env, ADMIN_ACTOR, h.host_id, { type: "probe", id: "probe-a1", config: {} });
+    await addComponent(env, ADMIN_ACTOR, h.host_id, { type: "probe", id: "probe-a1", config: PORTS_CFG });
     const old = (await (await getDesired(h.secret)).json()) as { components: Array<{ artifact: { id: string } }> };
     const oldId = old.components[0]!.artifact.id;
     const rel2 = await seedRelease("0.2.0");
@@ -249,7 +251,7 @@ describe("POST status", () => {
     const col = await enrolHost("hall-b", "col-host");
     const prb = await enrolHost("hall-b", "probe-host");
     await addComponent(env, ADMIN_ACTOR, col.host_id, { type: "collector", id: "col-hallb", config: {} });
-    await addComponent(env, ADMIN_ACTOR, prb.host_id, { type: "probe", id: "probe-a1", config: {} });
+    await addComponent(env, ADMIN_ACTOR, prb.host_id, { type: "probe", id: "probe-a1", config: PORTS_CFG });
     const before = (await (await getDesired(prb.secret)).json()) as { version: number; components: Array<{ config: { collector: unknown } }> };
     expect(before.components[0]!.config.collector).toBeNull(); // spools until the collector reports listen + pin
     await postStatus(col.secret, statusReport({ components: [{ type: "collector", id: "col-hallb", state: "running", health: "ok", facts: { listen: "10.32.98.25:8443" } }] }));

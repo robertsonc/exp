@@ -25,18 +25,35 @@ describe("install.sh", () => {
     expect(t.startsWith("#!")).toBe(true);
   });
 
-  it("the bundled source is the placeholder until agent/install/install.sh exists, and it fails with the documented message", () => {
-    if (INSTALL_SH_SOURCE === "placeholder") {
-      expect(INSTALL_SH).toContain("agent bootstrap not built yet");
-      expect(INSTALL_SH).toMatch(/exit 1/);
-    } else {
-      expect(INSTALL_SH).toContain("@@MANAGER_URL@@");
+  it("bundles the REAL agent/install/install.sh, each placeholder exactly once", () => {
+    expect(INSTALL_SH_SOURCE).toBe("agent/install/install.sh");
+    expect(INSTALL_SH).not.toContain("agent bootstrap not built yet");
+    for (const t of ["@@MANAGER_URL@@", "@@AGENT_VERSION@@", "@@RELEASE_PUBKEY_PEM@@"]) expect(INSTALL_SH.split(t).length - 1, t).toBe(1);
+    expect(INSTALL_SH).toContain("MANAGER_URL='@@MANAGER_URL@@'");
+  });
+
+  it("with no release imported there is no valid version: 503 rather than a script that dies on start", async () => {
+    expect((await call("/install.sh")).status).toBe(503);
+  });
+
+  it("a public key containing a quote (or any shell metacharacter) is refused with 503 and never echoed", async () => {
+    await seedRelease("0.1.0");
+    const body = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA'; touch /tmp/pwned; echo '\n-----END PUBLIC KEY-----\n";
+    for (const pem of [body, "-----BEGIN PUBLIC KEY-----\nAAAA'\n-----END PUBLIC KEY-----\n", "", "-----BEGIN PUBLIC KEY-----\nAA$(id)AA\n-----END PUBLIC KEY-----\n"]) {
+      const r = await app.fetch(new Request("https://manager.example.test/install.sh"), { ...env, RELEASE_PUBKEY_PEM: pem });
+      expect(r.status).toBe(503);
+      const t = await r.text();
+      expect(t).not.toContain("pwned");
+      expect(t).not.toContain("#!");
     }
   });
 
-  it("with no release imported the version is empty (the script must handle that)", async () => {
-    const t = await (await call("/install.sh")).text();
-    expect(t).not.toContain("@@AGENT_VERSION@@");
+  it("refuses a manager origin with unexpected characters", async () => {
+    await seedRelease("0.1.0");
+    for (const u of ["https://ma_nager.example.test/install.sh"]) {
+      const r = await app.fetch(new Request(u), env);
+      expect(r.status, u).toBe(503);
+    }
   });
 
   it("refuses (503) rather than substituting a malformed public key", async () => {
@@ -48,6 +65,7 @@ describe("install.sh", () => {
   });
 
   it("refuses a non-https manager URL (except localhost for development)", async () => {
+    await seedRelease("0.1.0");
     const bad = await app.fetch(new Request("http://manager.example.test/install.sh"), env);
     expect(bad.status).toBe(503);
     const local = await app.fetch(new Request("http://localhost:8787/install.sh"), env);

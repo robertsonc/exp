@@ -2,7 +2,7 @@
 import { api, qs, ApiError, isOperator, session } from "./api.js";
 import { h, clear, icon, isSlug } from "./dom.js";
 import { Live } from "./stream.js";
-import { fmtDateTime, parseTs, toIso, titleCase, lineLabel, lineIcon, LINE_ORDER, dur } from "./util.js";
+import { fmtDateTime, parseTs, toIso, titleCase, lineLabel, lineIcon, INCIDENT_LINE_ORDER, dur } from "./util.js";
 
 const INC_ID = /^inc_[0-9A-Za-z]{10,40}$/;
 
@@ -23,7 +23,7 @@ export function mountIncidents(root, opts) {
     error: h("div", { class: "banner banner-error", role: "alert", hidden: true }),
   };
   el.open.value = f.open;
-  el.line.value = LINE_ORDER.includes(f.line) ? f.line : "";
+  el.line.value = INCIDENT_LINE_ORDER.includes(f.line) ? f.line : "";
   el.q.value = f.q.slice(0, 80);
   const field = (label, ctl) => h("div", { class: "field" }, h("label", { for: ctl.id, text: label }), ctl);
   const form = h("form", { class: "filters", role: "search", on: { submit: (e) => e.preventDefault() } },

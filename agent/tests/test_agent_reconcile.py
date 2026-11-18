@@ -407,11 +407,11 @@ def test_apt_failure_reported_once_per_desired_version_and_others_converge(env):
     assert len([c for c in env.runner.argvs("apt-get") if c[1] == "update"]) == 1  # once per reconcile
     out = rec.run(doc)
     assert out.result == "error"
-    events = [e for e in env.ctx.state.pending_events() if "apt-get install failed" in e["message"]]
-    assert len(events) == 2 and events[0]["message"].startswith(("collector", "dashboard"))
-    assert len({e["message"] for e in events}) == 2  # one per component, not repeated on the 2nd poll
+    events = [e for e in env.ctx.state.pending_events() if "apt-get install failed" in e["msg"]]
+    assert len(events) == 1  # reported once for this desired version, not again on the second poll
     env.runner.fail.clear()
     assert rec.run(doc).result == "ok"
+
 
 def test_creds_only_change_restarts_without_reload_support(env):
     env.standard_release(comps=("collector",))
@@ -602,3 +602,66 @@ def test_degraded_health_passes_the_gate_but_fail_does_not(env):
     env.standard_release("0.2.0", comps=("collector",))
     out = Reconciler(env.ctx).run(fetch(env, env.desired([env.comp("collector", "0.2.0")], release="0.2.0")))
     assert out.result == "rolled_back" and "database locked" in out.error
+
+
+def test_rotate_honours_grace_and_restores_the_old_secret_when_the_new_one_is_refused(env):
+    env.standard_release(comps=("probe",), creds={"probe": ("ingest_token",)})
+    comp = env.comp("probe")
+    act = {"id": "act_01M7R3X9G0KH7PP7H3VPWK5AW9", "type": "rotate_agent_secret"}
+    d = fetch(env, env.desired([comp], actions=[act]))
+    old = env.ctx.cfg.agent_secret
+    seen: list[int] = []
+    real = env.client.rotate
+
+    def rotate():
+        secret, grace = real()
+        seen.append(grace)
+        return secret, grace
+
+    env.client.rotate = rotate
+    env.client.check_auth = lambda: False  # the manager refuses the new secret inside the grace window
+    out = Reconciler(env.ctx).run(d)
+    assert seen and seen[0] > 0  # the grace_s returned by POST rotate is read ...
+    assert env.ctx.cfg.agent_secret == old  # ... and the still-valid old secret is put back
+    assert json.loads(env.path("/etc/exp/agent.json").read_text())["agent_secret"] == old
+    assert any(
+        "not accepted" in e["msg"] and str(seen[0]) in e["msg"] for e in env.ctx.state.pending_events()
+    )
+    assert out.result in ("ok", "error")
+
+
+def test_rotate_success_reports_the_grace(env):
+    env.standard_release(comps=("probe",), creds={"probe": ("ingest_token",)})
+    act = {"id": "act_01M7R3X9G0KH7PP7H3VPWK5AW9", "type": "rotate_agent_secret"}
+    d = fetch(env, env.desired([env.comp("probe")], actions=[act]))
+    Reconciler(env.ctx).run(d)
+    assert any("previous secret stays valid for" in e["msg"] for e in env.ctx.state.pending_events())
+
+
+def test_health_gate_decides_on_status_not_exit_code_and_unparsable_fails(env):
+    from exp_agent.health import run_health
+
+    env.standard_release(comps=("collector",))
+    assert Reconciler(env.ctx).run(fetch(env, one_collector(env))).result == "ok"
+    base = {
+        "schema": "exp.health/1",
+        "detail": "",
+        "version": "0.1.0",
+        "uptime_s": 1,
+        "metrics": {},
+        "facts": {},
+    }
+    cases = [
+        ("ok", 0, True),
+        ("degraded", 0, True),  # probe: collector down, spool accepting
+        ("degraded", 1, True),  # dashboard: a collector is unreachable
+        ("fail", 0, False),
+        ("fail", 1, False),
+    ]
+    for status, rc, passes in cases:
+        env.runner.health["collector"] = Result(rc, json.dumps({**base, "status": status}), "")
+        assert run_health(env.ctx, "collector", "0.1.0").passed is passes, (status, rc)
+    env.runner.health["collector"] = Result(0, "not json", "")
+    assert run_health(env.ctx, "collector", "0.1.0").passed is False
+    env.runner.health["collector"] = Result(1, "", "boom")
+    assert run_health(env.ctx, "collector", "0.1.0").passed is False

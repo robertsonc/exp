@@ -69,8 +69,10 @@ if [ -z "$BUCKET" ]; then
   [ -n "$BUCKET" ] || die "could not read bucket_name from $CONFIG; pass --bucket"
 fi
 
-# the key the manager (and every agent) trusts must be the key we verify with
-if [ -f "$MANAGER/.deploy/wrangler.generated.toml" ]; then
+# the key the manager (and every agent) trusts must be the key we verify with. Only a publish to the DEPLOYED manager is
+# bound to that key: --local writes to a throwaway local D1/R2 whose pinned key is whatever the local dev instance is
+# given (the end-to-end suite uses a throwaway release key while a stale .deploy/ may hold the production one).
+if [ "$LOCAL" != 1 ] && [ -f "$MANAGER/.deploy/wrangler.generated.toml" ]; then
   deployed="$(sed -n 's/^RELEASE_PUBKEY_PEM *= *//p' "$MANAGER/.deploy/wrangler.generated.toml" | head -n1 | jq -r . 2>/dev/null || true)"
   if [ -n "$deployed" ]; then
     a="$(printf '%s' "$deployed" | tr -d '[:space:]')"; b="$(tr -d '[:space:]' < "$PUBKEY")"

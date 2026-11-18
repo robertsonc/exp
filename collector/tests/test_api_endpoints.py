@@ -377,7 +377,8 @@ def test_records_roundtrip_matches_what_was_ingested(env, port):
 
 def test_silent_probe_incident_has_line_probe_and_validates(env, app, port):
     now = make_incident(env, app, port)
-    app.rules.tick(now + 400_000)                                     # no records for > 90 s
+    for dt in (200_000, 210_000, 220_000, 230_000):                   # no records for > 90 s, past the hold
+        app.rules.tick(now + dt)
     items = get(port, env, "/incidents").json()["items"]
     probe_inc = [i for i in items if i["line"] == "probe"]
     assert probe_inc and probe_inc[0]["kind"] == "down"

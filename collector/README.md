@@ -112,6 +112,17 @@ Webhooks: Slack, Teams, JSON; all probe text is escaped (no links, no mentions);
 `<state>/tls/{key,cert}.pem`, `<state>/vm/` (VictoriaMetrics), `<run>/health.json` (status snapshot written
 every 5 s; no secrets). Pruning runs hourly in batches of 10,000 rows; closed incidents are kept 90 days.
 
+## Credentials and the unit
+
+`exp-collector.service` gets its credentials through `LoadCredential=`; systemd refreshes those files only when
+the unit (re)starts. So **the agent restarts the unit whenever a credential file changes** (it never relies on a
+reload or SIGHUP for credentials; CR-wp2-cred-rotation-loadcredential). The unit therefore declares no
+`ExecReload=`: the collector implements no config reload, and nothing may claim to reload credentials. The mtime
+poll and SIGHUP still re-read the files, which matters only where the files are replaced in place (dev, tests).
+A value in `ingest_tokens.json` / `dashboard_tokens.json` is a sha256 hex string or, during a rotation overlap, a
+`[current, previous]` list; both authenticate while the list is present. Any other shape is ignored with one log
+line (never accepted).
+
 ## Health
 
 `health --json` reads `<run>/health.json` (written by the daemon), adds `facts.tls_fingerprint_sha256` (from the
@@ -171,7 +182,7 @@ monitor, the pruner and the self-telemetry. The rules loop ticks every 2 s and a
 (at most every 0.5 s), so a state change reaches a dashboard within about a second of the batch that caused it.
 **SIGTERM/SIGINT**: stop SSE, stop accepting, let in-flight requests finish (<= 5 s), final checkpoints, queued VM
 points go to `vm_backlog`, webhook queue stops, SQLite closes; exit 0. **SIGHUP** (and the 5 s mtime poll)
-re-reads the credential files. **SIGKILL** loses nothing that was acknowledged: records are in SQLite before a
+re-reads the credential files (a convenience for a manual `kill -HUP`). **SIGKILL** loses nothing that was acknowledged: records are in SQLite before a
 line is `accepted`, a replayed spool is deduplicated on `(probe, id)`.
 
 Self-telemetry (every 15 s, straight into VM): `exp_collector_ingest_records_total{result}`,

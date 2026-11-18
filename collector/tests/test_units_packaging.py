@@ -121,3 +121,9 @@ def test_systemd_analyze_accepts_rendered_units(unit, tmp_path):
                 if ln.strip() and "is not executable" not in ln and "Failed to create" not in ln
                 and "No such file" not in ln and "not found" not in ln.lower()]
     assert not problems, problems
+
+
+def test_collector_unit_does_not_claim_to_reload_credentials():
+    """Credentials are refreshed by restart (LoadCredential= only updates on unit start): no ExecReload=."""
+    unit = (Path(__file__).resolve().parents[1] / "systemd" / "exp-collector.service").read_text()
+    assert "ExecReload=" not in unit

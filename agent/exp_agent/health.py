@@ -73,15 +73,17 @@ def run_health(ctx: Context, component: str, version: str) -> HealthResult:
         except exp_config.ConfigError:
             problem = "health output is not valid exp.health/1"
     if parsed is None:
-        if res.rc == 0:
-            return HealthResult(True, "degraded", problem)
+        # unparsable output never passes the gate (CR-wp6-health-and-reload), whatever the exit code
         tail = scrub((res.stderr or "").strip().splitlines()[-1] if (res.stderr or "").strip() else "")
-        return HealthResult(False, "fail", (tail or f"health exited {res.rc}")[:500])
+        return HealthResult(
+            False, "fail", (problem if res.rc == 0 else tail or f"health exited {res.rc}")[:500]
+        )
     metrics = parsed.get("metrics") if isinstance(parsed.get("metrics"), dict) else {}
     facts = parsed.get("facts") if isinstance(parsed.get("facts"), dict) else {}
-    # Reconcile gate: "ok" and "degraded" mean the service is up and answering (a degraded dashboard may
-    # only be missing a collector that arrives later); "fail" never passes, even with exit code 0.
-    passed = parsed["status"] == "degraded" or (parsed["status"] == "ok" and res.rc == 0)
+    # Reconcile gate (CR-wp6-health-and-reload, CR-wp1-health-exit, CR-wp3-dashboard-runtime-paths): the
+    # document's `status` decides, not the exit code. "ok" and "degraded" pass (a degraded dashboard exits 1
+    # while only a collector is unreachable; a degraded probe exits 0); "fail" never passes, even with exit 0.
+    passed = parsed["status"] in ("ok", "degraded")
     return HealthResult(
         passed,
         parsed["status"],

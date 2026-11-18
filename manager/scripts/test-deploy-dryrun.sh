@@ -192,6 +192,13 @@ if [ -x "$MANAGER/node_modules/.bin/wrangler" ]; then
   q="$(cd "$MANAGER" && npx --no-install wrangler d1 execute DB --local --persist-to "$P" --json --command "SELECT (SELECT count(*) FROM releases) AS r, (SELECT count(*) FROM artifacts) AS a, (SELECT release_version FROM sites WHERE site='hall-b') AS s, (SELECT count(*) FROM audit WHERE action='release.publish') AS e, (SELECT length(signature) FROM releases) AS l" </dev/null 2>/dev/null)"
   row="$(printf '%s' "$q" | jq -c '.[0].results[0]' 2>/dev/null)"
   [ "$row" = '{"r":1,"a":2,"s":"0.1.0","e":2,"l":88}' ] && ok "end state: 1 release, 2 artifacts, site at 0.1.0, one audit event per run (2), after TWO runs (idempotent rows)" || bad "end state in local D1" "$row"
+  # regression (e2e m2): the "deployed key" check is for the DEPLOYED manager; --local must not be bound to a stale .deploy/ config
+  out3="$("${PUB[@]}" --dist "$T/dist" --pubkey "$T/other-pub.pem" --local --persist-to "$P" 2>&1)" || true
+  case "$out3" in
+    *"differs from the RELEASE_PUBKEY_PEM"*) bad "--local ignores the deployed key of .deploy/ (it only checks the signature against --pubkey)" "$out3" ;;
+    *"does NOT verify"*) ok "--local ignores the deployed key of .deploy/ (it only checks the signature against --pubkey)" ;;
+    *) bad "--local with a key that did not sign the manifest is refused by the signature check" "$out3" ;;
+  esac
   aid="$(printf '%s' "$out" | head -c0; cd "$MANAGER" && npx --no-install wrangler d1 execute DB --local --persist-to "$P" --json --command "SELECT artifact_id FROM artifacts WHERE name='exp-agent-0.1.0-noarch.tar.gz'" </dev/null 2>/dev/null | jq -r '.[0].results[0].artifact_id')"
   if [ -n "$aid" ] && (cd "$MANAGER" && npx --no-install wrangler r2 object get "exp-artifacts/artifacts/$aid" --file "$T/got.bin" --local --persist-to "$P" </dev/null) >/dev/null 2>&1; then
     cmp -s "$T/got.bin" "$T/dist/exp-agent-0.1.0-noarch.tar.gz" && ok "end state: the R2 object holds exactly the artifact bytes" || bad "R2 object differs from the artifact"
