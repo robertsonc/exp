@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "manifest.schema.json",
+  "title": "exp.manifest/1",
+  "description": "Release manifest (01 section 10). The signed bytes are the file as published: never re-serialize. Cross-field rules (name == exp-<component>-<version>-<arch>.tar.gz) are checked by exp_common.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.manifest/1"
+    },
+    "version": {
+      "$ref": "common.schema.json#/$defs/semver"
+    },
+    "created": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "min_agent_version": {
+      "$ref": "common.schema.json#/$defs/semver"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "common.schema.json#/$defs/artifact_name"
+          },
+          "component": {
+            "enum": [
+              "agent",
+              "probe",
+              "collector",
+              "dashboard",
+              "runner",
+              "speedtest"
+            ]
+          },
+          "arch": {
+            "enum": [
+              "amd64",
+              "arm64",
+              "noarch"
+            ]
+          },
+          "sha256": {
+            "$ref": "common.schema.json#/$defs/sha256_hex"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483648
+          }
+        },
+        "required": [
+          "name",
+          "component",
+          "arch",
+          "sha256",
+          "size"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "notes_url": {
+      "$ref": "common.schema.json#/$defs/https_url"
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "created",
+    "min_agent_version",
+    "artifacts"
+  ]
+}

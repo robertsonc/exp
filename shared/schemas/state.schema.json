@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "state.schema.json",
+  "title": "exp.state/1",
+  "description": "State returned by the collector GET state (01 section 5). line.state is ok|warn|fail|unknown; seg is one of link, ports, switch, gateway, lan, edge, isp, wan, resolver, dns_path, dns, apps, dhcp, ssid, wifi, path. verdict.where is null when nothing is wrong. last_outage {start,end,open} is the most recent resolved failure within the lookback.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.state/1"
+    },
+    "probe": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "site": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "at": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "live": {
+      "type": "boolean"
+    },
+    "newest_s": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "number",
+          "minimum": 0
+        }
+      ]
+    },
+    "verdict": {
+      "type": "object",
+      "properties": {
+        "severity": {
+          "enum": [
+            "ok",
+            "warn",
+            "fail",
+            "unknown"
+          ]
+        },
+        "headline": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "sub": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "voice": {
+          "$ref": "common.schema.json#/$defs/voice"
+        },
+        "where": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/where"
+            }
+          ]
+        }
+      },
+      "required": [
+        "severity",
+        "headline",
+        "voice"
+      ]
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/line"
+      },
+      "maxItems": 16
+    },
+    "failing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "line": {
+            "$ref": "common.schema.json#/$defs/line_key"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/failing_item"
+            },
+            "maxItems": 64
+          }
+        },
+        "required": [
+          "line",
+          "items"
+        ]
+      },
+      "maxItems": 16
+    }
+  },
+  "required": [
+    "schema",
+    "probe",
+    "site",
+    "at",
+    "live",
+    "newest_s",
+    "verdict",
+    "lines",
+    "failing"
+  ],
+  "$defs": {
+    "line": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "common.schema.json#/$defs/line_key"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "warn",
+            "fail",
+            "unknown"
+          ]
+        },
+        "word": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "since": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "last_outage": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "$ref": "common.schema.json#/$defs/ts"
+                },
+                "end": {
+                  "$ref": "common.schema.json#/$defs/ts"
+                },
+                "open": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ]
+            }
+          ]
+        },
+        "flaps": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "state"
+      ]
+    },
+    "chain_item": {
+      "type": "object",
+      "properties": {
+        "seg": {
+          "$ref": "common.schema.json#/$defs/seg"
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "warn",
+            "fail",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "seg",
+        "state"
+      ]
+    },
+    "where": {
+      "type": "object",
+      "properties": {
+        "seg": {
+          "$ref": "common.schema.json#/$defs/seg"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/ipv4"
+            }
+          ]
+        },
+        "explain": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "chain": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/chain_item"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "seg"
+      ]
+    },
+    "failing_item": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "maxItems": 256
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/ident"
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "text"
+      ]
+    }
+  }
+}

@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "measurement.schema.json",
+  "title": "exp.measurement/1",
+  "description": "One network transaction measured by a probe (01-contracts.md section 2). Catalog tests (section 3): gateway, dhcp_hb, dns_hb, trace, ping, dhcp, dns, app, throughput, path, wifi_hb, wifi_join, target_access, probe_self, ext_mist, ext_ec, drill. The catalog is NOT closed: any ident is valid because the reference implementation accepts custom test kinds (probes may emit their own); the rules engine ignores unknown tests. Unknown top-level fields are ignored by readers.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.measurement/1"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/ulid"
+    },
+    "ts": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "probe": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "site": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "test": {
+      "$ref": "common.schema.json#/$defs/ident",
+      "description": "Catalog name (see description of the schema); any ident is accepted, the catalog is open."
+    },
+    "target": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+      "description": "Becomes series label 'target' only when at most 80 chars."
+    },
+    "outcome": {
+      "$ref": "common.schema.json#/$defs/outcome"
+    },
+    "duration_ms": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "metrics": {
+      "type": "object",
+      "maxProperties": 50,
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/ident"
+      },
+      "additionalProperties": {
+        "type": "number"
+      },
+      "description": "ident -> finite number, at most 50. NaN/Infinity cannot be expressed in JSON Schema; exp_common rejects them."
+    },
+    "labels": {
+      "$ref": "common.schema.json#/$defs/label_map"
+    },
+    "detail": {
+      "$ref": "#/$defs/detail"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "maxLength": 512
+        }
+      ]
+    },
+    "agent_ver": {
+      "type": "string",
+      "maxLength": 64
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "ts",
+    "probe",
+    "site",
+    "test",
+    "outcome"
+  ],
+  "$defs": {
+    "detail_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+    },
+    "detail_scalar": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "detail_l4": {
+      "anyOf": [
+        {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/detail_key"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/detail_scalar"
+          },
+          "maxProperties": 256
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/detail_scalar"
+          },
+          "maxItems": 256
+        }
+      ]
+    },
+    "detail_l3": {
+      "anyOf": [
+        {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/detail_key"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/detail_scalar"
+              },
+              {
+                "$ref": "#/$defs/detail_l4"
+              }
+            ]
+          },
+          "maxProperties": 256
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/detail_scalar"
+              },
+              {
+                "$ref": "#/$defs/detail_l4"
+              }
+            ]
+          },
+          "maxItems": 256
+        }
+      ]
+    },
+    "detail_l2": {
+      "anyOf": [
+        {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/detail_key"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/detail_scalar"
+              },
+              {
+                "$ref": "#/$defs/detail_l3"
+              }
+            ]
+          },
+          "maxProperties": 256
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/detail_scalar"
+              },
+              {
+                "$ref": "#/$defs/detail_l3"
+              }
+            ]
+          },
+          "maxItems": 256
+        }
+      ]
+    },
+    "detail": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/detail_key"
+      },
+      "maxProperties": 256,
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/detail_scalar"
+          },
+          {
+            "$ref": "#/$defs/detail_l2"
+          }
+        ]
+      },
+      "description": "High-cardinality detail, never a series label. Nesting depth at most 4 (this object is level 1), keys match the ident pattern, strings at most 1024 chars without control characters, arrays at most 256 items. The 8 KiB serialized bound and finite-number rule are enforced by exp_common.schema."
+    }
+  }
+}

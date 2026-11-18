@@ -1,0 +1,722 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "status.schema.json",
+  "title": "exp.status/1",
+  "description": "Agent -> manager status report (01 section 8). in_use_by is mgmt | probe:<port_id> | none. Never carries creds. components[].facts.tls_fingerprint_sha256 and listen wire probes and dashboards to collectors.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.status/1"
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "common.schema.json#/$defs/semver"
+        },
+        "desired_version": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "applied_version": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "uptime_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "last_poll": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "uptime_s"
+      ]
+    },
+    "facts": {
+      "type": "object",
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "maxLength": 253
+        },
+        "machine_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "os": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 32
+            }
+          }
+        },
+        "kernel": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "arch": {
+          "enum": [
+            "amd64",
+            "arm64"
+          ]
+        },
+        "cpus": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mem_mb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "disk_free_mb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "python": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "time": {
+          "type": "object",
+          "properties": {
+            "synced": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "offset_ms": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            }
+          }
+        },
+        "interfaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/iface"
+          },
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "hostname",
+        "arch"
+      ],
+      "additionalProperties": true
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "interval_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "uptime_s": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ]
+        },
+        "cpu": {
+          "type": "object",
+          "properties": {
+            "pct": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            },
+            "iowait_pct": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            },
+            "steal_pct": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            },
+            "load1": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            },
+            "load5": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            },
+            "load15": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            }
+          }
+        },
+        "mem": {
+          "type": "object",
+          "properties": {
+            "total_mb": {
+              "type": "number",
+              "minimum": 0
+            },
+            "used_mb": {
+              "type": "number",
+              "minimum": 0
+            },
+            "available_mb": {
+              "type": "number",
+              "minimum": 0
+            },
+            "pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "swap_used_mb": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "disk": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/disk"
+          },
+          "maxItems": 64
+        },
+        "disk_io": {
+          "type": "object",
+          "properties": {
+            "read_kbps": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            },
+            "write_kbps": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            }
+          }
+        },
+        "net": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/net"
+          },
+          "maxItems": 256
+        },
+        "temp_c_max": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "description": "Rates are deltas over the interval; the first report after a start has rates null. A counter reset yields null for that interval, never a negative value (hence minimum 0)."
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/component"
+      },
+      "maxItems": 16
+    },
+    "reconcile": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "result": {
+              "enum": [
+                "ok",
+                "error",
+                "rolled_back"
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              ]
+            },
+            "duration_ms": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "at",
+            "result"
+          ]
+        }
+      ]
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ts": {
+            "$ref": "common.schema.json#/$defs/ts"
+          },
+          "level": {
+            "enum": [
+              "info",
+              "warn",
+              "error"
+            ]
+          },
+          "msg": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "ts",
+          "level",
+          "msg"
+        ]
+      },
+      "maxItems": 100
+    }
+  },
+  "required": [
+    "schema",
+    "agent",
+    "facts",
+    "metrics",
+    "components"
+  ],
+  "$defs": {
+    "iface": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "common.schema.json#/$defs/iface"
+        },
+        "mac": {
+          "$ref": "common.schema.json#/$defs/mac"
+        },
+        "state": {
+          "enum": [
+            "up",
+            "down",
+            "unknown"
+          ]
+        },
+        "speed_mbps": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "driver": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "maxLength": 64
+            }
+          ]
+        },
+        "addrs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "maxItems": 32
+        },
+        "default_route": {
+          "type": "boolean"
+        },
+        "in_use_by": {
+          "type": "string",
+          "pattern": "^(mgmt|none|probe:[a-z0-9][a-z0-9-]{0,63})$"
+        }
+      },
+      "required": [
+        "name",
+        "state",
+        "in_use_by"
+      ]
+    },
+    "net": {
+      "type": "object",
+      "properties": {
+        "iface": {
+          "$ref": "common.schema.json#/$defs/iface"
+        },
+        "role": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "link": {
+          "enum": [
+            "up",
+            "down",
+            "unknown"
+          ]
+        },
+        "speed_mbps": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "rx_pps": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ]
+        },
+        "tx_pps": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ]
+        },
+        "rx_bps": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ]
+        },
+        "tx_bps": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ]
+        },
+        "rx_errors": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "tx_errors": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "rx_drops": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "tx_drops": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        }
+      },
+      "required": [
+        "iface"
+      ]
+    },
+    "disk": {
+      "type": "object",
+      "properties": {
+        "mount": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "total_gb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "used_gb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "mount"
+      ]
+    },
+    "component": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,31}$"
+        },
+        "id": {
+          "$ref": "common.schema.json#/$defs/slug"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/semver"
+        },
+        "state": {
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,31}$",
+          "description": "running, stopped, failed, installing, ... (open vocabulary)"
+        },
+        "health": {
+          "enum": [
+            "ok",
+            "degraded",
+            "fail",
+            "unknown"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "since": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          ]
+        },
+        "process": {
+          "type": "object",
+          "properties": {
+            "cpu_pct": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            },
+            "rss_mb": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            },
+            "restarts": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "uptime_s": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0
+                }
+              ]
+            }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "description": "Copied from exp.health/1 metrics (per-type keys in health.schema.json)."
+        },
+        "facts": {
+          "type": "object",
+          "properties": {
+            "tls_fingerprint_sha256": {
+              "$ref": "common.schema.json#/$defs/tls_fingerprint"
+            },
+            "listen": {
+              "$ref": "common.schema.json#/$defs/hostport"
+            },
+            "url": {
+              "$ref": "common.schema.json#/$defs/https_url"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "state",
+        "health"
+      ]
+    }
+  }
+}

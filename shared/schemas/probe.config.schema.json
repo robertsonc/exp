@@ -1,0 +1,528 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "probe.config.schema.json",
+  "title": "exp.probe.config/1",
+  "description": "Probe config written to /etc/exp/probe/config.json (01 section 9.1). No secrets. collector is null until the collector has reported its address and TLS pin: the probe then measures and spools. mode netns = each port in its own namespace, host = tests run from the host routing table on one test interface. mgmt_iface is never touched (cross-field rule: no port may use mgmt_iface, port ids unique -- checked by exp_common). ports[].role is client | target | wifi. Components refuse to start on an invalid config.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.probe.config/1"
+    },
+    "probe_id": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "site": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "collector": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/collector_ref"
+        }
+      ]
+    },
+    "mode": {
+      "enum": [
+        "netns",
+        "host"
+      ]
+    },
+    "mgmt_iface": {
+      "$ref": "common.schema.json#/$defs/iface"
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/port"
+      },
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "heartbeat": {
+      "type": "object",
+      "properties": {
+        "interval_s": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 60
+        },
+        "gateway": {
+          "type": "boolean"
+        },
+        "dhcp": {
+          "type": "boolean"
+        },
+        "dns": {
+          "type": "boolean"
+        },
+        "trace": {
+          "$ref": "#/$defs/trace"
+        },
+        "ping": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/host_or_ip"
+          },
+          "maxItems": 16
+        },
+        "dns_names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
+          },
+          "maxItems": 32
+        },
+        "alternate_resolver": {
+          "$ref": "common.schema.json#/$defs/host_or_ip"
+        }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "properties": {
+        "dhcp": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "interval_s": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 86400
+                },
+                "offer_collect_s": {
+                  "type": "number",
+                  "minimum": 0.5,
+                  "maximum": 30
+                }
+              }
+            }
+          ]
+        },
+        "dns": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "interval_s": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 86400
+                },
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/host_or_ip"
+                  },
+                  "maxItems": 64
+                }
+              }
+            }
+          ]
+        },
+        "app": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "interval_s": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 86400
+                },
+                "targets": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/app_target"
+                  },
+                  "maxItems": 64
+                }
+              }
+            }
+          ]
+        },
+        "throughput": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "interval_s": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 86400
+                },
+                "providers": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "cloudflare",
+                      "iperf3"
+                    ]
+                  },
+                  "maxItems": 2,
+                  "uniqueItems": true
+                },
+                "iperf3": {
+                  "type": "object",
+                  "properties": {
+                    "server": {
+                      "$ref": "common.schema.json#/$defs/slug"
+                    },
+                    "duration_s": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 60
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "interval_s": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 86400
+                },
+                "peers": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/path_peer"
+                  },
+                  "maxItems": 16
+                }
+              }
+            }
+          ]
+        },
+        "wifi": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "interval_s": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 86400
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        }
+      }
+    },
+    "spool": {
+      "type": "object",
+      "properties": {
+        "max_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "max_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        }
+      }
+    },
+    "labels": {
+      "$ref": "common.schema.json#/$defs/label_map"
+    },
+    "drills": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/drill_assignment"
+      },
+      "maxItems": 32
+    }
+  },
+  "required": [
+    "schema",
+    "probe_id",
+    "site",
+    "collector",
+    "mode",
+    "mgmt_iface",
+    "ports"
+  ],
+  "$defs": {
+    "collector_ref": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "$ref": "common.schema.json#/$defs/https_url"
+        },
+        "tls_fingerprint_sha256": {
+          "$ref": "common.schema.json#/$defs/tls_fingerprint"
+        },
+        "fallback": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/https_url"
+          },
+          "maxItems": 8
+        }
+      },
+      "required": [
+        "url",
+        "tls_fingerprint_sha256"
+      ]
+    },
+    "port": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/slug"
+            },
+            "iface": {
+              "$ref": "common.schema.json#/$defs/iface"
+            },
+            "role": {
+              "const": "client"
+            },
+            "vlan": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4094
+                }
+              ]
+            },
+            "dhcp": {
+              "type": "object",
+              "properties": {
+                "hostname": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]([A-Za-z0-9-]{0,62})$"
+                },
+                "vendor_class": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "pattern": "^[A-Za-z0-9._-]*$"
+                },
+                "client_id": {
+                  "enum": [
+                    "mac",
+                    "hostname"
+                  ]
+                }
+              }
+            }
+          },
+          "required": [
+            "id",
+            "iface",
+            "role"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/slug"
+            },
+            "iface": {
+              "$ref": "common.schema.json#/$defs/iface"
+            },
+            "role": {
+              "const": "target"
+            },
+            "address": {
+              "$ref": "common.schema.json#/$defs/ipv4_cidr"
+            },
+            "gateway": {
+              "$ref": "common.schema.json#/$defs/ipv4"
+            },
+            "serve": {
+              "type": "object",
+              "properties": {
+                "http": {
+                  "type": "boolean"
+                },
+                "https": {
+                  "type": "boolean"
+                },
+                "icmp": {
+                  "type": "boolean"
+                },
+                "reflector": {
+                  "type": "boolean"
+                },
+                "iperf3": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "faults_allowed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "iface",
+            "role",
+            "address",
+            "gateway"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/slug"
+            },
+            "iface": {
+              "$ref": "common.schema.json#/$defs/iface"
+            },
+            "role": {
+              "const": "wifi"
+            },
+            "ssid": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "band": {
+              "enum": [
+                "2.4",
+                "5",
+                "6",
+                "any"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "iface",
+            "role"
+          ]
+        }
+      ]
+    },
+    "trace": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "common.schema.json#/$defs/host_or_ip"
+        },
+        "pace_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "max_hops": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "timeout_s": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 10
+        },
+        "control_path": {
+          "type": "boolean"
+        }
+      }
+    },
+    "app_target": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "$ref": "common.schema.json#/$defs/slug"
+        },
+        "url": {
+          "$ref": "common.schema.json#/$defs/http_url"
+        },
+        "apdex_t_ms": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      },
+      "required": [
+        "app",
+        "url"
+      ]
+    },
+    "path_peer": {
+      "type": "object",
+      "properties": {
+        "peer": {
+          "$ref": "common.schema.json#/$defs/slug"
+        },
+        "address": {
+          "$ref": "common.schema.json#/$defs/host_or_ip"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "proto": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "udp",
+              "tcp"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "duration_s": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "rate_kbps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "peer",
+        "address",
+        "port"
+      ]
+    }
+  }
+}

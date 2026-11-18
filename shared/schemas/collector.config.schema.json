@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "collector.config.schema.json",
+  "title": "exp.collector.config/1",
+  "description": "Collector config (01 section 9.2). Creds (ingest_tokens.json, dashboard_tokens.json, webhooks.json) and the locally generated TLS key are never in this document.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.collector.config/1"
+    },
+    "collector_id": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "site": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "listen": {
+      "$ref": "common.schema.json#/$defs/hostport"
+    },
+    "probes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "probe_id": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "site": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "probe_id",
+          "site"
+        ]
+      },
+      "maxItems": 1000
+    },
+    "dashboards": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/slug"
+      },
+      "maxItems": 64,
+      "uniqueItems": true
+    },
+    "retention": {
+      "type": "object",
+      "properties": {
+        "metrics_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "records_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        }
+      }
+    },
+    "vm": {
+      "type": "object",
+      "properties": {
+        "listen": {
+          "$ref": "common.schema.json#/$defs/loopback_hostport"
+        },
+        "memory_allowed_pct": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 90
+        }
+      },
+      "description": "VictoriaMetrics is never exposed: listen must be loopback."
+    },
+    "rules": {
+      "type": "object",
+      "properties": {
+        "edge_label": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/line_key"
+          },
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true
+        }
+      }
+    },
+    "alerts": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "board_url": {
+          "$ref": "common.schema.json#/$defs/https_url"
+        },
+        "timezone": {
+          "$ref": "common.schema.json#/$defs/timezone"
+        },
+        "voice": {
+          "$ref": "common.schema.json#/$defs/voice"
+        },
+        "hold_down_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "hold_back_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "reopen_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "calm_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        }
+      }
+    },
+    "reflector": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "iperf3": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "ingest": {
+      "type": "object",
+      "properties": {
+        "max_body_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "max_records": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "description": "Cannot be raised above the contract limits (4 MiB, 1000 lines)."
+    }
+  },
+  "required": [
+    "schema",
+    "collector_id",
+    "site",
+    "listen",
+    "probes",
+    "dashboards"
+  ]
+}

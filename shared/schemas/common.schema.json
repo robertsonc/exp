@@ -1,0 +1,367 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.schema.json",
+  "title": "exp common definitions",
+  "description": "Shared $defs referenced from every other schema as common.schema.json#/$defs/<name>.",
+  "$defs": {
+    "ts": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "description": "UTC ISO-8601, Z suffix only. Naive and offset timestamps are rejected. Calendar validity (month 13, etc.) is checked by exp_common."
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+      "description": "User-facing id: site, probe_id, collector_id, dashboard_id, runner_id, port id."
+    },
+    "ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "26 chars, Crockford base32 (no I L O U), time-ordered."
+    },
+    "ident": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+      "description": "Metric, label, test and detail-key name (VictoriaMetrics-safe, at most 64 chars)."
+    },
+    "sha256_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tls_fingerprint": {
+      "type": "string",
+      "pattern": "^([0-9A-F]{2}:){31}[0-9A-F]{2}$",
+      "description": "SHA-256 of the DER certificate: 32 upper-case hex bytes separated by colons."
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$",
+      "maxLength": 64
+    },
+    "ipv4": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$"
+    },
+    "ipv4_cidr": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/(3[0-2]|[12]?[0-9])$"
+    },
+    "host_or_ip": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$",
+      "description": "Hostname or dotted-quad. No whitespace, no shell metacharacters."
+    },
+    "hostport": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})$",
+      "description": "host:port, e.g. 10.32.98.25:8443."
+    },
+    "loopback_hostport": {
+      "type": "string",
+      "pattern": "^127\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})$",
+      "description": "Loopback-only listen address."
+    },
+    "https_url": {
+      "type": "string",
+      "pattern": "^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3}))?(/[^\\s]*)?$",
+      "maxLength": 512
+    },
+    "http_url": {
+      "type": "string",
+      "pattern": "^https?://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3}))?(/[^\\s]*)?$",
+      "maxLength": 512
+    },
+    "iface": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,15}$",
+      "description": "Linux interface name (IFNAMSIZ-1). No slashes."
+    },
+    "mac": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{2}:){5}[0-9a-f]{2}$"
+    },
+    "timezone": {
+      "type": "string",
+      "pattern": "^(UTC|[A-Za-z]+(/[A-Za-z0-9_+-]+){1,2})$",
+      "maxLength": 64,
+      "description": "IANA zone name."
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 1024,
+      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+      "description": "Short free text without control characters."
+    },
+    "voice": {
+      "enum": [
+        "plain",
+        "sysadmin"
+      ]
+    },
+    "line_key": {
+      "enum": [
+        "network",
+        "dhcp",
+        "dns",
+        "internet",
+        "apps",
+        "wifi",
+        "path"
+      ]
+    },
+    "seg": {
+      "enum": [
+        "link",
+        "ports",
+        "switch",
+        "gateway",
+        "lan",
+        "edge",
+        "isp",
+        "wan",
+        "resolver",
+        "dns_path",
+        "dns",
+        "apps",
+        "dhcp",
+        "ssid",
+        "wifi",
+        "path"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "ok",
+        "degraded",
+        "fail",
+        "error"
+      ]
+    },
+    "label_map": {
+      "type": "object",
+      "properties": {},
+      "description": "Low-cardinality labels: at most 20, keys are idents that are not reserved (probe, site, outcome, target, __*), values are strings of at most 128 chars without control characters.",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 128,
+        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+      },
+      "maxProperties": 20,
+      "propertyNames": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/ident"
+          },
+          {
+            "not": {
+              "enum": [
+                "probe",
+                "site",
+                "outcome",
+                "target"
+              ]
+            }
+          },
+          {
+            "not": {
+              "pattern": "^__"
+            }
+          }
+        ]
+      }
+    },
+    "drill_assignment": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/run_id"
+        },
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$",
+          "maxLength": 64
+        },
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": true,
+          "maxProperties": 32
+        },
+        "start": {
+          "$ref": "#/$defs/ts"
+        },
+        "until": {
+          "$ref": "#/$defs/ts"
+        },
+        "abort": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "run_id",
+        "type",
+        "start",
+        "until"
+      ],
+      "description": "A drill scheduled for a probe or runner (M5)."
+    },
+    "error_envelope": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "details": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "description": "HTTP error body (01-contracts.md section 1)."
+    },
+    "list_envelope": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "maxLength": 1024
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "description": "List body (01-contracts.md section 1). Item schema is specific to the endpoint."
+    },
+    "artifact_name": {
+      "type": "string",
+      "pattern": "^exp-(agent|probe|collector|dashboard|runner|speedtest)-[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?-(amd64|arm64|noarch)\\.tar\\.gz$",
+      "maxLength": 128,
+      "description": "exp-<component>-<version>-<arch>.tar.gz. The component/version/arch parts must agree with sibling fields (checked by exp_common)."
+    },
+    "h_id": {
+      "type": "string",
+      "pattern": "^h_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a host: prefix + ULID."
+    },
+    "cmp_id": {
+      "type": "string",
+      "pattern": "^cmp_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a component: prefix + ULID."
+    },
+    "rel_id": {
+      "type": "string",
+      "pattern": "^rel_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a release: prefix + ULID."
+    },
+    "art_id": {
+      "type": "string",
+      "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a artifact: prefix + ULID."
+    },
+    "usr_id": {
+      "type": "string",
+      "pattern": "^usr_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a dashboard user: prefix + ULID."
+    },
+    "noc_id": {
+      "type": "string",
+      "pattern": "^noc_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a NOC token record: prefix + ULID."
+    },
+    "drl_id": {
+      "type": "string",
+      "pattern": "^drl_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a drill: prefix + ULID."
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a drill run: prefix + ULID."
+    },
+    "evt_id": {
+      "type": "string",
+      "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a audit event: prefix + ULID."
+    },
+    "inc_id": {
+      "type": "string",
+      "pattern": "^inc_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a incident: prefix + ULID."
+    },
+    "act_id": {
+      "type": "string",
+      "pattern": "^act_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Internal id for a agent action: prefix + ULID."
+    },
+    "expe_token": {
+      "type": "string",
+      "pattern": "^expe_[A-Za-z0-9_-]{43}$",
+      "description": "Enrol token: prefix + base64url(32 random bytes), no padding."
+    },
+    "expa_token": {
+      "type": "string",
+      "pattern": "^expa_[A-Za-z0-9_-]{43}$",
+      "description": "Agent secret: prefix + base64url(32 random bytes), no padding."
+    },
+    "expi_token": {
+      "type": "string",
+      "pattern": "^expi_[A-Za-z0-9_-]{43}$",
+      "description": "Probe ingest token: prefix + base64url(32 random bytes), no padding."
+    },
+    "expd_token": {
+      "type": "string",
+      "pattern": "^expd_[A-Za-z0-9_-]{43}$",
+      "description": "Dashboard-to-collector api token: prefix + base64url(32 random bytes), no padding."
+    },
+    "expn_token": {
+      "type": "string",
+      "pattern": "^expn_[A-Za-z0-9_-]{43}$",
+      "description": "Noc token: prefix + base64url(32 random bytes), no padding."
+    },
+    "token": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/expe_token"
+        },
+        {
+          "$ref": "#/$defs/expa_token"
+        },
+        {
+          "$ref": "#/$defs/expi_token"
+        },
+        {
+          "$ref": "#/$defs/expd_token"
+        },
+        {
+          "$ref": "#/$defs/expn_token"
+        }
+      ]
+    }
+  }
+}

@@ -26,6 +26,10 @@ class CredentialError(Exception):
     """Credential missing / unreadable / unsafe. The message never contains the value."""
 
 
+class CredentialMissing(CredentialError):
+    """The named credential file does not exist."""
+
+
 def credentials_dir(directory: Union[str, Path, None] = None) -> Path:
     d = directory if directory is not None else os.environ.get("CREDENTIALS_DIRECTORY")
     if not d:
@@ -51,7 +55,7 @@ def read_credential_bytes(name: str, directory: Union[str, Path, None] = None,
         try:
             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0), dir_fd=dfd)
         except FileNotFoundError as exc:
-            raise CredentialError(f"credential file {where} is missing") from exc
+            raise CredentialMissing(f"credential file {where} is missing") from exc
         except OSError as exc:  # ELOOP for a symlink, EACCES, ...
             raise CredentialError(f"credential file {where} cannot be opened ({exc.strerror}); "
                                   "symlinks are refused") from exc
@@ -122,7 +126,5 @@ def optional_credential(name: str, directory: Union[str, Path, None] = None) -> 
     """Value, or None only when the file is simply absent; unsafe/unreadable files still raise."""
     try:
         return read_credential(name, directory)
-    except CredentialError as exc:
-        if str(exc).endswith("is missing"):
-            return None
-        raise
+    except CredentialMissing:
+        return None
