@@ -1,0 +1,6 @@
+# The root .gitignore ignores *.pem (private-key safety); the PUBLIC release key must be committed.
+!release-pub.pem
+# ...but never a private key, whatever its name.
+*priv*
+*private*
+*.key
