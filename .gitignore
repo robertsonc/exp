@@ -11,6 +11,8 @@ dist/
 wrangler.toml.local
 # Secrets & local config (never commit)
 secrets/
+# ...except the manager's secrets-handling SOURCE code (it holds no secrets; AES-GCM/token logic)
+!/manager/worker/src/secrets/
 *.key
 *.pem
 *.local.json
