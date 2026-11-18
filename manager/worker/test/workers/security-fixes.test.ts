@@ -1,5 +1,9 @@
 // Security fixes: SSO/board_url target, nested integration secrets, CSRF guard, anti-framing headers.
+import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { csrfGuard } from "../../src/auth/csrf";
+import type { AppBindings } from "../../src/env";
+import { ApiError } from "../../src/errors";
 import { app } from "../../src/index";
 import { resetAccessCache } from "../../src/auth/access";
 import { harness, type Harness } from "../admin-harness";
@@ -47,6 +51,23 @@ describe("CSRF guard", () => {
     const ct = await h.api("owner", "PATCH", "/settings", JSON.stringify({ org_name: "Acme" }), { "content-type": "application/json; charset=utf-8" });
     expect(ct.status).toBeLessThan(300);
     expect((await h.api("owner", "GET", "/me", undefined, { "X-Exp-Request": "", origin: "https://evil.example" })).status).toBe(200);
+  });
+
+  it("body-less mutations (what the admin UI sends for decommission / rotate / restart / enrol-token) pass: an empty body is not a body", async () => {
+    // the runtime hands the Worker a non-null (empty) request.body for a POST with Content-Length: 0 and no Content-Type
+    // (found by the A2.7 e2e: every such call was refused with "a JSON content type is required")
+    const g = new Hono<AppBindings>();
+    g.use("*", csrfGuard);
+    g.onError((err) => new Response("refused", { status: err instanceof ApiError ? err.status : 500 }));
+    g.post("/x", (c) => c.text("ok"));
+    const url = "https://manager.example.test/x";
+    expect((await g.request(url, { method: "POST", headers: { "X-Exp-Request": "1" }, body: new Blob([]) })).status).toBe(200);
+    expect((await g.request(url, { method: "POST", headers: { "X-Exp-Request": "1" } })).status).toBe(200);
+    // the other rules still apply to it
+    expect((await g.request(url, { method: "POST", body: new Blob([]) })).status).toBe(403); // no custom header
+    expect((await g.request(url, { method: "POST", headers: { "X-Exp-Request": "1", origin: "https://evil.example" }, body: new Blob([]) })).status).toBe(403);
+    // and a body that names a non-JSON type is still refused
+    expect((await g.request(url, { method: "POST", headers: { "X-Exp-Request": "1", "content-type": "text/plain" }, body: "x" })).status).toBe(403);
   });
 
   it("the multipart upload endpoint refuses JSON and a cross-site multipart post", async () => {

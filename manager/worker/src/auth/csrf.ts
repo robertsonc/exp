@@ -25,7 +25,10 @@ export const csrfGuard: MiddlewareHandler<AppBindings> = async (c, next) => {
   if (origin !== null && origin !== url.origin) throw refuse("cross-origin request");
   if (!req.headers.get(CSRF_HEADER)) throw refuse("missing X-Exp-Request header");
   const ct = req.headers.get("content-type");
-  const hasBody = req.body !== null || ct !== null;
+  // "has a body" is decided from the headers: runtime request.body is non-null even for the empty POST a browser (or curl) sends
+  // with Content-Length: 0, and the UI's body-less mutations (decommission, rotate, restart, enrol-token) must not be refused
+  const len = req.headers.get("content-length");
+  const hasBody = ct !== null || req.headers.has("transfer-encoding") || (len !== null && len !== "0");
   if (hasBody) {
     const path = url.pathname.replace(/\/+$/, "");
     if (MULTIPART_PATHS.has(path)) {
