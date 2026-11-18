@@ -205,11 +205,27 @@ jobs:
           python-version: "3.10"
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         if: hashFiles('test/harness/Makefile') != ''
-      - name: make -C test/harness ci (privileged Docker)
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: hashFiles('test/harness/Makefile') != ''
+        with:
+          node-version: "22"
+      - name: Python venv
+        if: hashFiles('test/harness/Makefile') != ''
+        run: packaging/ci-venv.sh 3.10
+      - name: Fetch vendored dependencies (the M1 suite builds a real release; cache is not in the checkout)
+        if: hashFiles('test/harness/Makefile') != ''
+        run: packaging/fetch-vendor.sh
+      - name: Playwright + Chromium (pinned; test/e2e/m1/board.js resolves it from test/e2e/m1/node_modules)
+        if: hashFiles('test/harness/Makefile') != ''
+        env:
+          PLAYWRIGHT_VERSION: "1.63.0"
         run: |
-          packaging/ci-venv.sh 3.10
-          make -C test/harness ci
+          set -euo pipefail
+          npm install --no-save --no-audit --no-fund --ignore-scripts --prefix test/e2e/m1 "playwright@${PLAYWRIGHT_VERSION}"
+          (cd test/e2e/m1 && npx --no-install playwright install --with-deps chromium)
+      - name: make -C test/harness ci (privileged Docker; images are built, not pre-pulled)
+        if: hashFiles('test/harness/Makefile') != ''
+        run: make -C test/harness ci
       - name: Harness not present yet
         if: hashFiles('test/harness/Makefile') == ''
         run: echo "test/harness/Makefile absent (WP-8); nothing to run"

@@ -179,3 +179,87 @@ def test_real_agent_unit_templates_are_accepted_by_the_unit_loader():
         and "OnUnitActiveSec=5min" in tpl["exp-agent-rollback.timer"]
     )
     assert build_tar  # helper import kept for symmetry
+
+
+# ----- the version-independent rollback checker (/opt/exp/agent/rollback-check)
+def _run_checker(env, *extra):
+    import subprocess
+    import sys
+
+    from exp_agent import rollback_check
+
+    fake_ctl = env.root / "fake-systemctl"
+    fake_ctl.write_text(f'#!/bin/sh\necho "$@" >> "{env.root}/ctl.log"\n')
+    fake_ctl.chmod(0o755)
+    return subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            rollback_check.__file__,
+            "--root",
+            str(env.root),
+            "--systemctl",
+            str(fake_ctl),
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_update_installs_the_checker_atomically_as_root_0755(env):
+    Reconciler(env.ctx).run(desired_with_agent(env))
+    chk = env.ctx.paths.comp_opt("agent") / "rollback-check"
+    assert chk.is_file() and not chk.is_symlink() and (chk.stat().st_mode & 0o777) == 0o755
+    src = env.ctx.paths.version_dir("agent", "0.2.0") / "lib" / "exp_agent" / "rollback_check.py"
+    assert chk.read_bytes() == src.read_bytes()
+    assert not [n for n in os.listdir(chk.parent) if n.endswith(".tmp")]
+    unit = (env.ctx.paths.unit("exp-agent-rollback.service")).read_text()
+    execs = [ln for ln in unit.splitlines() if ln.startswith("ExecStart=")]
+    assert execs == ["ExecStart=/opt/exp/agent/rollback-check"]
+
+
+def test_checker_is_a_noop_on_a_fresh_install_and_while_waiting(env):
+    r = _run_checker(env)
+    assert r.returncode == 0 and not (env.root / "ctl.log").exists()  # no marker, no previous version
+    Reconciler(env.ctx).run(desired_with_agent(env))
+    import time
+
+    pend = env.ctx.paths.agent_state / "pending.json"
+    pend.write_text(json.dumps({**json.loads(pend.read_text()), "started": time.time()}))  # real clock here
+    r = _run_checker(env)
+    assert r.returncode == 0 and os.readlink(env.ctx.paths.current("agent")) == "0.2.0"  # inside the window
+    assert (env.ctx.paths.agent_state / "pending.json").exists()
+
+
+def test_checker_rolls_back_after_the_window_and_the_old_agent_reports_it(env):
+    Reconciler(env.ctx).run(desired_with_agent(env))
+    pend = env.ctx.paths.agent_state / "pending.json"
+    doc = json.loads(pend.read_text())
+    doc["started"] -= 1000
+    pend.write_text(json.dumps(doc))
+    r = _run_checker(env)
+    assert r.returncode == 0, r.stderr
+    p = env.ctx.paths
+    assert os.readlink(p.current("agent")) == "0.1.0" and not pend.exists()
+    assert json.loads((p.agent_state / "rolled_back.json").read_text())["from"] == "0.2.0"
+    assert "--no-block restart exp-agent.service" in (env.root / "ctl.log").read_text()
+    env.ctx.agent_version = "0.1.0"
+    selfupdate.absorb_rollback_note(env.ctx)
+    assert any(e["msg"].startswith("agent_rollback") for e in env.ctx.state.pending_events())
+
+
+def test_checker_does_nothing_when_the_previous_tree_is_gone_or_the_marker_is_bad(env):
+    import shutil
+
+    Reconciler(env.ctx).run(desired_with_agent(env))
+    pend = env.ctx.paths.agent_state / "pending.json"
+    doc = json.loads(pend.read_text())
+    doc["started"] -= 1000
+    pend.write_text(json.dumps(doc))
+    shutil.rmtree(env.ctx.paths.version_dir("agent", "0.1.0"))
+    assert _run_checker(env).returncode == 0
+    assert os.readlink(env.ctx.paths.current("agent")) == "0.2.0" and not (env.root / "ctl.log").exists()
+    pend.write_text(json.dumps({"from": "../../etc", "to": "0.2.0", "started": 0}))
+    assert _run_checker(env).returncode == 0 and not (env.root / "ctl.log").exists()

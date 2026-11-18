@@ -152,6 +152,7 @@ def tarball(tmp: Path, members, top="exp-agent-0.1.0", complete=True) -> Path:
                 "VERSION": b"0.1.0\n",
                 "bin/exp-agent": (b"#!/usr/bin/python3\n", 0o755),
                 "lib/exp_agent/__init__.py": b"",
+                "lib/exp_agent/rollback_check.py": b"#!/usr/bin/python3\n",
                 "systemd/exp-agent.service": b"[Service]\n",
             }
             if complete

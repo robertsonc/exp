@@ -87,6 +87,14 @@ def test_01_install_enrols_and_starts_the_agent(world, host, st):
     assert cfg["release_pubkey_pem"].strip() == world.app.key.public_pem.strip()
     assert host.run("readlink /opt/exp/agent/current").out.strip() == "0.1.0"
     assert host.run("/usr/local/bin/exp-agent version").out.strip() == "0.1.0"
+    # the version-independent rollback checker exists from the first install (no previous agent yet)
+    assert host.run("stat -c '%U:%G %a' /opt/exp/agent/rollback-check").out.strip() == "root:root 755"
+    assert (
+        "ExecStart=/opt/exp/agent/rollback-check" in host.run("systemctl cat exp-agent-rollback.service").out
+    )
+    for unit in ("exp-agent.service", "exp-agent-rollback.service", "exp-agent-rollback.timer"):
+        assert host.run(f"systemd-analyze verify /etc/systemd/system/{unit}").rc == 0, unit
+    assert host.run("/opt/exp/agent/rollback-check").rc == 0  # nothing pending: a no-op
     for unit in ("exp-agent.service", "exp-agent-rollback.timer"):
         assert host.run(f"systemctl is-enabled {unit}").out.strip() == "enabled", unit
         assert host.active(unit), unit
@@ -164,7 +172,9 @@ def test_06_cli_enrol_replaces_credentials_and_restarts_the_agent(world, host, s
     token = world.app.issue_enrol_token(st.hid)
     old = agent_cfg(host)["agent_secret"]
     pid = main_pid(host, "exp-agent.service")
-    r = host.run(f"printf %s {token} | exp-agent enrol --manager {world.url}")  # token via stdin, never argv (CR-wp6-enrol-token-not-argv)
+    r = host.run(
+        f"printf %s {token} | exp-agent enrol --manager {world.url}"
+    )  # token via stdin, never argv (CR-wp6-enrol-token-not-argv)
     assert r.rc == 0, r
     assert "enrolled as " + st.hid in r.out and token not in r.text
     new = agent_cfg(host)["agent_secret"]
@@ -265,6 +275,12 @@ def test_09_self_update_succeeds_and_confirms(world, host, st):
         "agent 0.1.1 to run",
     )
     assert host.run("readlink /opt/exp/agent/previous").out.strip() == "0.1.0"
+    # self-update refreshed the standalone checker from the new tree (same bytes, root 0755)
+    assert (
+        host.run("cmp /opt/exp/agent/rollback-check /opt/exp/agent/0.1.1/lib/exp_agent/rollback_check.py").rc
+        == 0
+    )
+    assert host.run("stat -c '%U:%G %a' /opt/exp/agent/rollback-check").out.strip() == "root:root 755"
     # the new agent reported, so the pending marker is gone
     wait_for(
         lambda: not host.exists("/var/lib/exp/agent/pending.json"), 120, 3, "the pending marker to be cleared"
@@ -283,6 +299,9 @@ def test_09_self_update_succeeds_and_confirms(world, host, st):
 def test_10_rollback_timer_restores_an_agent_that_cannot_report(world, host, st):
     assert "OnUnitActiveSec=5min" in host.run("systemctl cat exp-agent-rollback.timer").out
     assert host.active("exp-agent-rollback.timer")
+    assert (
+        "ExecStart=/opt/exp/agent/rollback-check" in host.run("systemctl cat exp-agent-rollback.service").out
+    )
     world.standard_release(
         "0.1.2", components=("collector",), stub_agent=True
     )  # starts, never polls or reports

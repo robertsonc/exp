@@ -6,8 +6,10 @@ ConditionPathExists=/var/lib/exp/agent/pending.json
 
 [Service]
 Type=oneshot
-# Runs from the PREVIOUS agent tree: a broken new version cannot prevent its own rollback.
-ExecStart=/opt/exp/agent/previous/bin/exp-agent rollback-check --config /etc/exp/agent.json
+# A small stdlib-only checker installed beside (not inside) the versioned trees by install.sh and by the
+# agent's self-update: it exists from the first install and needs neither agent version to be runnable.
+# It does nothing unless a pending marker and a previous tree exist.
+ExecStart=/opt/exp/agent/rollback-check
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes

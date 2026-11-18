@@ -274,7 +274,7 @@ def cmd_unpack(tarball, parent, top, version):
                         out.write(chunk)
                         left -= len(chunk)
                     os.fchmod(out.fileno(), 0o755 if m.mode & 0o111 else 0o644)
-        for must in ("bin/exp-agent", "lib/exp_agent/__init__.py", "VERSION", "systemd/exp-agent.service"):
+        for must in ("bin/exp-agent", "lib/exp_agent/__init__.py", "lib/exp_agent/rollback_check.py", "VERSION", "systemd/exp-agent.service"):
             if not os.path.isfile(os.path.join(stage, must)):
                 die("the agent artifact has no %s" % must)
         with open(os.path.join(stage, "VERSION"), encoding="utf-8") as fh:
@@ -476,6 +476,10 @@ main() {
     fi
     ln -sfn -- "$ag_ver" /opt/exp/agent/current.new && mv -T -- /opt/exp/agent/current.new /opt/exp/agent/current
     ln -sfn -- ../../../opt/exp/agent/current/bin/exp-agent /usr/local/bin/exp-agent.new && mv -T -- /usr/local/bin/exp-agent.new /usr/local/bin/exp-agent
+    # the version-independent rollback checker lives outside the versioned trees (atomic, root 0755), so
+    # exp-agent-rollback.service verifies and runs even before any previous agent exists
+    install -m 0755 -o root -g root -- "$dest/lib/exp_agent/rollback_check.py" /opt/exp/agent/.rollback-check.new
+    mv -T -- /opt/exp/agent/.rollback-check.new /opt/exp/agent/rollback-check
     py units "$dest" "$ag_ver"
     systemctl daemon-reload
     systemctl enable exp-agent.service exp-agent-rollback.timer >/dev/null 2>&1 || die "systemctl enable failed"

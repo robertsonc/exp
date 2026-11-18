@@ -22,7 +22,15 @@ from exp_common import log as exp_log
 from exp_common.config import EX_CONFIG, ConfigError
 
 from . import __version__, health, lease, netns, preflight, spool
-from .config import DEFAULT_CONFIG_PATH, DEFAULT_RUN_DIR, DEFAULT_STATE_DIR, Paths, ProbeConfig, load_probe_config
+from .config import (
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_ETC_NETNS,
+    DEFAULT_RUN_DIR,
+    DEFAULT_STATE_DIR,
+    Paths,
+    ProbeConfig,
+    load_probe_config,
+)
 from .runner import CommandRunner
 
 log = logging.getLogger("exp-probe")
@@ -36,6 +44,8 @@ def _common(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--state-dir", default=os.environ.get("EXP_PROBE_STATE_DIR", DEFAULT_STATE_DIR),
                     help=argparse.SUPPRESS)
     sp.add_argument("--run-dir", default=os.environ.get("EXP_PROBE_RUN_DIR", DEFAULT_RUN_DIR),
+                    help=argparse.SUPPRESS)
+    sp.add_argument("--etc-netns", default=os.environ.get("EXP_PROBE_ETC_NETNS", DEFAULT_ETC_NETNS),
                     help=argparse.SUPPRESS)
     sp.add_argument("--log-level", default="INFO", help=argparse.SUPPRESS)
 
@@ -85,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _paths(args: argparse.Namespace) -> Paths:
-    return Paths(state_dir=Path(args.state_dir), run_dir=Path(args.run_dir))
+    return Paths(state_dir=Path(args.state_dir), run_dir=Path(args.run_dir), etc_netns=Path(args.etc_netns))
 
 
 def _load(args: argparse.Namespace) -> ProbeConfig:

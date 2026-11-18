@@ -45,7 +45,9 @@ def healthy(world, hid, *types, allow_degraded=()):
     by = {c["type"]: c for c in rep["components"]}
 
     def good(t):
-        return t in by and (by[t]["health"] == "ok" or (t in allow_degraded and by[t]["health"] == "degraded"))
+        return t in by and (
+            by[t]["health"] == "ok" or (t in allow_degraded and by[t]["health"] == "degraded")
+        )
 
     return rep if all(good(t) for t in types) else None
 
@@ -65,7 +67,11 @@ def test_all_shapes_converge_and_probe_data_reaches_the_collector(world, host24)
             "ingest_tokens.json": json.dumps({"probe-a1": exp_ids.token_hash(probe_token)}),
             # the dashboard authenticates to the collector with the token its creds carry for this collector
             "dashboard_tokens.json": json.dumps(
-                {dcfg_src["id"]: exp_ids.token_hash(json.loads(dcfg_src["creds"]["collector_tokens.json"])["col-hallb"])}
+                {
+                    dcfg_src["id"]: exp_ids.token_hash(
+                        json.loads(dcfg_src["creds"]["collector_tokens.json"])["col-hallb"]
+                    )
+                }
             ),
             "webhooks.json": "[]",
         },
@@ -104,6 +110,7 @@ def test_all_shapes_converge_and_probe_data_reaches_the_collector(world, host24)
         "collector, dashboard and probe healthy",
         host24.agent_log,
     )
+
     # probe data reaches the collector through the compiled wiring (pin + ingest token): the probe's shipper is
     # healthy and authenticated, and the collector counts the probe as reporting and ingests its records
     def delivered():

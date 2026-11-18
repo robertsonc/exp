@@ -83,7 +83,7 @@ argv, status reports or diagnostics (`AgentConfig.__repr__` hides it too).
   Unknown component types are ignored and reported.
 * **Self-update:** verified download → `/opt/exp/agent/<new>/` → `pending.json` → flip `current` (and `previous`) →
   `systemctl --no-block restart exp-agent`. The new agent clears the marker after its first successful poll + report; otherwise
-  `exp-agent-rollback.timer` (every 5 min, runs the *previous* tree) flips back, and the old agent reports `agent_rollback` and
+  `exp-agent-rollback.timer` (every 5 min, runs the standalone `/opt/exp/agent/rollback-check`, independent of both agent versions) flips back, and the old agent reports `agent_rollback` and
   refuses that version until the manager asks for another.
 * **Decommission:** remove every component incl. data, creds and config → `POST decommissioned` → remove `agent.json`, the agent
   units, `/opt/exp/agent/` and `/var/lib/exp/agent/`.

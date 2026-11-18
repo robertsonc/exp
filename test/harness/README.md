@@ -61,3 +61,9 @@ test/harness/harness.sh lanctl <cmd>           the fault API
 * The mgmt network is *not* `--internal`: Docker drops (br_netfilter) anything an internal network sends to a
   non-local address, which would break the management path to the simulated internet. Masquerade is off instead.
 * Requires: Docker with privileged containers, `--cgroupns=host` (cgroup v1 or v2), and the images `ubuntu:24.04`.
+* `make ci` also needs, beyond Docker: `packaging/.cache` populated (`packaging/fetch-vendor.sh`, the suite builds a
+  real release), Node plus Playwright with Chromium for `test/e2e/m1/board.js` (`npm install --no-save --prefix
+  test/e2e/m1 playwright@<pinned>` then `npx playwright install --with-deps chromium` from that directory; a global
+  install resolvable via `NODE_PATH` also works), and a non-root user in the `docker` group is enough (no sudo needed
+  for M1). The M2 suite additionally needs a writable `/etc/hosts` (`sudo chmod o+w /etc/hosts` on a non-root runner).
+  CI (`.github/workflows/ci.yml`, job `harness`) does all of this explicitly; the images are built, never pre-pulled.

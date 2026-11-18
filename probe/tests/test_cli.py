@@ -28,7 +28,8 @@ def cfgfile(tmp_path):
 
 
 def args(cfgfile, paths):
-    return ["--config", str(cfgfile), "--state-dir", str(paths.state_dir), "--run-dir", str(paths.run_dir)]
+    return ["--config", str(cfgfile), "--state-dir", str(paths.state_dir), "--run-dir", str(paths.run_dir),
+            "--etc-netns", str(paths.etc_netns)]
 
 
 def test_entry_script_in_the_dev_tree():

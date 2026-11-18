@@ -301,6 +301,7 @@ class Env:
         """An agent artifact whose id is the one `desired(agent_version=...)` references."""
         repo = Path(__file__).resolve().parents[1]
         base = {"VERSION": version.encode() + b"\n", "bin/exp-agent": (b"#!/bin/sh\nexit 0\n", 0o755)}
+        base["lib/exp_agent/rollback_check.py"] = (repo / "exp_agent" / "rollback_check.py").read_bytes()
         for n in ("exp-agent.service", "exp-agent-rollback.service", "exp-agent-rollback.timer"):
             base[f"systemd/{n}"] = (repo / "systemd" / n).read_bytes()
         data = build_tar(f"exp-agent-{version}", files if files is not None else base)

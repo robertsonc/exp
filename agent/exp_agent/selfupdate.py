@@ -3,14 +3,16 @@
 download + verify + unpack to /opt/exp/agent/<new>/ -> write the `pending` marker -> flip `current`
 (and `previous`) -> `systemctl --no-block restart exp-agent`. The new agent clears the marker after its
 first successful poll + status report. If it never does, exp-agent-rollback.timer runs
-`exp-agent rollback-check` (from the `previous` tree, so a broken new version cannot block it), which
-flips `current` back, restarts the old agent and leaves a note so that agent reports `agent_rollback`
-and refuses that version until the manager asks for a different one.
+/opt/exp/agent/rollback-check (a standalone copy of rollback_check.py, independent of both agent versions,
+installed by install.sh and refreshed here), which flips `current` back, restarts the old agent and
+leaves a note so that agent reports `agent_rollback` and refuses that version until the manager asks
+for a different one.
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from . import artifacts, install, units
@@ -23,6 +25,8 @@ log = logging.getLogger(__name__)
 PENDING = "pending.json"
 ROLLED_BACK = "rolled_back.json"
 CONFIRM_WINDOW_S = 300
+CHECKER_SRC = "lib/exp_agent/rollback_check.py"
+CHECKER = "rollback-check"  # /opt/exp/agent/rollback-check
 AGENT_UNITS = ("exp-agent.service", "exp-agent-rollback.service", "exp-agent-rollback.timer")
 
 
@@ -54,6 +58,17 @@ def absorb_rollback_note(ctx: Context) -> None:
     ctx.state.event("error", f"agent_rollback: agent {bad} did not report in time; restored {note.get('to')}")
     ctx.fs.remove(ctx.paths.agent_state / ROLLED_BACK)
     ctx.state.save()
+
+
+def install_checker(ctx: Context, tree: Path) -> bool:
+    """Atomically (re)write /opt/exp/agent/rollback-check (root 0755) from `tree`'s copy of the standalone
+    checker. A tree without one (older agents) leaves the installed checker alone. True when written."""
+    data = ctx.fs.read_bytes(tree / CHECKER_SRC, max_bytes=256 * 1024)
+    if data is None:
+        return False
+    dest = ctx.paths.comp_opt("agent") / CHECKER
+    ctx.fs.write(dest, data, 0o755)  # atomic (temp file + rename)
+    return True
 
 
 def update(ctx: Context, doc: dict[str, Any], man: Manifest) -> bool:
@@ -110,6 +125,7 @@ def update(ctx: Context, doc: dict[str, Any], man: Manifest) -> bool:
     ctx.state.write_json(
         PENDING, {"from": prev, "to": ver, "started": ctx.clock(), "deadline_s": CONFIRM_WINDOW_S}
     )
+    install_checker(ctx, vdir)  # before the flip: the timer must be able to undo this very update
     changed, _ = units.write_units(fs, rendered, set())
     fs.symlink(prev, paths.opt / "agent" / "previous")
     install.flip_current(fs, "agent", ver)

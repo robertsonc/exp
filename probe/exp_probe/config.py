@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 DEFAULT_CONFIG_PATH = "/etc/exp/probe/config.json"
 DEFAULT_STATE_DIR = "/var/lib/exp/probe"
 DEFAULT_RUN_DIR = "/run/exp/probe"
+DEFAULT_ETC_NETNS = "/etc/netns"
 SCHEMA_NAME = "probe.config"
 
 DEFAULT_DNS_NAMES = ["google.com", "apple.com", "microsoft.com", "cloudflare.com"]
@@ -35,7 +36,7 @@ class Paths:
     """Every filesystem location the probe touches; tests point them at tmp dirs."""
     state_dir: Path = Path(DEFAULT_STATE_DIR)
     run_dir: Path = Path(DEFAULT_RUN_DIR)
-    etc_netns: Path = Path("/etc/netns")
+    etc_netns: Path = Path(DEFAULT_ETC_NETNS)
     sys_class_net: Path = Path("/sys/class/net")
     proc: Path = Path("/proc")
 
