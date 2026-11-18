@@ -11,9 +11,9 @@ import time
 from pathlib import Path
 
 import pytest
-from fakes_support import FAKES, ROOT, check_component, check_openapi, check_schema_file, request
 from exp_common import ids as exp_ids
 from exp_common import tlspin
+from fakes_support import FAKES, ROOT, check_component, check_openapi, check_schema_file, request
 
 import fake_collector
 import fakes_common as fc

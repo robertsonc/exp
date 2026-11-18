@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from fakes_support import FAKES, ROOT, check_openapi, check_response_headers, check_schema_file, request
 from exp_common import ids as exp_ids
 from exp_common import tlspin
+from fakes_support import FAKES, ROOT, check_openapi, check_response_headers, check_schema_file, request
 
 import fake_manager
 import fakes_common as fc
