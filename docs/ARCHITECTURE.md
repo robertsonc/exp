@@ -54,23 +54,41 @@ and gate the detailed build. Written to the mantra: **simplicity for deployment 
 - A component compromise must not expose the whole platform (scoped credentials, no shared
   long-lived master secret on hosts).
 
-## Open decisions (gating detailed build)
+## Decisions (resolved 2026-11-18)
 
-### D1. How does the Cloudflare-hosted manager provision an Ubuntu host?
-Cloudflare Workers can't hold a persistent outbound SSH session, so "the SaaS SSHes in" needs a
-concrete shape. Three candidates (tradeoffs in the decision record once chosen):
-- **Agent-pull + one-liner bootstrap** — admin runs a `curl … | sudo bash` from the dashboard on
-  the host; a tiny `exp-agent` enrols and continuously pulls its role/config/secrets. No host
-  passwords stored in the SaaS; works behind NAT. Simplest/safest steady state.
-- **SSH push via a self-hosted deployer** — admin enters SSH user/password in the UI; a small
-  deployer the operator runs performs the install over SSH. Matches "just give it SSH creds";
-  the SaaS holds host credentials (encrypted).
-- **Hybrid** — admin enters SSH creds; a deployer uses them *once* to lay down the agent, then
-  discards them; steady state is agent-pull.
+### D1 — Host provisioning: **agent-pull + one-liner bootstrap**
+Cloudflare Workers can't hold a persistent outbound SSH session, and storing host passwords in a
+SaaS is a liability — so provisioning is pull-based:
 
-### D2. TSDB in the collector.
-Candidates: VictoriaMetrics (single small binary, Prometheus-compatible, push+pull), a
-SQLite/DuckDB-based store (max simplicity, EXM-JSONL evolution), Prometheus (+pushgateway), or
-InfluxDB. Choice sets the collector's ingest and query layer.
+- Admin adds a host in the dashboard and gets a short-lived enrol command:
+  `curl -fsSL https://<mgr>/enrol/<token> | sudo bash`.
+- The bootstrap installs **`exp-agent`**, which exchanges the single-use enrol token for a
+  long-lived **per-agent credential**, then continuously pulls its **desired state** — assigned
+  role (probe / collector / dashboard), config, secrets, and software version — and reconciles
+  the host to it (install/upgrade, write config, place secrets, (re)start the service).
+- No SSH passwords are ever stored in the SaaS. All traffic is agent → manager, outbound only
+  (NAT-friendly). Per-agent credentials are rotatable and revocable from the manager.
 
-Both are being settled now; the rest of the architecture is stable regardless.
+### D2 — TSDB: **VictoriaMetrics** (single-node to start)
+- The collector writes probe measurements to VictoriaMetrics (JSON-line import / Prometheus
+  remote-write). The dashboard queries through the collector, which proxies MetricsQL/PromQL.
+- **Cardinality discipline:** series labels stay low-cardinality (`probe`, `site`, `test`,
+  `outcome`, `iface`, `resolver`). High-cardinality values (specific URLs, trace hops) live in
+  the full measurement record / event log, not as series labels. See `shared/`.
+
+## Agent ↔ Manager protocol (sketch)
+
+- `POST /enrol` `{enrol_token}` → `{agent_id, agent_key}` — token is single-use, short TTL.
+- `GET /agents/{id}/desired` (auth: `agent_key`) → `{role, version, config, secrets, ...}`.
+- `GET /artifacts/{name}/{version}` → signed software bundle (R2).
+- `POST /agents/{id}/status` → health, running version, last reconcile result.
+
+Manager storage: **D1** desired state & inventory, **KV** fast config, **R2** software artifacts,
+**Durable Objects** per-host coordination, encrypted secrets delivered only over the
+authenticated pull. Admin auth via Cloudflare Access / OIDC.
+
+## Measurement contract
+
+Defined in `shared/` (`exp_schema.py` + `SCHEMA.md`): one record per measured transaction, with
+numeric `metrics` that map to VictoriaMetrics series as `exp_<test>_<metric>`. This is the single
+contract probes, collectors, and the dashboard share.
