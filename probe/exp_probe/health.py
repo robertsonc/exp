@@ -188,7 +188,8 @@ def collect(cfg: ProbeConfig | None, config_error: str | None, runner: Any, path
                     "mode": cfg.mode,
                     "shipper_state": state or "unknown", "tls_pin_mismatch": state == "tls_pin_mismatch",
                     "auth_failed": state == "auth_failed"}
-    if cfg.collector:  # health.schema.json: collector_url is an https URL; with no collector the key is absent, never null
+    # health.schema.json: collector_url is an https URL; with no collector the key is absent, never null
+    if cfg.collector:
         doc["facts"]["collector_url"] = cfg.collector.url
     return doc
 
