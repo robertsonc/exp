@@ -11,8 +11,12 @@ Resilience drills prove the monitoring and the network's failover actually work.
 
 ## Status
 
-**Specification complete; implementation not started** (except the hardened measurement schema in
-`shared/`). Build it with a multi-agent session — start at [KICKOFF.md](KICKOFF.md).
+**v0.1.0 — milestones M0–M2 implemented and accepted** (contracts; probe, collector, dashboard; Cloudflare
+manager + admin UI; agent + one-line bootstrap; signed reproducible releases; CI). The M1 (A1.1–A1.5) and M2
+(A2.2–A2.8) acceptance suites pass in containers (`test/e2e/`), M1 also in CI. The control panel is deployed at
+https://exp-control.harnessed.cloud ([deployment record](docs/deployments/exp-control.md)).
+Next: M3 (multi-site alerts, offline operation), M4 (path quality, throughput, target ports, Wi-Fi),
+M5 (drills, correlation), M6 (speedtest analytics) — see [ROADMAP.md](ROADMAP.md).
 
 ## Documents
 
