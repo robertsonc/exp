@@ -1,0 +1,19 @@
+{
+  "schema": "exp.health/1",
+  "status": "ok",
+  "detail": "",
+  "version": "0.1.0",
+  "uptime_s": 86000,
+  "metrics": {
+    "sessions_active": 3,
+    "requests_per_min": 40,
+    "sse_clients": 3,
+    "collectors_total": 1,
+    "collectors_reachable": 1,
+    "login_failures_1h": 0
+  },
+  "facts": {
+    "tls_fingerprint_sha256": "E6:0E:01:A9:7D:F1:45:05:57:2B:57:78:BC:2F:DE:85:1D:CD:46:00:0E:4C:CF:49:90:C0:50:68:61:F7:88:3F",
+    "url": "https://10.32.98.30"
+  }
+}

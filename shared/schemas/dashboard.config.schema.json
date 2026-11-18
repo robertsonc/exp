@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dashboard.config.schema.json",
+  "title": "exp.dashboard.config/1",
+  "description": "Dashboard config (01 section 9.3). Creds (collector_tokens.json, sso_secret, local_users.json, noc_tokens.json, tls.key/tls.crt) are never in this document.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.dashboard.config/1"
+    },
+    "dashboard_id": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+    },
+    "url": {
+      "$ref": "common.schema.json#/$defs/https_url"
+    },
+    "listen": {
+      "type": "object",
+      "properties": {
+        "https": {
+          "$ref": "common.schema.json#/$defs/hostport"
+        },
+        "http_redirect": {
+          "$ref": "common.schema.json#/$defs/hostport"
+        }
+      },
+      "required": [
+        "https"
+      ]
+    },
+    "collectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "collector_id": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "site": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "url": {
+            "$ref": "common.schema.json#/$defs/https_url"
+          },
+          "tls_fingerprint_sha256": {
+            "$ref": "common.schema.json#/$defs/tls_fingerprint"
+          }
+        },
+        "required": [
+          "collector_id",
+          "site",
+          "url",
+          "tls_fingerprint_sha256"
+        ]
+      },
+      "maxItems": 64
+    },
+    "voice": {
+      "$ref": "common.schema.json#/$defs/voice"
+    },
+    "timezone": {
+      "$ref": "common.schema.json#/$defs/timezone"
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "sso": {
+          "type": "object",
+          "properties": {
+            "manager_url": {
+              "$ref": "common.schema.json#/$defs/https_url"
+            },
+            "issuer": {
+              "type": "string",
+              "pattern": "^exp-manager:[a-z0-9][a-z0-9-]{0,63}$"
+            }
+          },
+          "required": [
+            "manager_url",
+            "issuer"
+          ]
+        },
+        "session_hours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 168
+        },
+        "local_users": {
+          "type": "boolean"
+        },
+        "noc_tokens": {
+          "type": "boolean"
+        }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "self_signed",
+            "provided"
+          ]
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "dashboard_id",
+    "title",
+    "url",
+    "listen",
+    "collectors",
+    "auth",
+    "tls"
+  ]
+}

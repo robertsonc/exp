@@ -1,0 +1,342 @@
+"""Persistent SSH connection management using asyncssh.
+
+Each remote host gets exactly one long-lived connection for the duration of
+the orchestrator. This eliminates per-poll SSH+sudo startup variance, which
+was the root cause of the V1 wire-counter sawtooth artifact.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import shlex
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+import asyncssh
+
+from config import Config, HostConfig
+
+log = logging.getLogger(__name__)
+
+
+class SshError(RuntimeError):
+    """Raised when an SSH command fails."""
+
+
+def _self_excluding_pattern(pattern: str) -> str:
+    """Turn a pgrep/pkill -f pattern into one that cannot match the remote
+    shell that is running the pgrep/pkill itself (`sh -c 'pgrep -f ...'` has
+    the pattern in its own cmdline): bracket the first character."""
+    return f"[{pattern[0]}]{pattern[1:]}"
+
+
+@dataclass(slots=True)
+class _Conn:
+    host: HostConfig
+    name: str
+    client: asyncssh.SSHClientConnection | None = None
+
+    def _known_hosts(self) -> str | None:
+        """Host-key verification source. Verification is ON by default,
+        against the same known_hosts file that setup_ssh.py populates."""
+        if self.host.ssh_insecure_no_host_check:
+            log.warning(
+                "%s: SSH host-key verification DISABLED by config "
+                "(ssh_insecure_no_host_check) — do not use on shared networks",
+                self.name,
+            )
+            return None
+        return str(Path(self.host.ssh_known_hosts).expanduser())
+
+    async def connect(self) -> None:
+        if self.client is not None:
+            return
+        password = self.host.resolve_password()
+        connect_kwargs: dict = {
+            "host": self.host.mgmt_ip,
+            "username": self.host.ssh_user,
+            "known_hosts": self._known_hosts(),
+            "keepalive_interval": 15,
+            "keepalive_count_max": 3,
+        }
+        if self.host.ssh_key_path:
+            connect_kwargs["client_keys"] = [self.host.ssh_key_path]
+        if password:
+            connect_kwargs["password"] = password
+        log.info(
+            "Connecting to %s (%s) as %s",
+            self.name, self.host.mgmt_ip, self.host.ssh_user,
+        )
+        try:
+            self.client = await asyncio.wait_for(
+                asyncssh.connect(**connect_kwargs), timeout=15.0
+            )
+        except asyncssh.HostKeyNotVerifiable as exc:
+            raise SshError(
+                f"Failed to connect to {self.name} ({self.host.mgmt_ip}): {exc}. "
+                f"The host key is not in {self.host.ssh_known_hosts} — run "
+                f"'python3 setup_ssh.py' once to record it, or set "
+                f"ssh_insecure_no_host_check: true for an isolated lab bench."
+            ) from exc
+        except (asyncssh.Error, OSError, asyncio.TimeoutError) as exc:
+            raise SshError(
+                f"Failed to connect to {self.name} ({self.host.mgmt_ip}): {exc}"
+            ) from exc
+
+    async def close(self) -> None:
+        if self.client is not None:
+            client, self.client = self.client, None
+            client.close()
+            await client.wait_closed()
+
+    async def reconnect(self) -> None:
+        """Tear down and re-establish the connection (poller recovery path)."""
+        try:
+            await self.close()
+        except Exception:  # noqa: BLE001
+            self.client = None
+        await self.connect()
+
+    async def run(
+        self, cmd: str, *, timeout: float = 30.0, check: bool = True,
+    ) -> asyncssh.SSHCompletedProcess:
+        if self.client is None:
+            raise SshError(f"{self.name}: not connected")
+        try:
+            result = await asyncio.wait_for(
+                self.client.run(cmd, check=False), timeout=timeout
+            )
+        except asyncio.TimeoutError as exc:
+            raise SshError(
+                f"{self.name}: command timed out after {timeout}s: {cmd!r}"
+            ) from exc
+        except (asyncssh.Error, OSError) as exc:
+            # A dead/dropped connection must surface as SshError — callers
+            # (shutdown paths especially) are written against that contract.
+            raise SshError(
+                f"{self.name}: command failed ({exc}): {cmd!r}"
+            ) from exc
+        if check and result.exit_status != 0:
+            raise SshError(
+                f"{self.name}: exit={result.exit_status} cmd={cmd!r} "
+                f"stderr={(result.stderr or '').strip()!r}"
+            )
+        return result
+
+    async def read_proc_net_dev(self) -> str:
+        """Single atomic read of /proc/net/dev."""
+        result = await self.run("cat /proc/net/dev", timeout=5.0)
+        return result.stdout or ""
+
+    async def detect_iface_for_ip(self, ip: str) -> str:
+        """Find the interface that owns `ip` via `ip -4 -o addr show`."""
+        result = await self.run("ip -4 -o addr show", timeout=5.0)
+        for line in (result.stdout or "").splitlines():
+            parts = line.split()
+            # "2: ens160    inet 10.1.1.3/24 brd ..."
+            if (
+                len(parts) >= 4
+                and parts[2] == "inet"
+                and parts[3].split("/")[0] == ip
+            ):
+                return parts[1]
+        raise SshError(f"{self.name}: no interface found owning {ip}")
+
+
+def detect_local_iface_for_ip(ip: str) -> str:
+    """Find the local interface that owns `ip` via `ip -4 -o addr show`."""
+    result = subprocess.run(
+        ["ip", "-4", "-o", "addr", "show"],
+        capture_output=True, text=True, check=False, timeout=5.0,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ip addr show failed: {result.stderr.strip()}")
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if (
+            len(parts) >= 4
+            and parts[2] == "inet"
+            and parts[3].split("/")[0] == ip
+        ):
+            return parts[1]
+    raise RuntimeError(f"No local interface found owning {ip}")
+
+
+class FrrSession:
+    """Convenience wrapper around the FRR connection."""
+
+    def __init__(self, conn: _Conn) -> None:
+        self._conn = conn
+
+    async def read_proc_net_dev(self) -> str:
+        return await self._conn.read_proc_net_dev()
+
+    async def detect_iface_for_ip(self, ip: str) -> str:
+        return await self._conn.detect_iface_for_ip(ip)
+
+
+class ServerSession:
+    """SSH wrapper for the iperf3 server host."""
+
+    def __init__(self, conn: _Conn, iperf3_path: str = "iperf3") -> None:
+        self._conn = conn
+        self._iperf3 = iperf3_path
+        self._ensured_port: int | None = None
+
+    async def read_proc_net_dev(self) -> str:
+        return await self._conn.read_proc_net_dev()
+
+    async def detect_iface_for_ip(self, ip: str) -> str:
+        return await self._conn.detect_iface_for_ip(ip)
+
+    async def ensure_iperf3_server(self, port: int) -> None:
+        """Start (or restart) the iperf3 server in daemon mode on `port`.
+
+        We add `-i 1` so the server emits per-interval reports to its log.
+        The orchestrator can tail that log to get UDP loss/jitter live.
+        """
+        log.info("Ensuring iperf3 server on %s:%d", self._conn.host.mgmt_ip, port)
+        iperf3 = shlex.quote(self._iperf3)
+        # Kill only OUR server instance pattern (this iperf3 binary, server
+        # mode, this port). A bare 'pkill -f iperf3' also killed other users'
+        # tests and any concurrent orchestrator's server on another port.
+        pattern = _self_excluding_pattern(f"{self._iperf3} -s -p {port}")
+        await self._conn.run(
+            f"pkill -f {shlex.quote(pattern)} || true",
+            timeout=5.0, check=False,
+        )
+        await asyncio.sleep(0.5)
+        cmd = (
+            f"{iperf3} -s -p {port} -D -i 1 "
+            f"--logfile /tmp/iperf3_{port}.log"
+        )
+        await self._conn.run(cmd, timeout=10.0)
+        await asyncio.sleep(0.5)
+        # The bracketed pattern can't match the pgrep shell itself, so a '0'
+        # here genuinely means the daemon died (e.g. unwritable logfile).
+        check = await self._conn.run(
+            f"pgrep -f {shlex.quote(pattern)} | wc -l",
+            timeout=5.0, check=False,
+        )
+        running = (check.stdout or "0").strip()
+        self._ensured_port = port
+        if running == "0":
+            tail = await self._conn.run(
+                f"tail -20 /tmp/iperf3_{port}.log",
+                timeout=5.0, check=False,
+            )
+            raise SshError(
+                f"iperf3 server failed to start on port {port}. "
+                f"Tail: {(tail.stdout or '').strip()}"
+            )
+        log.info("iperf3 server is running")
+
+    def server_log_path(self, port: int) -> str:
+        return f"/tmp/iperf3_{port}.log"
+
+    async def tail_log(
+        self, log_path: str, stop_event: asyncio.Event,
+    ):
+        """SSH `tail -F <log>` and yield each line as it arrives.
+
+        Uses asyncssh's persistent connection — no new SSH session per line.
+        `tail -F` (capital F) follows file rotations and waits if the file
+        doesn't exist yet.
+        """
+        if self._conn.client is None:
+            raise SshError("server: not connected")
+        # -n 0 = don't replay history, only new lines from now
+        proc = await self._conn.client.create_process(
+            f"tail -n 0 -F {shlex.quote(log_path)}"
+        )
+        try:
+            assert proc.stdout is not None
+            while not stop_event.is_set():
+                try:
+                    line = await asyncio.wait_for(
+                        proc.stdout.readline(), timeout=2.0
+                    )
+                except asyncio.TimeoutError:
+                    continue
+                if not line:
+                    break
+                yield line.rstrip("\n")
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def stop_iperf3_server(self) -> None:
+        if self._ensured_port is None:
+            return  # we never started one; nothing of ours to stop
+        log.info("Stopping iperf3 server (port %d)", self._ensured_port)
+        pattern = _self_excluding_pattern(
+            f"{self._iperf3} -s -p {self._ensured_port}"
+        )
+        try:
+            await self._conn.run(
+                f"pkill -f {shlex.quote(pattern)} || true",
+                timeout=5.0, check=False,
+            )
+        except SshError as exc:
+            log.warning("iperf3 server stop failed (non-fatal): %s", exc)
+
+
+class SshPool:
+    """Async context manager that owns persistent SSH sessions."""
+
+    def __init__(self, config: Config) -> None:
+        self._config = config
+        self._frr_conn = _Conn(config.hosts.frr, name="frr")
+        self._server_conn = _Conn(config.hosts.server, name="server")
+        self.frr = FrrSession(self._frr_conn)
+        self.server = ServerSession(
+            self._server_conn,
+            iperf3_path=config.hosts.server.iperf3_path,
+        )
+
+    async def __aenter__(self) -> "SshPool":
+        await self._frr_conn.connect()
+        try:
+            await self._server_conn.connect()
+        except BaseException:
+            # __aexit__ never runs when __aenter__ raises: close what we
+            # opened instead of abandoning a live connection with keepalives.
+            await self._frr_conn.close()
+            raise
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self._server_conn.close()
+        await self._frr_conn.close()
+
+    async def reconnect_frr(self) -> None:
+        await self._frr_conn.reconnect()
+
+    async def reconnect_server(self) -> None:
+        await self._server_conn.reconnect()
+
+    async def preflight(self) -> None:
+        """Cheap sanity checks: both hosts respond, /proc/net/dev readable."""
+        echo = await self._frr_conn.run("echo ok", timeout=5.0)
+        if "ok" not in (echo.stdout or ""):
+            raise SshError("FRR did not echo correctly")
+        await self.frr.read_proc_net_dev()
+
+        echo2 = await self._server_conn.run("echo ok", timeout=5.0)
+        if "ok" not in (echo2.stdout or ""):
+            raise SshError("Server did not echo correctly")
+
+        which = await self._server_conn.run(
+            f"command -v {shlex.quote(self._config.hosts.server.iperf3_path)}",
+            timeout=5.0, check=False,
+        )
+        if which.exit_status != 0:
+            raise SshError(
+                f"iperf3 not found on server "
+                f"(looked for: {self._config.hosts.server.iperf3_path}). "
+                f"Install with: sudo apt install -y iperf3"
+            )
+        log.info("Pre-flight OK")

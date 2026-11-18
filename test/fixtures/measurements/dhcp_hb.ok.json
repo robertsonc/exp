@@ -1,0 +1,25 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XEG3PQS067NP5RVWDMW2",
+  "ts": "2026-11-18T20:00:05.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dhcp_hb",
+  "outcome": "ok",
+  "labels": {
+    "port": "c01",
+    "server": "10.1.0.2"
+  },
+  "metrics": {
+    "offer_ms": 12.4,
+    "offers": 1
+  },
+  "detail": {
+    "offered_ip": "10.1.0.31",
+    "options": {
+      "router": "10.1.0.1",
+      "lease_time": 598
+    }
+  },
+  "agent_ver": "0.1.0"
+}

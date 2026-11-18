@@ -1,0 +1,46 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XR8KWC0HMTAGXKJYMH60",
+  "ts": "2026-11-18T20:00:15.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "trace",
+  "outcome": "degraded",
+  "labels": {
+    "port": "c01",
+    "path": "test"
+  },
+  "metrics": {
+    "reached": 1,
+    "hops": 4,
+    "last_ttl": 4,
+    "rtt_ms": 260.0
+  },
+  "detail": {
+    "hops": [
+      [
+        1,
+        "10.1.0.2",
+        0.4
+      ],
+      [
+        2,
+        "10.1.0.1",
+        0.9
+      ],
+      [
+        3,
+        null,
+        null
+      ],
+      [
+        4,
+        "8.8.8.8",
+        11.3
+      ]
+    ],
+    "last_ip": "8.8.8.8",
+    "target": "8.8.8.8"
+  },
+  "agent_ver": "0.1.0"
+}

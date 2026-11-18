@@ -1,0 +1,106 @@
+{
+  "schema": "exp.status/1",
+  "agent": {
+    "version": "0.1.0",
+    "desired_version": null,
+    "applied_version": null,
+    "uptime_s": 3,
+    "last_poll": null
+  },
+  "facts": {
+    "hostname": "srv-05",
+    "machine_id": "4c7e4a52ca4e7e15ef523570b8a62d1e",
+    "os": {
+      "id": "ubuntu",
+      "version": "24.04"
+    },
+    "kernel": "6.8.0-45-generic",
+    "arch": "amd64",
+    "cpus": 8,
+    "mem_mb": 32000,
+    "disk_free_mb": 400000,
+    "python": "3.12.3",
+    "time": {
+      "synced": true,
+      "source": "systemd-timesyncd",
+      "offset_ms": 1.2
+    },
+    "interfaces": [
+      {
+        "name": "eno1",
+        "mac": "18:66:da:00:00:01",
+        "state": "up",
+        "speed_mbps": 1000,
+        "driver": "tg3",
+        "addrs": [
+          "10.32.98.25/23"
+        ],
+        "default_route": true,
+        "in_use_by": "mgmt"
+      }
+    ]
+  },
+  "metrics": {
+    "interval_s": 60,
+    "uptime_s": 1234567,
+    "cpu": {
+      "pct": null,
+      "iowait_pct": null,
+      "steal_pct": null,
+      "load1": 0.8,
+      "load5": 0.6,
+      "load15": 0.5
+    },
+    "mem": {
+      "total_mb": 32000,
+      "used_mb": 8200,
+      "available_mb": 23800,
+      "pct": 25.6,
+      "swap_used_mb": 0
+    },
+    "disk": [
+      {
+        "mount": "/",
+        "total_gb": 437.0,
+        "used_gb": 13.1,
+        "pct": 3.0
+      },
+      {
+        "mount": "/var/lib/exp",
+        "total_gb": 437.0,
+        "used_gb": 13.1,
+        "pct": 3.0
+      }
+    ],
+    "disk_io": {
+      "read_kbps": null,
+      "write_kbps": null
+    },
+    "net": [
+      {
+        "iface": "eno1",
+        "role": "mgmt",
+        "link": "up",
+        "speed_mbps": 1000,
+        "rx_pps": null,
+        "tx_pps": null,
+        "rx_bps": null,
+        "tx_bps": null,
+        "rx_errors": null,
+        "tx_errors": null,
+        "rx_drops": null,
+        "tx_drops": null
+      }
+    ],
+    "temp_c_max": 54
+  },
+  "components": [],
+  "reconcile": null,
+  "events": [
+    {
+      "ts": "2026-11-18T20:00:00.000Z",
+      "level": "info",
+      "msg": "agent started"
+    }
+  ]
+}

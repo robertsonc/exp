@@ -1,0 +1,94 @@
+{
+  "schema": "exp.state/1",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "at": "2026-11-18T20:06:00.000Z",
+  "live": true,
+  "newest_s": 3,
+  "verdict": {
+    "severity": "fail",
+    "headline": "DNS isn't answering.",
+    "sub": "The resolver 8.8.8.8 is silent on every port; the internet itself is fine.",
+    "voice": "plain",
+    "where": {
+      "seg": "resolver",
+      "label": "Resolver",
+      "ip": "8.8.8.8",
+      "explain": "Both the DHCP resolver and the alternate stopped answering while traffic still flows.",
+      "chain": [
+        {
+          "seg": "ports",
+          "state": "ok"
+        },
+        {
+          "seg": "switch",
+          "state": "ok"
+        },
+        {
+          "seg": "gateway",
+          "state": "ok"
+        },
+        {
+          "seg": "edge",
+          "state": "ok"
+        },
+        {
+          "seg": "isp",
+          "state": "ok"
+        },
+        {
+          "seg": "dns",
+          "state": "fail"
+        },
+        {
+          "seg": "apps",
+          "state": "unknown"
+        }
+      ]
+    }
+  },
+  "lines": [
+    {
+      "key": "network",
+      "label": "Network",
+      "state": "ok",
+      "word": "ok",
+      "since": null,
+      "detail": "",
+      "last_outage": null,
+      "flaps": 0
+    },
+    {
+      "key": "dns",
+      "label": "DNS",
+      "state": "fail",
+      "word": "down",
+      "since": "2026-11-18T20:03:00.000Z",
+      "detail": "no answer from 8.8.8.8 (9 of 9 ports)",
+      "last_outage": {
+        "start": "2026-11-18T19:40:00.000Z",
+        "end": "2026-11-18T19:42:30.000Z",
+        "open": false
+      },
+      "flaps": 1
+    }
+  ],
+  "failing": [
+    {
+      "line": "dns",
+      "items": [
+        {
+          "text": "no answer from 8.8.8.8 within 2 s",
+          "count": 9,
+          "ports": [
+            "c01"
+          ],
+          "tests": [
+            "dns_hb",
+            "dns"
+          ]
+        }
+      ]
+    }
+  ]
+}

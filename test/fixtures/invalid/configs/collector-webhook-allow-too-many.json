@@ -1,0 +1,77 @@
+{
+  "schema": "exp.collector.config/1",
+  "collector_id": "col-hallb",
+  "site": "hall-b",
+  "listen": "10.32.98.25:8443",
+  "probes": [
+    {
+      "probe_id": "probe-a1",
+      "site": "hall-b",
+      "label": "Hall B east"
+    }
+  ],
+  "dashboards": [
+    "dash-main"
+  ],
+  "retention": {
+    "metrics_days": 30,
+    "records_days": 7
+  },
+  "vm": {
+    "listen": "127.0.0.1:8428",
+    "memory_allowed_pct": 40
+  },
+  "rules": {
+    "edge_label": "EC",
+    "lines": [
+      "network",
+      "dhcp",
+      "dns",
+      "internet",
+      "apps",
+      "wifi",
+      "path"
+    ]
+  },
+  "alerts": {
+    "enabled": true,
+    "board_url": "https://10.32.98.30",
+    "timezone": "America/Chicago",
+    "voice": "sysadmin",
+    "hold_down_s": 20,
+    "hold_back_s": 60,
+    "reopen_s": 300,
+    "calm_s": 600,
+    "webhook_allow": [
+      "10.0.0.0",
+      "10.0.0.1",
+      "10.0.0.2",
+      "10.0.0.3",
+      "10.0.0.4",
+      "10.0.0.5",
+      "10.0.0.6",
+      "10.0.0.7",
+      "10.0.0.8",
+      "10.0.0.9",
+      "10.0.0.10",
+      "10.0.0.11",
+      "10.0.0.12",
+      "10.0.0.13",
+      "10.0.0.14",
+      "10.0.0.15",
+      "10.0.0.16"
+    ]
+  },
+  "reflector": {
+    "enabled": true,
+    "port": 8862
+  },
+  "iperf3": {
+    "enabled": true,
+    "port": 5201
+  },
+  "ingest": {
+    "max_body_mb": 4,
+    "max_records": 1000
+  }
+}

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EXM Overview</title>
+<style>
+:root{--bg:#1d1f27;--front:#292d3a;--line:rgba(255,255,255,.12);--text:#e6e8e9;--strong:#fff;--weak:#b1b9be;--ok:#05cc93;--warn:#ffbc44;--fail:#fc6161;--unk:#7d8a92}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:'HPE Graphik',Arial,Helvetica,sans-serif}
+main{padding:4vh 5vw}
+.top{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;color:var(--weak);font-size:clamp(13px,1.1vw,20px)}
+h1{margin:3vh 0 4vh;font-size:clamp(32px,4.4vw,84px);font-weight:500;color:var(--strong);line-height:1.08}
+.rows{display:flex;flex-direction:column;gap:12px}
+a.row{display:grid;grid-template-columns:minmax(180px,28%) auto minmax(0,1fr) auto;align-items:center;gap:2vw;padding:16px 20px;
+  background:var(--front);border-radius:10px;color:inherit;text-decoration:none;border-left:6px solid var(--unk)}
+a.row:hover{outline:1px solid var(--line)}
+a.row.ok{border-left-color:var(--ok)}a.row.warn{border-left-color:var(--warn)}a.row.fail{border-left-color:var(--fail)}
+.name{font-size:clamp(17px,1.4vw,26px);font-weight:500;color:var(--strong);overflow-wrap:anywhere}
+.dots{display:flex;gap:8px}
+.dot{width:clamp(22px,1.7vw,30px);height:clamp(22px,1.7vw,30px);border-radius:50%;display:grid;place-items:center;
+  font-size:clamp(10px,.8vw,13px);font-weight:600;color:#1d1f27;background:var(--unk)}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.fail{background:var(--fail)}.dot.unk{background:transparent;border:2px solid var(--unk);color:var(--unk)}
+.say{font-size:clamp(15px,1.2vw,22px);overflow-wrap:anywhere}
+.say small{display:block;color:var(--weak);font-size:.8em;margin-top:3px}
+.age{color:var(--weak);font-size:clamp(13px,.95vw,17px);white-space:nowrap}
+.empty{color:var(--weak);font-size:18px}
+@media (max-width:760px){a.row{grid-template-columns:1fr auto}.say{grid-column:1/-1}.age{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><span>EXM · all probes</span><span id="fresh">loading</span></div>
+  <h1 id="headline">Checking every probe…</h1>
+  <div class="rows" id="rows" aria-live="polite"></div>
+</main>
+<script>
+(() => {
+  'use strict';
+  const LANES = ['Network', 'DHCP', 'DNS', 'Internet', 'Wi-Fi'];
+  const SHORT = ['N', 'H', 'D', 'I', 'W'];
+  const RANK = { fail: 0, warn: 1, unk: 2, ok: 3 };
+  const WHERE = { link: 'a cable or the switch', switch: 'the switch side', gateway: 'the gateway or the link to it',
+    lan: 'between the ports and the gateway', edge: 'the {edge}', isp: 'upstream of the {edge} (ISP)', wan: 'past the gateway',
+    resolver: 'the resolver', dns_path: 'DNS on the way out', apps: 'the apps', dhcp: 'the DHCP server', ssid: 'the AP or SSID',
+    wifi: 'the Wi-Fi side' };
+  const $ = (id) => document.getElementById(id);
+  const worst = (b) => b.lines.reduce((w, s, i) => (RANK[s] < RANK[b.lines[w]] ? i : w), 0);
+  function say(b) {
+    if (b.newest_s === null) return ['unk', 'No results yet'];
+    if (b.newest_s > 90) return ['unk', 'No data for ' + Math.round(b.newest_s / 60) + ' min'];
+    const i = worst(b), s = b.lines[i];
+    if (s === 'fail') return ['fail', LANES[i] + (i === 0 ? ' is unstable' : i === 1 || i === 2 ? ' is failing' : ' is down')];
+    if (s === 'warn') return ['warn', LANES[i] + ' is degraded'];
+    if (b.lines.slice(0, 4).every((x) => x === 'ok')) return ['ok', b.lines[4] === 'unk' ? 'All good (no Wi-Fi laptop)' : 'All good'];
+    return ['unk', 'Waiting for results'];
+  }
+  async function load() {
+    try {
+      const j = await (await fetch('/api/boards', { cache: 'no-store' })).json();
+      const rows = $('rows');
+      rows.replaceChildren();
+      const boards = j.boards.map((b) => ({ b, v: say(b) })).sort((x, y) => RANK[x.v[0]] - RANK[y.v[0]] || x.b.label.localeCompare(y.b.label));
+      if (!boards.length) {
+        const p = document.createElement('p'); p.className = 'empty';
+        p.textContent = 'No probes yet. On this host: sudo exm-collector probe add NAME --host ADDRESS';
+        rows.appendChild(p);
+      }
+      for (const { b, v } of boards) {
+        const a = document.createElement('a');
+        a.className = 'row ' + v[0];
+        a.href = '/?probe=' + encodeURIComponent(b.name);
+        const n = document.createElement('div'); n.className = 'name'; n.textContent = b.label;
+        const dots = document.createElement('div'); dots.className = 'dots';
+        b.lines.forEach((s, i) => { const d = document.createElement('span'); d.className = 'dot ' + s; d.textContent = SHORT[i]; d.title = LANES[i] + ': ' + s; dots.appendChild(d); });
+        const t = document.createElement('div'); t.className = 'say'; t.textContent = v[1];
+        if (b.where && WHERE[b.where.seg]) {
+          const w = document.createElement('small');
+          w.textContent = 'Where: ' + WHERE[b.where.seg].replace('{edge}', j.edge || 'WAN edge');
+          t.appendChild(w);
+        }
+        const age = document.createElement('div'); age.className = 'age';
+        age.textContent = b.newest_s === null ? '–' : b.newest_s < 90 ? 'live' : 'stale';
+        a.append(n, dots, t, age);
+        rows.appendChild(a);
+      }
+      const bad = boards.filter((x) => x.v[0] === 'fail' || x.v[0] === 'warn').length;
+      $('headline').textContent = !boards.length ? 'No probes yet.' : bad ? bad + ' of ' + boards.length + (boards.length > 1 ? ' probes need' : ' probe needs') + ' a look.'
+        : boards.every((x) => x.v[0] === 'ok') ? 'All ' + boards.length + ' probes are good.' : 'Some probes are not reporting.';
+      $('fresh').textContent = 'updated ' + new Date().toLocaleTimeString([], { hour12: false }) + ' · exm ' + j.version;
+    } catch (e) {
+      $('fresh').textContent = 'cannot reach the collector; retrying';
+    }
+  }
+  load();
+  setInterval(load, 5000);
+})();
+</script>
+</body>
+</html>

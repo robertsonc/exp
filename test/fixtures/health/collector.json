@@ -1,0 +1,30 @@
+{
+  "schema": "exp.health/1",
+  "status": "ok",
+  "detail": "",
+  "version": "0.1.0",
+  "uptime_s": 86000,
+  "metrics": {
+    "ingest_records_per_s": 305.2,
+    "ingest_rejected_per_min": 0,
+    "ingest_duplicates_per_min": 2,
+    "ingest_bytes_per_s": 123456,
+    "probes_total": 1,
+    "probes_reporting": 1,
+    "vm_up": 1,
+    "vm_backlog_points": 0,
+    "vm_series": 5200,
+    "vm_storage_gb": 1.2,
+    "records_db_gb": 0.4,
+    "storage_free_gb": 390.0,
+    "days_to_full": null,
+    "sse_clients": 2,
+    "open_incidents": 0,
+    "webhook_failures_1h": 0,
+    "rules_eval_ms_p95": 14.0
+  },
+  "facts": {
+    "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6",
+    "listen": "10.32.98.25:8443"
+  }
+}

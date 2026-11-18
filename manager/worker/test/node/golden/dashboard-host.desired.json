@@ -1,0 +1,80 @@
+{
+  "schema": "exp.desired/1",
+  "host_id": "h_BAEZY2XNQW28ENV28FNW29FPW3",
+  "org": {
+    "id": "default",
+    "name": "HPE Event NOC"
+  },
+  "site": {
+    "id": "hall-b",
+    "name": "Hall B",
+    "timezone": "America/Chicago"
+  },
+  "components": [
+    {
+      "type": "dashboard",
+      "id": "dash-main",
+      "component_id": "cmp_BAEZY2XNQW28ENV28FNW29FPW3",
+      "version": "0.1.0",
+      "artifact": {
+        "id": "art_7D913JHN5T526BHRY5BJRZ5CJS",
+        "name": "exp-dashboard-0.1.0-noarch.tar.gz",
+        "url": "/api/agent/v1/artifacts/art_7D913JHN5T526BHRY5BJRZ5CJS",
+        "sha256": "e1d3116a730ef8e1f5e47307da7ab217b2531bd2af81df4e5e2a6baa5d0e2bd9",
+        "size": 1103
+      },
+      "config": {
+        "schema": "exp.dashboard.config/1",
+        "dashboard_id": "dash-main",
+        "title": "HPE EXP - Hall B",
+        "url": "https://10.32.98.30",
+        "listen": {
+          "https": "0.0.0.0:443",
+          "http_redirect": "0.0.0.0:80"
+        },
+        "collectors": [
+          {
+            "collector_id": "col-hallb",
+            "site": "hall-b",
+            "url": "https://10.32.98.25:8443",
+            "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6"
+          }
+        ],
+        "timezone": "America/Chicago",
+        "auth": {
+          "sso": {
+            "manager_url": "https://exp.example.com",
+            "issuer": "exp-manager:default"
+          },
+          "session_hours": 12,
+          "local_users": true,
+          "noc_tokens": true
+        },
+        "tls": {
+          "mode": "self_signed"
+        }
+      },
+      "creds": {
+        "collector_tokens.json": "{\"col-hallb\":\"expd_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD\"}",
+        "sso_secret": "c3NvLXNlY3JldC1mb3ItZ29sZGVuLXRlc3RzLTAxMjM0NTY=",
+        "local_users.json": "[{\"hash\":\"pbkdf2_sha256$600000$Tr4XuAwCFH7YD/2V/36QoA==$bJc8Pe3nYnc4c1g1Hx7qwAcWynGWZnTS42MUPGXZZoE=\",\"role\":\"admin\",\"username\":\"admin\"}]",
+        "noc_tokens.json": "[{\"expires\":null,\"id\":\"noc_WTXRV0HGMT06DKT07DMT17EMV1\",\"label\":\"wall display\",\"role\":\"viewer\",\"sha256\":\"f557a76b6fba1a493da1098ea07beee4e642cefbad63cc1082edeed8dd125e3b\"}]"
+      }
+    }
+  ],
+  "actions": [],
+  "decommission": false,
+  "agent": {
+    "version": "0.1.0",
+    "artifact": "art_9C6KWERB0P2Z38ENV28FNW29FP",
+    "poll_interval_s": 30,
+    "status_interval_s": 60
+  },
+  "release": {
+    "version": "0.1.0",
+    "manifest_url": "/api/agent/v1/releases/0.1.0/manifest",
+    "signature_url": "/api/agent/v1/releases/0.1.0/manifest.sig"
+  },
+  "version": 1,
+  "generated_at": "2026-11-18T20:00:00.000Z"
+}

@@ -1,0 +1,196 @@
+#!/usr/bin/python3
+"""lanctl: the simulated LAN's control and FAULT API (runs inside the net container; the tests call it with
+`docker exec <net> lanctl ...`, always argv, never a shell).
+
+  plug LABEL --pid PID --ifname IF --mac MAC   veth: one end on the event bridge, the other moved into the
+                                               namespace of process PID as IF (pinned MAC)
+  unplug LABEL                                  remove the port
+  ports                                         JSON {label: {mac, bridge_if, pid, ifname}}
+  block-dns LABEL|all [--resolver-only]         drop UDP+TCP/53 from that port (both the DHCP-given resolver and
+                                               the public resolvers; --resolver-only: only 10.1.0.1)
+  cut-egress [--at gateway|edge]                the router at that hop stops forwarding (TTL still answered, so a
+                                               traceroute names the last hop that answered)
+  restore                                       remove every injected fault
+  status                                        JSON of the faults currently injected
+  canary IP                                     exit 0 if the resolver at IP answers canary.exp.test (known-good probe)
+  ca                                            print the harness CA certificate (PEM) path
+Faults live only in iptables chains EXP_FAULT_* of the gw/edge namespaces; `restore` flushes them.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+STATE = Path("/run/lan/ports.json")
+CA = "/run/lan/pki/ca.pem"
+GW_ADDR = "10.1.0.1"
+LABEL_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,9}\Z")      # bridge-side name is "b-" + label (<= 15 chars)
+MAC_RE = re.compile(r"([0-9a-f]{2}:){5}[0-9a-f]{2}\Z")
+IFNAME_RE = re.compile(r"[A-Za-z0-9._-]{1,15}\Z")
+
+
+def run(argv: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+    r = subprocess.run(argv, capture_output=True, text=True, timeout=30)  # noqa: S603
+    if check and r.returncode != 0:
+        raise SystemExit(f"lanctl: {' '.join(argv)} failed: {r.stderr.strip() or r.stdout.strip()}")
+    return r
+
+
+def nsx(ns: str, *argv: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return run(["ip", "netns", "exec", ns, *argv], check=check)
+
+
+def load() -> dict[str, dict]:
+    try:
+        return json.loads(STATE.read_text())
+    except FileNotFoundError:
+        return {}
+
+
+def save(d: dict[str, dict]) -> None:
+    STATE.write_text(json.dumps(d, indent=1, sort_keys=True))
+
+
+def label_ok(label: str) -> str:
+    if not LABEL_RE.match(label):
+        raise SystemExit(f"lanctl: bad label {label!r} (a-z0-9-, <= 10 chars)")
+    return label
+
+
+# ---------------------------------------------------------------------------------------------- ports
+def cmd_plug(a: argparse.Namespace) -> None:
+    label = label_ok(a.label)
+    mac = a.mac.lower()
+    if not MAC_RE.match(mac) or not IFNAME_RE.match(a.ifname):
+        raise SystemExit("lanctl: bad --mac or --ifname")
+    ports = load()
+    if label in ports:
+        raise SystemExit(f"lanctl: {label} is already plugged")
+    br, peer = f"b-{label}", f"q-{label}"
+    run(["ip", "link", "add", br, "type", "veth", "peer", "name", peer])
+    run(["ip", "link", "set", peer, "address", mac])
+    run(["ip", "link", "set", br, "master", "br-ev"])
+    run(["ip", "link", "set", br, "up"])
+    run(["ip", "link", "set", peer, "netns", str(int(a.pid)), "name", a.ifname])
+    run(["nsenter", "-t", str(int(a.pid)), "-n", "ip", "link", "set", a.ifname, "up"])
+    ports[label] = {"mac": mac, "bridge_if": br, "pid": int(a.pid), "ifname": a.ifname}
+    save(ports)
+
+
+def cmd_unplug(a: argparse.Namespace) -> None:
+    ports = load()
+    p = ports.pop(label_ok(a.label), None)
+    if p is None:
+        raise SystemExit(f"lanctl: no such port {a.label}")
+    run(["ip", "link", "del", p["bridge_if"]], check=False)
+    save(ports)
+
+
+def cmd_ports(_a: argparse.Namespace) -> None:
+    print(json.dumps(load(), indent=1, sort_keys=True))
+
+
+# ---------------------------------------------------------------------------------------------- faults
+def cmd_block_dns(a: argparse.Namespace) -> None:
+    ports = load()
+    labels = sorted(ports) if a.label == "all" else [a.label]
+    for label in labels:
+        if label not in ports:
+            raise SystemExit(f"lanctl: no such port {label}")
+    for label in labels:
+        mac = ports[label]["mac"]
+        for proto in ("udp", "tcp"):
+            base = ["-m", "mac", "--mac-source", mac, "-p", proto, "--dport", "53", "-j", "DROP"]
+            nsx("gw", "iptables", "-w", "-A", "EXP_FAULT_IN", *base)
+            if not a.resolver_only:
+                nsx("gw", "iptables", "-w", "-A", "EXP_FAULT_FWD", *base)
+
+
+def cmd_cut_egress(a: argparse.Namespace) -> None:
+    if a.at == "gateway":
+        nsx("gw", "iptables", "-w", "-A", "EXP_FAULT_FWD", "-i", "gw-ev", "-o", "gw-up", "-j", "DROP")
+    else:
+        nsx("edge", "iptables", "-w", "-A", "EXP_FAULT_FWD", "-i", "edge-dn", "-o", "edge-up", "-j", "DROP")
+
+
+def cmd_restore(_a: argparse.Namespace) -> None:
+    for ns, chains in (("gw", ("EXP_FAULT_IN", "EXP_FAULT_FWD")), ("edge", ("EXP_FAULT_FWD",))):
+        for c in chains:
+            nsx(ns, "iptables", "-w", "-F", c)
+
+
+def cmd_status(_a: argparse.Namespace) -> None:
+    out: dict[str, list[str]] = {}
+    for ns, chains in (("gw", ("EXP_FAULT_IN", "EXP_FAULT_FWD")), ("edge", ("EXP_FAULT_FWD",))):
+        for c in chains:
+            rules = nsx(ns, "iptables", "-w", "-S", c).stdout.splitlines()
+            out[f"{ns}:{c}"] = [r for r in rules if r.startswith("-A")]
+    print(json.dumps({"faults": out, "active": any(out.values())}, indent=1))
+
+
+def cmd_canary(a: argparse.Namespace) -> None:
+    """Asked from the gateway namespace: the event-LAN side of the simulation, never affected by a fault that only
+    matches a test port's MAC."""
+    r = run(["ip", "netns", "exec", "gw", sys.executable, __file__, "_canary", a.ip], check=False)
+    if r.returncode != 0:
+        raise SystemExit((r.stderr or r.stdout).strip() or "canary failed")
+
+
+def cmd_canary_raw(a: argparse.Namespace) -> None:
+    q = b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06canary\x03exp\x04test\x00\x00\x01\x00\x01"
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(2)
+    try:
+        s.sendto(q, (a.ip, 53))
+        r = s.recv(512)
+    except OSError as exc:
+        raise SystemExit(f"canary: no answer from {a.ip}: {exc}") from None
+    if r[3] & 15 != 0 or r[7] < 1 or r[-4:] != socket.inet_aton("192.0.2.53"):
+        raise SystemExit(f"canary: {a.ip} answered, but not with the canary record")
+
+
+def cmd_ca(_a: argparse.Namespace) -> None:
+    print(CA)
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="lanctl", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("plug")
+    p.add_argument("label")
+    p.add_argument("--pid", required=True, type=int)
+    p.add_argument("--ifname", required=True)
+    p.add_argument("--mac", required=True)
+    p.set_defaults(fn=cmd_plug)
+    p = sub.add_parser("unplug")
+    p.add_argument("label")
+    p.set_defaults(fn=cmd_unplug)
+    sub.add_parser("ports").set_defaults(fn=cmd_ports)
+    p = sub.add_parser("block-dns")
+    p.add_argument("label")
+    p.add_argument("--resolver-only", action="store_true")
+    p.set_defaults(fn=cmd_block_dns)
+    p = sub.add_parser("cut-egress")
+    p.add_argument("--at", choices=("gateway", "edge"), default="gateway")
+    p.set_defaults(fn=cmd_cut_egress)
+    sub.add_parser("restore").set_defaults(fn=cmd_restore)
+    sub.add_parser("status").set_defaults(fn=cmd_status)
+    p = sub.add_parser("canary")
+    p.add_argument("ip")
+    p.set_defaults(fn=cmd_canary)
+    p = sub.add_parser("_canary")
+    p.add_argument("ip")
+    p.set_defaults(fn=cmd_canary_raw)
+    sub.add_parser("ca").set_defaults(fn=cmd_ca)
+    a = ap.parse_args(argv)
+    a.fn(a)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

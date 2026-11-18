@@ -1,0 +1,17 @@
+{
+  "schema": "exp.state/1",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "at": "2026-11-18T20:06:00.000Z",
+  "live": false,
+  "newest_s": null,
+  "verdict": {
+    "severity": "unknown",
+    "headline": "No recent data.",
+    "sub": "",
+    "voice": "plain",
+    "where": null
+  },
+  "lines": [],
+  "failing": []
+}

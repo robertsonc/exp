@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beats.schema.json",
+  "title": "exp.beats/1",
+  "description": "Beats for the timeline (01 section 5). The window (to - from) is at most 6 h; that is a query-time rule enforced by the collector, not here.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.beats/1"
+    },
+    "probe": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "from": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "to": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "lines": {
+      "type": "object",
+      "properties": {},
+      "description": "line key -> ordered [epoch_ms, value] pairs; value 0 ok, 1 warn, 2 fail, 3 unknown/probe error.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "maxItems": 100000
+      },
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/line_key"
+      },
+      "maxProperties": 16
+    },
+    "markers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "t": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "kind": {
+            "enum": [
+              "incident",
+              "drill",
+              "ext"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "t",
+          "kind",
+          "text"
+        ]
+      },
+      "maxItems": 1000
+    }
+  },
+  "required": [
+    "schema",
+    "probe",
+    "from",
+    "to",
+    "lines",
+    "markers"
+  ]
+}

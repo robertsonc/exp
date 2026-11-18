@@ -1,0 +1,199 @@
+{
+  "schema": "exp.status/1",
+  "facts": {
+    "hostname": "srv-02",
+    "machine_id": "ba3e3368bbd7f8c0896bb3e3cc14ab8e",
+    "os": {
+      "id": "ubuntu",
+      "version": "24.04"
+    },
+    "kernel": "6.8.0-45-generic",
+    "arch": "amd64",
+    "cpus": 8,
+    "mem_mb": 32000,
+    "disk_free_mb": 400000,
+    "python": "3.12.3",
+    "time": {
+      "synced": true,
+      "source": "systemd-timesyncd",
+      "offset_ms": 1.2
+    },
+    "interfaces": [
+      {
+        "name": "eno1",
+        "mac": "18:66:da:00:00:01",
+        "state": "up",
+        "speed_mbps": 1000,
+        "driver": "tg3",
+        "addrs": [
+          "10.32.98.26/23"
+        ],
+        "default_route": true,
+        "in_use_by": "mgmt"
+      },
+      {
+        "name": "enp10s0f0",
+        "mac": "00:e0:ed:90:89:3a",
+        "state": "up",
+        "speed_mbps": 1000,
+        "driver": "igb",
+        "addrs": [],
+        "default_route": false,
+        "in_use_by": "probe:c01"
+      },
+      {
+        "name": "enp10s0f1",
+        "mac": "00:e0:ed:90:89:3b",
+        "state": "down",
+        "speed_mbps": null,
+        "driver": "igb",
+        "addrs": [],
+        "default_route": false,
+        "in_use_by": "none"
+      }
+    ]
+  },
+  "metrics": {
+    "interval_s": 60,
+    "uptime_s": 1234567,
+    "cpu": {
+      "pct": 23.4,
+      "iowait_pct": 1.2,
+      "steal_pct": 0.0,
+      "load1": 0.8,
+      "load5": 0.6,
+      "load15": 0.5
+    },
+    "mem": {
+      "total_mb": 32000,
+      "used_mb": 8200,
+      "available_mb": 23800,
+      "pct": 25.6,
+      "swap_used_mb": 0
+    },
+    "disk": [
+      {
+        "mount": "/",
+        "total_gb": 437.0,
+        "used_gb": 13.1,
+        "pct": 3.0
+      },
+      {
+        "mount": "/var/lib/exp",
+        "total_gb": 437.0,
+        "used_gb": 13.1,
+        "pct": 3.0
+      }
+    ],
+    "disk_io": {
+      "read_kbps": 12.0,
+      "write_kbps": 340.5
+    },
+    "net": [
+      {
+        "iface": "eno1",
+        "role": "mgmt",
+        "link": "up",
+        "speed_mbps": 1000,
+        "rx_pps": 120.5,
+        "tx_pps": 98.2,
+        "rx_bps": 340000,
+        "tx_bps": 120000,
+        "rx_errors": 0,
+        "tx_errors": 0,
+        "rx_drops": 0,
+        "tx_drops": 0
+      }
+    ],
+    "temp_c_max": 54
+  },
+  "components": [
+    {
+      "type": "probe",
+      "id": "probe-a1",
+      "version": "0.1.0",
+      "state": "running",
+      "health": "degraded",
+      "detail": "dns failing on c01",
+      "since": "2026-11-17T20:00:00.000Z",
+      "process": {
+        "cpu_pct": 7.5,
+        "rss_mb": 96,
+        "restarts": 1,
+        "uptime_s": 5000
+      },
+      "metrics": {
+        "measurements_per_min": 140,
+        "by_test_per_min": {
+          "gateway": 12,
+          "dns_hb": 12
+        },
+        "fail_per_min": 12,
+        "error_per_min": 0,
+        "spool_depth": 0,
+        "spool_bytes": 0,
+        "push_lag_s": 0.4,
+        "clock_offset_ms": 1.1,
+        "skipped_per_hour": 0,
+        "ports": [
+          {
+            "id": "c01",
+            "iface": "enp10s0f0",
+            "role": "client",
+            "link": "up",
+            "leased": true,
+            "ip": "10.1.0.31",
+            "gateway": "10.1.0.1",
+            "rx_pps": 12.0,
+            "tx_pps": 11.0,
+            "rx_bps": 9000,
+            "tx_bps": 8000,
+            "rx_errors": 0,
+            "tx_errors": 0,
+            "rx_drops": 0,
+            "tx_drops": 0,
+            "last": {
+              "network": "ok",
+              "dhcp": "ok",
+              "dns": "fail"
+            }
+          },
+          {
+            "id": "c02",
+            "iface": "enp10s0f1",
+            "role": "client",
+            "link": "up",
+            "leased": true,
+            "ip": "10.1.0.31",
+            "gateway": "10.1.0.1",
+            "rx_pps": 12.0,
+            "tx_pps": 11.0,
+            "rx_bps": 9000,
+            "tx_bps": 8000,
+            "rx_errors": 0,
+            "tx_errors": 0,
+            "rx_drops": 0,
+            "tx_drops": 0,
+            "last": {
+              "network": "ok",
+              "dhcp": "ok",
+              "dns": "fail"
+            }
+          }
+        ]
+      },
+      "facts": {
+        "collector_reachable": true,
+        "collector_url": "https://10.32.98.25:8443",
+        "mode": "netns"
+      }
+    }
+  ],
+  "reconcile": {
+    "at": "2026-11-18T19:59:00.000Z",
+    "result": "ok",
+    "error": null,
+    "duration_ms": 7100
+  },
+  "events": []
+}

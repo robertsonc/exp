@@ -1,0 +1,23 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XCHK2MW15BJZX85Q780H",
+  "ts": "2026-11-18T20:00:03.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "gateway",
+  "outcome": "fail",
+  "labels": {
+    "port": "c01",
+    "iface": "enp10s0f0"
+  },
+  "metrics": {
+    "link_up": 1,
+    "loss_pct": 100,
+    "carrier_changes": 2
+  },
+  "detail": {
+    "gateway_ip": "10.1.0.1"
+  },
+  "error": "no reply from 10.1.0.1",
+  "agent_ver": "0.1.0"
+}

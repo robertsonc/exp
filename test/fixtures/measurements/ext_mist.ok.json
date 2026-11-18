@@ -1,0 +1,21 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YHN3XVMG963BDQ7EBM9G",
+  "ts": "2026-11-18T20:00:41.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "ext_mist",
+  "outcome": "ok",
+  "labels": {
+    "kind": "ap_offline",
+    "severity": "warn"
+  },
+  "metrics": {
+    "count": 1
+  },
+  "detail": {
+    "ap": "ap-12",
+    "site_id": "mist-site-1"
+  },
+  "agent_ver": "0.1.0"
+}

@@ -1,0 +1,32 @@
+# gitleaks configuration for exp.
+#
+# Extends the default ruleset. The allowlist is deliberately narrow:
+#  - test-only trees whose fake tokens/keys are generated deterministically from fixed strings
+#    (they must still LOOK like real tokens so the format and scanner tests are meaningful);
+#  - two exact non-secret values outside test trees, each explained below.
+# Product code and configs are scanned in full. Never widen this to whole component directories.
+title = "exp gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fake credentials in test fixtures and tests only"
+paths = [
+  '''^test/fixtures/''',
+  '''^test/fakes/tests/''',
+  '''^shared/python/tests/''',
+  '''^shared/openapi/test_openapi\.py$''',
+  '''^(probe|collector|dashboard|agent|runner)/tests/''',
+  '''^manager/worker/test/''',
+  '''^manager/ui/tests/''',
+  # vitest bindings for the local test runtime: EXP_MASTER_KEY is bytes 0x00..0x1f, not a real key
+  '''^manager/vitest\.shared\.ts$''',
+]
+regexes = [
+  # deploy.sh smoke test sends a deliberately FORGED Access JWT and asserts the Worker refuses it
+  '''eyJhbGciOiJSUzI1NiIsImtpZCI6ImZvcmdlZCJ9\.eyJlbWFpbCI6ImF0dGFja2VyQGV4YW1wbGUuY29tIn0\.forged''',
+  # exp_common.log redaction pattern / replacement text (contains no key material)
+  '''-----BEGIN \[A-Z0-9 \]\*PRIVATE KEY-----''',
+  '''PRIVATE KEY-----" \+ REDACTED \+ "-----END PRIVATE KEY''',
+]

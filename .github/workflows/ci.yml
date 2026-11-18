@@ -1,0 +1,276 @@
+# CI (08-operations.md section 9-10). Runs on every PR and on pushes to main.
+# Required checks gating main: lint, unit, contract, package, package-install, gitleaks.
+# Every job tolerates a partially built repository: steps are conditional on the files they need.
+# Pinning (SR-11): actions are pinned to full commit SHAs; the version is in the trailing comment.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  lint:
+    name: lint (ruff, tsc)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: packaging/ci-venv.sh 3.10
+      - name: ruff
+        run: make lint
+      - name: Workflow YAML parses
+        run: .venv/bin/python -c "import glob, yaml; [yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')]"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: hashFiles('manager/package-lock.json') != ''
+        with:
+          node-version: "22"
+      - name: tsc (manager)
+        if: hashFiles('manager/package-lock.json') != ''
+        working-directory: manager
+        run: npm ci --ignore-scripts && npm run typecheck
+      - name: tsc (manager/ui)
+        if: hashFiles('manager/ui/package-lock.json') != ''
+        working-directory: manager/ui
+        run: npm ci --ignore-scripts && npm run typecheck
+
+  unit:
+    name: unit (python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: packaging/ci-venv.sh ${{ matrix.python }}
+      - name: make test (components that exist; others are skipped by the Makefile)
+        run: make test
+
+  unit-manager:
+    name: unit (manager, manager/ui)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: manager - npm ci && npm test
+        if: hashFiles('manager/package-lock.json') != ''
+        working-directory: manager
+        run: npm ci --ignore-scripts && npm test
+      - name: manager/ui - npm ci && npm run build && npm test
+        if: hashFiles('manager/ui/package-lock.json') != ''
+        working-directory: manager/ui
+        run: npm ci --ignore-scripts && npm run build && npm test
+
+  contract:
+    name: contract (schemas, fixtures, OpenAPI, golden)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: packaging/ci-venv.sh 3.10
+      - name: Fixtures validate against their schemas; OpenAPI documents are valid; fakes conform
+        run: make test-shared
+      - name: Golden verdicts (EXM outage fixture)
+        if: hashFiles('collector/tests/golden/**') != ''
+        run: .venv/bin/python -m pytest collector/tests/golden -q
+
+  package:
+    # Build the release tarballs twice from the same commit and require identical bytes; then build and
+    # sign with a THROWAWAY key (never the release key) and verify; then the packaging tests.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: packaging/ci-venv.sh 3.10
+      - name: Fetch vendored dependencies (sha256-verified against packaging/vendor.lock)
+        run: packaging/fetch-vendor.sh
+      - name: Choose components that satisfy the packaging convention so far
+        id: comps
+        run: |
+          set -euo pipefail
+          ready="$(packaging/ready-components.sh)"
+          echo "ready: ${ready:-none}"
+          echo "list=$ready" >> "$GITHUB_OUTPUT"
+          for c in agent probe collector dashboard runner; do
+            case ",$ready," in *",$c,"*) ;; *) echo "::warning::component $c is not packageable yet (convention files missing); release.yml requires all five";; esac
+          done
+      - name: Unsigned build twice, byte-identical
+        if: steps.comps.outputs.list != ''
+        env:
+          COMPS: ${{ steps.comps.outputs.list }}
+        run: |
+          set -euo pipefail
+          for n in 1 2; do
+            EXP_DIST_DIR="$RUNNER_TEMP/dist$n" packaging/build.sh --unsigned --version 0.0.0-ci --components "$COMPS"
+          done
+          diff -r "$RUNNER_TEMP/dist1" "$RUNNER_TEMP/dist2"
+          (cd "$RUNNER_TEMP/dist1" && sha256sum *)
+      - name: Signed build with a throwaway key, then verify
+        if: steps.comps.outputs.list != ''
+        env:
+          COMPS: ${{ steps.comps.outputs.list }}
+        run: |
+          set -euo pipefail
+          key_dir="$(mktemp -d "$RUNNER_TEMP/ci-key.XXXXXX")"
+          packaging/gen-release-key.sh "$key_dir/ci-throwaway.pem" >/dev/null
+          export EXP_RELEASE_KEY="$key_dir/ci-throwaway.pem" EXP_RELEASE_PUBKEY="$key_dir/ci-throwaway-pub.pem"
+          EXP_DIST_DIR="$RUNNER_TEMP/dist-signed" packaging/build.sh --release 0.0.0-ci --components "$COMPS"
+          packaging/verify-release.sh "$RUNNER_TEMP/dist-signed" "$EXP_RELEASE_PUBKEY"
+          rm -rf "$key_dir"
+      - name: Packaging tests (stub trees; no network, no Docker)
+        run: .venv/bin/python -m pytest test/package -q -m "not harness and not internet"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.comps.outputs.list != ''
+        with:
+          name: ci-dist
+          path: ${{ runner.temp }}/dist1/
+          retention-days: 3
+
+  package-install:
+    # The built tarballs installed into ubuntu:24.04 systemd containers (test/package/test_install.py).
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: packaging/ci-venv.sh 3.10
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true   # no artifact when no component is packageable yet
+        with:
+          name: ci-dist
+          path: ${{ runner.temp }}/ci-dist
+      - name: Install each tarball in a privileged systemd container
+        run: |
+          set -euo pipefail
+          if ls "$RUNNER_TEMP"/ci-dist/exp-*.tar.gz >/dev/null 2>&1; then export EXP_DIST_DIR="$RUNNER_TEMP/ci-dist"; fi
+          .venv/bin/python -m pytest test/package/test_install.py -q -ra -m harness
+
+  harness:
+    # Container LAN harness (WP-8). A no-op until test/harness/Makefile exists.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        if: hashFiles('test/harness/Makefile') != ''
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        if: hashFiles('test/harness/Makefile') != ''
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: hashFiles('test/harness/Makefile') != ''
+        with:
+          node-version: "22"
+      - name: Python venv
+        if: hashFiles('test/harness/Makefile') != ''
+        run: packaging/ci-venv.sh 3.10
+      - name: Fetch vendored dependencies (the M1 suite builds a real release; cache is not in the checkout)
+        if: hashFiles('test/harness/Makefile') != ''
+        run: packaging/fetch-vendor.sh
+      - name: Playwright + Chromium (pinned; test/e2e/m1/board.js resolves it from test/e2e/m1/node_modules)
+        if: hashFiles('test/harness/Makefile') != ''
+        env:
+          PLAYWRIGHT_VERSION: "1.63.0"
+        run: |
+          set -euo pipefail
+          npm install --no-save --no-audit --no-fund --ignore-scripts --prefix test/e2e/m1 "playwright@${PLAYWRIGHT_VERSION}"
+          (cd test/e2e/m1 && npx --no-install playwright install --with-deps chromium)
+      - name: make -C test/harness ci (privileged Docker; images are built, not pre-pulled)
+        if: hashFiles('test/harness/Makefile') != ''
+        run: make -C test/harness ci
+      - name: Harness not present yet
+        if: hashFiles('test/harness/Makefile') == ''
+        run: echo "test/harness/Makefile absent (WP-8); nothing to run"
+
+  gitleaks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: gitleaks v8.21.2 (image pinned by digest), full history
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            zricethezav/gitleaks@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 \
+            detect --source /repo --redact --no-banner
+
+  audit:
+    # Dependency audit. pip-audit of the vendored Python deps is blocking (they ship in tarballs);
+    # npm audit --omit=dev is a non-blocking report (the manager runs on Cloudflare, not on hosts).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: pip-audit (vendored wheels pinned in packaging/vendor.lock)
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pip-audit==2.7.3
+          python -c "import json; [print(i['name']+'=='+i['version']) for i in json.load(open('packaging/vendor.lock'))['items'] if i['kind']=='wheel']" > "$RUNNER_TEMP/vendored.txt"
+          pip-audit --no-deps --disable-pip -r "$RUNNER_TEMP/vendored.txt"
+      - name: npm audit --omit=dev (report only)
+        continue-on-error: true
+        run: |
+          for d in manager manager/ui; do
+            if [ -f "$d/package-lock.json" ]; then
+              echo "### npm audit $d" >> "$GITHUB_STEP_SUMMARY"
+              (cd "$d" && npm audit --omit=dev 2>&1 | tee -a "$GITHUB_STEP_SUMMARY") || echo "::warning::npm audit reported issues in $d"
+            fi
+          done

@@ -1,0 +1,15 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XT73C2RCZSHDD7GETY7Q",
+  "ts": "2026-11-18T20:00:17.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "trace",
+  "outcome": "error",
+  "labels": {
+    "port": "c01",
+    "path": "test"
+  },
+  "error": "ICMP socket unavailable",
+  "agent_ver": "0.1.0"
+}

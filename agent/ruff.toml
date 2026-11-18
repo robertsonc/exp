@@ -1,0 +1,5 @@
+extend = "../ruff.toml"
+
+[lint.per-file-ignores]
+# Tests deliberately start real tools (openssl), use world-writable modes to prove refusals, etc.
+"tests/**" = ["E501", "S101", "S103", "S104", "S105", "S106", "S108", "S603", "S607", "S311"]

@@ -1,0 +1,1343 @@
+# exp OpenAPI contract (WP-0). Source of truth: docs/spec/01-contracts.md
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: exp collector query API (dashboard to collector)
+  version: 1.0.0
+  description: '01-contracts.md section 5. Base path `/api/v1`, served on `https://<collector>:8443`.
+    Auth: `Authorization: Bearer expd_...` (per-dashboard token). `X-Exp-User: <username>` is passed through
+    for audit. `GET /healthz` lives at the server root (not under `/api/v1`), is unauthenticated and returns
+    only the text `ok` or `fail`.
+
+
+    Lists use `{items,next_cursor}`; `limit` <= 1000, default 100 (on endpoints where the contract lists
+    no paging parameter, `limit`/`cursor` are an additive extension).'
+  license:
+    name: Proprietary
+    identifier: LicenseRef-exp
+servers:
+- url: https://{collector}:8443/api/v1
+  description: Collector query API
+  variables:
+    collector:
+      default: collector.local
+tags:
+- name: query
+- name: stream
+- name: drills
+- name: health
+security:
+- dashboardToken: []
+components:
+  securitySchemes:
+    dashboardToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expd_<43 base64url chars>
+      description: Per-dashboard dashboard-to-collector token, prefix `expd_`.
+    ingestToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expi_<43 base64url chars>
+      description: Executor (probe or runner) ingest token, prefix `expi_`; used only by `GET /drills/control`.
+    agentSecret:
+      type: http
+      scheme: bearer
+      bearerFormat: expa_<43 base64url chars>
+      description: Per-agent secret, prefix `expa_`.
+    accessJwt:
+      type: apiKey
+      in: header
+      name: Cf-Access-Jwt-Assertion
+      description: Cloudflare Access JWT. The Worker verifies RS256 signature (team JWKS), `aud`, `iss`,
+        `exp`/`nbf` on every admin request; missing or invalid -> 401. `Cf-Access-Authenticated-User-Email`
+        is never trusted alone.
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size. 1..1000, default 100.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from a previous `next_cursor`.
+      schema:
+        type: string
+        maxLength: 1024
+    XExpUser:
+      name: X-Exp-User
+      in: header
+      required: false
+      description: Username of the dashboard user, passed through for audit (never used for authorization).
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/text
+    Probe:
+      name: probe
+      in: query
+      required: true
+      description: Probe id.
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/slug
+    Site:
+      name: site
+      in: query
+      required: false
+      description: Site slug.
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/slug
+    At:
+      name: at
+      in: query
+      required: false
+      description: Evaluate at this instant (default now).
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/ts
+    Voice:
+      name: voice
+      in: query
+      required: false
+      description: 'Wording voice: `plain` or `sysadmin`.'
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/voice
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      description: Drill run id (`run_...`).
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/run_id
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            invalid_token:
+              value:
+                error:
+                  code: invalid_token
+                  message: invalid token
+                  details: {}
+    Forbidden:
+      description: 'Forbidden. Error codes: `forbidden`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: forbidden
+                  message: forbidden
+                  details: {}
+    NotFound:
+      description: Unknown probe, incident or run.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            not_found:
+              value:
+                error:
+                  code: not_found
+                  message: not found
+                  details: {}
+            unknown_probe:
+              value:
+                error:
+                  code: unknown_probe
+                  message: unknown probe
+                  details: {}
+    BadRequest:
+      description: Malformed or out-of-bounds parameters.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            invalid_request:
+              value:
+                error:
+                  code: invalid_request
+                  message: invalid request
+                  details: {}
+            range_too_large:
+              value:
+                error:
+                  code: range_too_large
+                  message: range too large
+                  details: {}
+            invalid_query:
+              value:
+                error:
+                  code: invalid_query
+                  message: invalid query
+                  details: {}
+    TooManyRequests:
+      description: 'Too many requests. Error codes: `rate_limited`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            rate_limited:
+              value:
+                error:
+                  code: rate_limited
+                  message: rate limited
+                  details: {}
+      headers:
+        Retry-After: &id001
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 3600
+    ServiceUnavailable:
+      description: 'Service unavailable. Error codes: `unavailable`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            unavailable:
+              value:
+                error:
+                  code: unavailable
+                  message: unavailable
+                  details: {}
+      headers:
+        Retry-After: *id001
+  schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          enum:
+          - ok
+          - degraded
+          - fail
+        version:
+          $ref: ../schemas/common.schema.json#/$defs/semver
+        vm:
+          type: object
+          properties:
+            up:
+              type: boolean
+            lag_s:
+              anyOf:
+              - type: 'null'
+              - type: number
+                minimum: 0
+          required:
+          - up
+          - lag_s
+          additionalProperties: true
+        ingest:
+          type: object
+          properties:
+            rps:
+              type: number
+              minimum: 0
+            rejects_1m:
+              type: integer
+              minimum: 0
+          required:
+          - rps
+          - rejects_1m
+          additionalProperties: true
+        probes:
+          type: object
+          properties:
+            total:
+              type: integer
+              minimum: 0
+            reporting:
+              type: integer
+              minimum: 0
+          required:
+          - total
+          - reporting
+          additionalProperties: true
+        disk_free_mb:
+          type: integer
+          minimum: 0
+      required:
+      - status
+      - version
+      - vm
+      - ingest
+      - probes
+      - disk_free_mb
+      additionalProperties: true
+    ProbeSummary:
+      type: object
+      properties:
+        probe:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        label:
+          type: string
+          maxLength: 128
+        last_seen:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        newest_s:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        version:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+        state:
+          enum:
+          - ok
+          - warn
+          - fail
+          - unknown
+      required:
+      - probe
+      - site
+      - label
+      - last_seen
+      - newest_s
+      - version
+      - state
+      additionalProperties: true
+    StateLite:
+      type: object
+      properties:
+        probe:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        severity:
+          enum:
+          - ok
+          - warn
+          - fail
+          - unknown
+        headline:
+          type: string
+          maxLength: 256
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                $ref: ../schemas/common.schema.json#/$defs/line_key
+              state:
+                enum:
+                - ok
+                - warn
+                - fail
+                - unknown
+            required:
+            - key
+            - state
+            additionalProperties: true
+          maxItems: 16
+      required:
+      - probe
+      - site
+      - severity
+      - headline
+      - lines
+      additionalProperties: true
+      description: 'State-lite: the per-probe roll-up used by `states` and the SSE `state` event.'
+    State:
+      $ref: ../schemas/state.schema.json
+    Beats:
+      $ref: ../schemas/beats.schema.json
+    Incident:
+      $ref: ../schemas/incident.schema.json
+    Measurement:
+      $ref: ../schemas/measurement.schema.json
+    BeatEvent:
+      type: object
+      properties:
+        probe:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        line:
+          $ref: ../schemas/common.schema.json#/$defs/line_key
+        t:
+          type: integer
+          minimum: 0
+          description: Epoch milliseconds.
+        v:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: 0 ok, 1 warn, 2 fail, 3 unknown/probe error.
+      required:
+      - probe
+      - line
+      - t
+      - v
+      additionalProperties: true
+    SummaryTables:
+      type: object
+      properties:
+        clients:
+          type: array
+          items:
+            type: object
+            description: 'Row keys (all always present, null when there is no data): port, dhcp_runs, dhcp_ok_pct, dhcp_total_p50_ms, dhcp_total_p95_ms, dns_runs, dns_ok_pct, dns_p50_ms, dns_p95_ms, apps_runs, apdex, worst_app, worst_apdex, wifi_ssid, wifi_rssi_dbm, flags, no_link_runs.'
+            properties:
+              port: {}
+              dhcp_runs: {}
+              dhcp_ok_pct: {}
+              dhcp_total_p50_ms: {}
+              dhcp_total_p95_ms: {}
+              dns_runs: {}
+              dns_ok_pct: {}
+              dns_p50_ms: {}
+              dns_p95_ms: {}
+              apps_runs: {}
+              apdex: {}
+              worst_app: {}
+              worst_apdex: {}
+              wifi_ssid: {}
+              wifi_rssi_dbm: {}
+              flags: {}
+              no_link_runs: {}
+            additionalProperties: true
+          maxItems: 5000
+        dhcp:
+          type: array
+          items:
+            type: object
+            description: 'Row keys (all always present, null when there is no data): server, ports, runs, ok_pct, offer_p50_ms, total_p50_ms, total_p95_ms, last_seen.'
+            properties:
+              server: {}
+              ports: {}
+              runs: {}
+              ok_pct: {}
+              offer_p50_ms: {}
+              total_p50_ms: {}
+              total_p95_ms: {}
+              last_seen: {}
+            additionalProperties: true
+          maxItems: 5000
+        dns:
+          type: array
+          items:
+            type: object
+            description: 'Row keys (all always present, null when there is no data): resolver, kind, runs, ports, p50_ms, p95_ms, fail_pct.'
+            properties:
+              resolver: {}
+              kind: {}
+              runs: {}
+              ports: {}
+              p50_ms: {}
+              p95_ms: {}
+              fail_pct: {}
+            additionalProperties: true
+          maxItems: 5000
+        apps:
+          type: array
+          items:
+            type: object
+            description: 'Row keys (all always present, null when there is no data): app, apdex, runs, clients, p50_total_ms, p95_total_ms, ok_pct.'
+            properties:
+              app: {}
+              apdex: {}
+              runs: {}
+              clients: {}
+              p50_total_ms: {}
+              p95_total_ms: {}
+              ok_pct: {}
+            additionalProperties: true
+          maxItems: 5000
+        throughput:
+          type: array
+          items:
+            type: object
+            description: 'Row keys (all always present, null when there is no data): port, provider, down_mbps, up_mbps, latency_idle_ms, latency_loaded_ms, bufferbloat_ms, outcome, ts.'
+            properties:
+              port: {}
+              provider: {}
+              down_mbps: {}
+              up_mbps: {}
+              latency_idle_ms: {}
+              latency_loaded_ms: {}
+              bufferbloat_ms: {}
+              outcome: {}
+              ts: {}
+            additionalProperties: true
+          maxItems: 5000
+        servers:
+          type: array
+          items:
+            type: object
+            description: 'Row keys (all always present, null when there is no data): port, proto, requests, errors, p50_ms, sources, last_seen.'
+            properties:
+              port: {}
+              proto: {}
+              requests: {}
+              errors: {}
+              p50_ms: {}
+              sources: {}
+              last_seen: {}
+            additionalProperties: true
+          maxItems: 5000
+      required:
+      - clients
+      - dhcp
+      - dns
+      - apps
+      - throughput
+      - servers
+      additionalProperties: true
+      description: Details tables. Row columns are defined by the collector implementation (02/03 specs);
+        rows are objects.
+    RecordsPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Measurement'
+        next_cursor:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 1024
+            description: Opaque cursor; null when there are no more pages.
+      required:
+      - items
+      - next_cursor
+      description: List envelope (01-contracts.md section 1).
+    DrillReport:
+      type: object
+      properties:
+        run_id:
+          $ref: ../schemas/common.schema.json#/$defs/run_id
+        type:
+          type: string
+          maxLength: 64
+          pattern: ^[a-z0-9_]+(\.[a-z0-9_]+)+$
+        target:
+          type:
+          - string
+          - object
+          description: Drill target (port, or external target object).
+        start:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        until:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        phases:
+          type: array
+          items:
+            type: object
+            properties:
+              phase:
+                enum:
+                - start
+                - revert
+                - abort
+                - failed
+              ts:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              ok:
+                type: boolean
+            required:
+            - phase
+            - ts
+            additionalProperties: true
+          maxItems: 32
+        expectation:
+          type:
+          - string
+          - object
+          description: What should happen (human text or structured expectation).
+        observed:
+          type: object
+          properties:
+            ttd_s:
+              anyOf:
+              - type: 'null'
+              - type: number
+                minimum: 0
+            ttr_s:
+              anyOf:
+              - type: 'null'
+              - type: number
+                minimum: 0
+            lines_impacted:
+              type: array
+              items:
+                $ref: ../schemas/common.schema.json#/$defs/line_key
+              maxItems: 16
+          required:
+          - ttd_s
+          - ttr_s
+          - lines_impacted
+          additionalProperties: true
+        result:
+          enum:
+          - pass
+          - fail
+          - aborted
+      required:
+      - run_id
+      - type
+      - target
+      - start
+      - until
+      - phases
+      - expectation
+      - observed
+      - result
+      additionalProperties: true
+    DrillControl:
+      type: object
+      properties:
+        abort:
+          type: array
+          items:
+            $ref: ../schemas/common.schema.json#/$defs/run_id
+          maxItems: 64
+      required:
+      - abort
+      additionalProperties: true
+    QueryRangeResult:
+      type: object
+      properties:
+        status:
+          enum:
+          - success
+        data:
+          type: object
+          properties:
+            resultType:
+              enum:
+              - matrix
+              - vector
+              - scalar
+              - string
+            result:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+              maxItems: 500
+          required:
+          - resultType
+          - result
+          additionalProperties: true
+      required:
+      - status
+      - data
+      additionalProperties: true
+      description: VictoriaMetrics Prometheus-compatible JSON, at most 500 series.
+    SseBeatEvent:
+      $ref: '#/components/schemas/BeatEvent'
+    AckRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          maxLength: 512
+          pattern: ^[^\x00-\x1f\x7f]*$
+      additionalProperties: true
+      description: Optional acknowledgement note.
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Collector health
+      tags:
+      - health
+      parameters:
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /probes:
+    get:
+      operationId: listProbes
+      summary: List probes
+      tags:
+      - query
+      parameters:
+      - $ref: '#/components/parameters/Site'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProbeSummary'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                description: List envelope (01-contracts.md section 1).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /state:
+    get:
+      operationId: getState
+      summary: Current (or historical) experience state for one probe
+      tags:
+      - query
+      parameters:
+      - $ref: '#/components/parameters/Probe'
+      - $ref: '#/components/parameters/At'
+      - $ref: '#/components/parameters/Voice'
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/State'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /states:
+    get:
+      operationId: listStates
+      summary: State-lite for many probes
+      tags:
+      - query
+      parameters:
+      - $ref: '#/components/parameters/Site'
+      - $ref: '#/components/parameters/At'
+      - $ref: '#/components/parameters/Voice'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StateLite'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                description: List envelope (01-contracts.md section 1).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /beats:
+    get:
+      operationId: getBeats
+      summary: Heartbeat series per line
+      description: '`to - from` must be at most 6 hours. Beat value: 0 ok, 1 warn, 2 fail, 3 unknown/probe
+        error.'
+      tags:
+      - query
+      parameters:
+      - $ref: '#/components/parameters/Probe'
+      - name: from
+        in: query
+        required: true
+        description: Range start.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: to
+        in: query
+        required: true
+        description: Range end (at most 6 h after `from`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Beats'
+        '400':
+          description: Malformed parameters, or `to - from` greater than 6 h (`range_too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_request:
+                  value:
+                    error:
+                      code: invalid_request
+                      message: invalid request
+                      details: {}
+                range_too_large:
+                  value:
+                    error:
+                      code: range_too_large
+                      message: range too large
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /records:
+    get:
+      operationId: listRecords
+      summary: Stored measurement records
+      tags:
+      - query
+      parameters:
+      - $ref: '#/components/parameters/Probe'
+      - name: test
+        in: query
+        required: false
+        description: Filter by test.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ident
+      - name: outcome
+        in: query
+        required: false
+        description: Filter by outcome.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/outcome
+      - name: from
+        in: query
+        required: true
+        description: Range start.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: to
+        in: query
+        required: true
+        description: Range end.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /incidents:
+    get:
+      operationId: listIncidents
+      summary: List incidents
+      tags:
+      - query
+      parameters:
+      - name: probe
+        in: query
+        required: false
+        description: Filter by probe.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - $ref: '#/components/parameters/Site'
+      - name: from
+        in: query
+        required: false
+        description: Incidents overlapping from.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: to
+        in: query
+        required: false
+        description: Incidents overlapping to.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: open
+        in: query
+        required: false
+        description: Only open incidents.
+        schema:
+          type: boolean
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Incident'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                description: List envelope (01-contracts.md section 1).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /incidents/{id}/ack:
+    post:
+      operationId: ackIncident
+      summary: Acknowledge an incident
+      description: Operator role required (enforced by the dashboard session; the collector records `X-Exp-User`
+        in the audit log).
+      tags:
+      - query
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Incident id (`inc_...`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/inc_id
+      - $ref: '#/components/parameters/XExpUser'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AckRequest'
+      x-exp-min-role: operator
+      x-exp-audited: true
+      responses:
+        '204':
+          description: Acknowledged and audited.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The calling dashboard user lacks the operator role, or the request carries no `X-Exp-User`
+            (an unattributable acknowledgement is refused).
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                forbidden:
+                  value:
+                    error:
+                      code: forbidden
+                      message: forbidden
+                      details: {}
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /summary:
+    get:
+      operationId: getSummary
+      summary: Details tables for a probe
+      tags:
+      - query
+      parameters:
+      - $ref: '#/components/parameters/Probe'
+      - name: minutes
+        in: query
+        required: true
+        description: Window in minutes (at most 1440).
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1440
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryTables'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /query_range:
+    get:
+      operationId: queryRange
+      summary: MetricsQL range query proxied to VictoriaMetrics
+      tags:
+      - query
+      parameters:
+      - name: query
+        in: query
+        required: true
+        description: MetricsQL; only `exp_*` metric names (at most 2 KiB).
+        schema:
+          type: string
+          maxLength: 2048
+          minLength: 1
+      - name: start
+        in: query
+        required: true
+        description: Range start.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: end
+        in: query
+        required: true
+        description: Range end (range at most 30 d).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: step
+        in: query
+        required: true
+        description: Step, at least 10 s (e.g. `10s`, `1m`).
+        schema:
+          type: string
+          maxLength: 16
+          pattern: ^[0-9]+(s|m|h)?$
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryRangeResult'
+        '400':
+          description: 'Guards: only `exp_*` metric names; query at most 2 KiB; range at most 30 d; step
+            at least 10 s and at most 11,000 points per series (`step_too_small`). `start`/`end` may also be
+            epoch seconds.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_query:
+                  value:
+                    error:
+                      code: invalid_query
+                      message: invalid query
+                      details: {}
+                invalid_request:
+                  value:
+                    error:
+                      code: invalid_request
+                      message: invalid request
+                      details: {}
+                range_too_large:
+                  value:
+                    error:
+                      code: range_too_large
+                      message: range too large
+                      details: {}
+                step_too_small:
+                  value:
+                    error:
+                      code: step_too_small
+                      message: step too small
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: More than 500 series in the result (`too_many_series`, also when VictoriaMetrics
+            refuses with `-search.maxSeries=500`), or VictoriaMetrics' answer exceeds 32 MiB
+            (`result_too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                too_many_series:
+                  value:
+                    error:
+                      code: too_many_series
+                      message: too many series
+                      details: {}
+                result_too_large:
+                  value:
+                    error:
+                      code: result_too_large
+                      message: result too large
+                      details: {}
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: VictoriaMetrics is down (ingest is unaffected).
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                vm_unavailable:
+                  value:
+                    error:
+                      code: vm_unavailable
+                      message: vm unavailable
+                      details: {}
+          headers:
+            Retry-After: *id001
+  /stream:
+    get:
+      operationId: streamEvents
+      summary: 'Server-sent events: beats, state changes, incidents'
+      description: Provide `probes` (comma-separated) or `site`. A client may resume with `Last-Event-ID`;
+        the server replays at most 5 minutes.
+      tags:
+      - stream
+      parameters:
+      - name: probes
+        in: query
+        required: false
+        description: Comma-separated probe ids.
+        schema:
+          type: string
+          maxLength: 4096
+          pattern: ^[a-z0-9][a-z0-9-]{0,63}(,[a-z0-9][a-z0-9-]{0,63})*$
+      - $ref: '#/components/parameters/Site'
+      - name: Last-Event-ID
+        in: header
+        required: false
+        description: Resume point (replay at most 5 min).
+        schema:
+          type: string
+          maxLength: 128
+      - $ref: '#/components/parameters/XExpUser'
+      x-exp-sse-events:
+        beat:
+          data:
+            $ref: '#/components/schemas/BeatEvent'
+          description: '`{probe, line, t, v}`'
+        state:
+          data:
+            $ref: '#/components/schemas/StateLite'
+          description: State-lite for the probe whose state changed.
+        incident:
+          data:
+            $ref: '#/components/schemas/Incident'
+          description: An incident opened, changed or closed.
+      x-exp-sse-comments:
+        keepalive_interval_s: 15
+        retry_ms: 3000
+        replay_window_s: 300
+      responses:
+        '200':
+          description: '`text/event-stream`. Events: `beat`, `state`, `incident`. A `: keepalive` comment
+            every 15 s; `retry: 3000`.'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Neither `probes` nor `site` given.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_request:
+                  value:
+                    error:
+                      code: invalid_request
+                      message: invalid request
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /drills/control:
+    get:
+      operationId: getDrillControl
+      summary: Abort list polled by executors (kill switch)
+      description: Authenticated with the executor's ingest token (`expi_`), not a dashboard token. Polled
+        every 2 s by executors during active runs (M5).
+      tags:
+      - drills
+      security:
+      - ingestToken: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrillControl'
+        '401':
+          description: Missing or invalid executor ingest token.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_token:
+                  value:
+                    error:
+                      code: invalid_token
+                      message: invalid token
+                      details: {}
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /drills/{run_id}:
+    get:
+      operationId: getDrillReport
+      summary: Drill report
+      tags:
+      - drills
+      parameters:
+      - $ref: '#/components/parameters/RunId'
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrillReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /drills/{run_id}/abort:
+    post:
+      operationId: abortDrill
+      summary: 'LAN kill switch: abort a drill run'
+      tags:
+      - drills
+      parameters:
+      - $ref: '#/components/parameters/RunId'
+      - $ref: '#/components/parameters/XExpUser'
+      x-exp-min-role: operator
+      x-exp-audited: true
+      responses:
+        '202':
+          description: Abort accepted; executors revert within 5 s.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The calling dashboard user lacks the operator role.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                forbidden:
+                  value:
+                    error:
+                      code: forbidden
+                      message: forbidden
+                      details: {}
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Unauthenticated liveness
+      description: Served at the server root, not under `/api/v1`. Returns only `ok` or `fail`; no details.
+      tags:
+      - health
+      security: []
+      servers:
+      - url: https://{collector}:8443
+        variables:
+          collector:
+            default: collector.local
+      responses:
+        '200':
+          description: Body is exactly `ok`.
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum:
+                - ok
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: Body is exactly `fail`.
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum:
+                - fail

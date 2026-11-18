@@ -1,0 +1,589 @@
+# exp OpenAPI contract (WP-0). Source of truth: docs/spec/01-contracts.md
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: exp agent API (agent to manager)
+  version: 1.0.0
+  description: '01-contracts.md section 6 and 05-manager.md section 8. Base path `/api/agent/v1` on `https://<manager>`.
+    NOT behind Cloudflare Access (bypass application); authenticated by a per-agent bearer secret (`expa_`),
+    except `enrol`, which takes a one-time enrol token (`expe_`) in the request body (never in a URL).
+    Rate limited per IP (enrol: 10/min) and per agent (120/min). Repeated auth failures from one IP are
+    throttled.
+
+
+    `GET /install.sh` and `GET /healthz` are public static routes at the server root.'
+  license:
+    name: Proprietary
+    identifier: LicenseRef-exp
+servers:
+- url: https://{manager}/api/agent/v1
+  description: Manager Worker
+  variables:
+    manager:
+      default: exp-control.harnessed.cloud
+tags:
+- name: agent
+- name: enrol
+- name: public
+security:
+- agentSecret: []
+components:
+  securitySchemes:
+    agentSecret:
+      type: http
+      scheme: bearer
+      bearerFormat: expa_<43 base64url chars>
+      description: Per-agent secret, prefix `expa_`; returned once at enrol/rotate, stored server-side
+        as sha256 hex, compared in constant time. The enrol token (prefix `expe_`) is sent only in the
+        `POST /enrol` body, never as a header or in a URL.
+    ingestToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expi_<43 base64url chars>
+      description: Per-probe ingest token, prefix `expi_`.
+    dashboardToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expd_<43 base64url chars>
+      description: Per-dashboard dashboard-to-collector token, prefix `expd_`.
+    accessJwt:
+      type: apiKey
+      in: header
+      name: Cf-Access-Jwt-Assertion
+      description: Cloudflare Access JWT. The Worker verifies RS256 signature (team JWKS), `aud`, `iss`,
+        `exp`/`nbf` on every admin request; missing or invalid -> 401. `Cf-Access-Authenticated-User-Email`
+        is never trusted alone.
+  parameters:
+    Version:
+      name: version
+      in: path
+      required: true
+      description: Release version.
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/semver
+    ArtifactId:
+      name: artifact_id
+      in: path
+      required: true
+      description: Artifact id (`art_...`).
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/art_id
+  headers:
+    ETag:
+      description: '`"<host_id>:<version>"` for desired state; sha256 for artifacts.'
+      schema:
+        type: string
+        maxLength: 128
+  schemas:
+    EnrolRequest:
+      type: object
+      properties:
+        token:
+          $ref: ../schemas/common.schema.json#/$defs/expe_token
+        facts:
+          $ref: ../schemas/status.schema.json#/properties/facts
+      required:
+      - token
+      - facts
+      additionalProperties: true
+    EnrolResponse:
+      type: object
+      properties:
+        agent_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        agent_secret:
+          $ref: ../schemas/common.schema.json#/$defs/expa_token
+        poll_interval_s:
+          type: integer
+          minimum: 5
+          maximum: 3600
+        release_pubkey_pem:
+          type: string
+          maxLength: 4096
+          pattern: ^-----BEGIN PUBLIC KEY-----
+        manager_time:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - agent_id
+      - agent_secret
+      - poll_interval_s
+      - release_pubkey_pem
+      - manager_time
+      additionalProperties: true
+    RotateResponse:
+      type: object
+      properties:
+        agent_secret:
+          $ref: ../schemas/common.schema.json#/$defs/expa_token
+        grace_s:
+          type: integer
+          minimum: 0
+          maximum: 86400
+      required:
+      - agent_secret
+      - grace_s
+      additionalProperties: true
+    EmptyObject:
+      type: object
+      properties: {}
+      additionalProperties: true
+      description: An empty JSON object `{}`.
+      maxProperties: 0
+  responses:
+    Unauthorized:
+      description: Missing, wrong, revoked, or expired agent secret (the previous secret is valid only
+        within its rotation grace).
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            invalid_token:
+              value:
+                error:
+                  code: invalid_token
+                  message: invalid token
+                  details: {}
+    Forbidden:
+      description: 'Forbidden. Error codes: `forbidden`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: forbidden
+                  message: forbidden
+                  details: {}
+    NotFound:
+      description: 'Not found. Error codes: `not_found`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            not_found:
+              value:
+                error:
+                  code: not_found
+                  message: not found
+                  details: {}
+    BadRequest:
+      description: 'Bad request. Error codes: `invalid_request`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            invalid_request:
+              value:
+                error:
+                  code: invalid_request
+                  message: invalid request
+                  details: {}
+    TooManyRequests:
+      description: 'Too many requests. Error codes: `rate_limited`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            rate_limited:
+              value:
+                error:
+                  code: rate_limited
+                  message: rate limited
+                  details: {}
+      headers:
+        Retry-After: &id001
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 3600
+    ServiceUnavailable:
+      description: 'Service unavailable. Error codes: `unavailable`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            unavailable:
+              value:
+                error:
+                  code: unavailable
+                  message: unavailable
+                  details: {}
+      headers:
+        Retry-After: *id001
+paths:
+  /enrol:
+    post:
+      operationId: enrolAgent
+      summary: Exchange an enrol token for an agent identity
+      description: 'Order: rate limit by IP, look up sha256(token), reject unknown (401), used or expired
+        (410). The token is marked used atomically so concurrent reuse yields exactly one 201. The host
+        becomes `enrolled`.'
+      tags:
+      - enrol
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrolRequest'
+      security: []
+      x-exp-audited: true
+      responses:
+        '201':
+          description: Enrolled. The agent secret is returned once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrolResponse'
+          headers: &id005
+            Cache-Control: &id002
+              schema:
+                type: string
+                const: no-store
+              description: Responses carrying secrets are never cached.
+        '400': &id004
+          description: Malformed body or failed schema validation (`details` lists the failing paths).
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_request:
+                  value:
+                    error:
+                      code: invalid_request
+                      message: invalid request
+                      details: {}
+        '401':
+          description: Unknown enrol token.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_token:
+                  value:
+                    error:
+                      code: invalid_token
+                      message: invalid token
+                      details: {}
+        '410':
+          description: Token already used (single use, atomic) or expired.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                token_used_or_expired:
+                  value:
+                    error:
+                      code: token_used_or_expired
+                      message: token used or expired
+                      details: {}
+        '429': &id003
+          description: 'Too many requests. Error codes: `rate_limited`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                rate_limited:
+                  value:
+                    error:
+                      code: rate_limited
+                      message: rate limited
+                      details: {}
+          headers:
+            Retry-After: *id001
+  /desired:
+    get:
+      operationId: getDesiredState
+      summary: Fetch this host's desired state (conditional)
+      description: The 304 path is the hot path (one indexed read). Credentials inside the document are
+        decrypted at serve time and are never logged.
+      tags:
+      - agent
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: 'The last `ETag` the agent applied, quoted: `"<host_id>:<version>"`.'
+        schema:
+          type: string
+          maxLength: 160
+      responses:
+        '200':
+          description: The whole desired state for this host.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desired.schema.json
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control: *id002
+        '304':
+          description: 'Not modified: `If-None-Match` equals the current `"<host_id>:<version>"`. No body.'
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: 'No desired state has been compiled for this host yet (e.g. the host row exists but
+            compilation failed). Error code `not_found`. The agent treats it as "retry on the next poll" (no
+            back-off as for 503).'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                not_found:
+                  value:
+                    error:
+                      code: not_found
+                      message: not found
+                      details: {}
+        '429': *id003
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /releases/{version}/manifest:
+    get:
+      operationId: getReleaseManifest
+      summary: Signed release manifest
+      tags:
+      - agent
+      parameters:
+      - $ref: '#/components/parameters/Version'
+      responses:
+        '200':
+          description: The manifest bytes exactly as signed (do not re-serialize before verifying).
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/manifest.schema.json
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429': *id003
+  /releases/{version}/manifest.sig:
+    get:
+      operationId: getReleaseManifestSignature
+      summary: Detached Ed25519 signature of the manifest
+      tags:
+      - agent
+      parameters:
+      - $ref: '#/components/parameters/Version'
+      responses:
+        '200':
+          description: Base64 raw Ed25519 signature over the manifest bytes.
+          content:
+            text/plain:
+              schema:
+                type: string
+                pattern: ^[A-Za-z0-9+/]{86}==$
+                description: base64 of 64 raw bytes
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429': *id003
+  /artifacts/{artifact_id}:
+    get:
+      operationId: getArtifact
+      summary: Download an artifact (streamed from R2)
+      tags:
+      - agent
+      parameters:
+      - $ref: '#/components/parameters/ArtifactId'
+      responses:
+        '200':
+          description: Artifact bytes. `Content-Length` is set; `ETag` is the artifact sha256.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 0
+          content:
+            application/gzip:
+              schema:
+                type: string
+                description: Binary tarball bytes.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Refused unless the artifact is referenced by this host's current desired state.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                artifact_not_in_desired:
+                  value:
+                    error:
+                      code: artifact_not_in_desired
+                      message: artifact not in desired
+                      details: {}
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429': *id003
+  /status:
+    post:
+      operationId: postStatus
+      summary: Report host and component status (heartbeat)
+      description: At most 256 KiB, validated against `exp.status/1`. Credentials never appear in a report.
+      tags:
+      - agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/status.schema.json
+      responses:
+        '204':
+          description: Accepted; roll-ups and issue rules evaluated.
+        '400': *id004
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Body over 256 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                payload_too_large:
+                  value:
+                    error:
+                      code: payload_too_large
+                      message: payload too large
+                      details: {}
+        '429': *id003
+  /rotate:
+    post:
+      operationId: rotateAgentSecret
+      summary: Rotate the agent secret
+      tags:
+      - agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      x-exp-audited: true
+      responses:
+        '200':
+          description: New secret (returned once). The old secret stays valid for `grace_s`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotateResponse'
+          headers: *id005
+        '400': *id004
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The desired state carries no `rotate_agent_secret` action.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                rotation_not_requested:
+                  value:
+                    error:
+                      code: rotation_not_requested
+                      message: rotation not requested
+                      details: {}
+        '429': *id003
+  /decommissioned:
+    post:
+      operationId: postDecommissioned
+      summary: Confirm decommissioning; revokes the host's credentials
+      tags:
+      - agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      x-exp-audited: true
+      responses:
+        '204':
+          description: Credentials revoked.
+        '400': *id004
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 'The desired state does not carry `decommission: true`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                decommission_not_requested:
+                  value:
+                    error:
+                      code: decommission_not_requested
+                      message: decommission not requested
+                      details: {}
+        '429': *id003
+  /install.sh:
+    get:
+      operationId: getInstallScript
+      summary: Bootstrap script (public, static)
+      description: Served at the server root (`https://<manager>/install.sh`), outside `/api/agent/v1`.
+        Access bypass; public.
+      tags:
+      - public
+      security: []
+      servers: &id006
+      - url: https://{manager}
+        variables:
+          manager:
+            default: exp-control.harnessed.cloud
+      responses:
+        '200':
+          description: POSIX shell script; contains no secrets. The enrol token is passed as an argument
+            and sent only in the `POST /enrol` body.
+          content:
+            text/x-shellscript:
+              schema:
+                type: string
+                maxLength: 1048576
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429': *id003
+  /healthz:
+    get:
+      operationId: getManagerHealthz
+      summary: Manager liveness (public)
+      description: Served at the server root. Access bypass; public.
+      tags:
+      - public
+      security: []
+      servers: *id006
+      responses:
+        '200':
+          description: Body is exactly `ok`.
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum:
+                - ok
+        '429': *id003

@@ -1,0 +1,18 @@
+#!/usr/bin/python3
+"""exp-agent entry point. Works in the tarball layout (<prefix>/bin + <prefix>/lib + <prefix>/vendor) and in
+the dev tree (<repo>/agent/bin, <repo>/agent, <repo>/shared/python)."""
+import os
+import sys
+
+_here = os.path.dirname(os.path.realpath(__file__))
+_lib = os.path.join(_here, "..", "lib")
+if os.path.isdir(_lib):
+    sys.path[:0] = [os.path.normpath(_lib), os.path.normpath(os.path.join(_here, "..", "vendor"))]
+else:
+    _repo = os.path.normpath(os.path.join(_here, "..", ".."))
+    sys.path[:0] = [os.path.join(_repo, "agent"), os.path.join(_repo, "shared", "python")]
+
+from exp_agent.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

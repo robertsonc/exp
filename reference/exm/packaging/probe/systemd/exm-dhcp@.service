@@ -1,0 +1,16 @@
+[Unit]
+Description=EXM probe: DHCP lease holder for client %i
+Documentation=file:///opt/exm/README.md
+After=exm-netns.service
+BindsTo=exm-netns.service
+
+[Service]
+Type=simple
+ExecStart=/opt/exm/bin/exm dhcp-daemon %i
+# udhcpc -R sends DHCPRELEASE when it is stopped.
+KillSignal=SIGTERM
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=exm-netns.service

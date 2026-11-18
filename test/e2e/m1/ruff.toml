@@ -1,0 +1,9 @@
+extend = "../../../ruff.toml"
+line-length = 130
+
+[lint]
+ignore = ["UP031", "S603", "S607", "S104", "B904", "S311", "S608"]
+
+[lint.isort]
+known-first-party = ["m1lib"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]

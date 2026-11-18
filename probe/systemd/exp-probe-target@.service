@@ -1,0 +1,20 @@
+# exp-probe: target server for target port %i. M4 stub: target ports arrive in M4, so this unit starts,
+# prints a clear message and exits non-zero without touching the port (never claims an address).
+[Unit]
+Description=exp probe: target server for port %i (v@VERSION@, M4 stub)
+Requires=exp-probe-netns.service
+After=exp-probe-netns.service
+PartOf=exp-probe-netns.service
+
+[Service]
+Type=simple
+ExecStart=@PREFIX@/bin/exp-probe target serve %i --config @CONFIG@
+Restart=no
+RuntimeDirectory=exp/probe
+RuntimeDirectoryPreserve=yes
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

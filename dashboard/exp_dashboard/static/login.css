@@ -1,0 +1,6 @@
+/* Server-rendered sign-in page (/auth/login) and the NOC hand-off page: layout only; tokens and components
+   come from /vendor/ui and /css/app.css. */
+body { display: grid; min-height: 100vh; align-content: start; }
+main.card { width: calc(100% - 32px); }
+.error { min-height: 1.4em; color: var(--exp-fail); }
+form .btn { margin-top: var(--exp-space-4); width: 100%; }

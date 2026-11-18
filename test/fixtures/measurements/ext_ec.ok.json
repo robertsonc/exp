@@ -1,0 +1,21 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YJMBN6R17NYGSDD6TE9V",
+  "ts": "2026-11-18T20:00:42.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "ext_ec",
+  "outcome": "ok",
+  "labels": {
+    "kind": "wan_down",
+    "severity": "critical"
+  },
+  "metrics": {
+    "count": 1
+  },
+  "detail": {
+    "nePk": "1.NE",
+    "interface": "wan0"
+  },
+  "agent_ver": "0.1.0"
+}

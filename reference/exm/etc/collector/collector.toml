@@ -1,0 +1,28 @@
+# EXM collector configuration (exm-collector package): the dashboard, alerts and the probes' streams.
+# Probes are one file each in /etc/exm/probes.d/ (see the examples there), added with:
+#   sudo exm-collector probe add NAME --host <probe mgmt address>     then on the probe: sudo exm authorize-collector '<key>'
+# After any change: sudo exm-collector apply
+
+data_dir = "/var/lib/exm-collector"   # streamed results: <data_dir>/probes/<name>/<day>/<test>.jsonl
+retention_days = 14                   # the collector keeps longer than a probe (7) for after-event review
+backfill_hours = 24                   # after an outage, ask each probe for at most this much missed history
+
+# The dashboard (exm-web.service): read-only, no login. One Pulse board per probe, an overview of them all.
+[web]
+bind = "0.0.0.0"
+port = 80
+voice = "sysadmin"                    # the board's sentence: "sysadmin" (dry) or "plain"; same facts either way
+edge_label = "WAN edge"               # what "where" calls the box between the gateway and the ISP (e.g. "EC")
+
+# Push alerts (exm-alert.service): a webhook message when a probe's line fails, and when it is back.
+# The webhook URL is a secret: put it in /etc/exm/alert-webhook (root, mode 0600), then apply.
+# Check the channel with: sudo exm-collector alert-test   (--dry-run prints the messages instead)
+[alerts]
+enabled = true
+format = "slack"                      # slack (also Mattermost, Google Chat) | teams (Workflows webhook) | json
+board_url = "http://exm-collector.example/"   # alerts link to the board at the moment it started: this host's URL
+timezone = "UTC"                      # the NOC's zone for times in messages, e.g. "America/Chicago"
+lines = ["Network", "DHCP", "DNS", "Internet", "Wi-Fi"]
+warn = false                          # true: also page for "partly failing"
+hold_fail_s = 20                      # failing this long before a page
+hold_ok_s = 60                        # fine this long before "back"

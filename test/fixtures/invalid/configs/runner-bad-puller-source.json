@@ -1,0 +1,49 @@
+{
+  "schema": "exp.runner.config/1",
+  "runner_id": "run-hallb",
+  "site": "hall-b",
+  "collector": {
+    "url": "https://10.32.98.25:8443",
+    "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6"
+  },
+  "drills_enabled": true,
+  "pullers": [
+    {
+      "source": "meraki",
+      "interval_s": 60,
+      "site_ids": [
+        "mist-site-1"
+      ]
+    },
+    {
+      "source": "ec",
+      "interval_s": 60
+    }
+  ],
+  "allowlist": {
+    "ec": [
+      {
+        "nePk": "1.NE",
+        "interfaces": [
+          "wan0"
+        ],
+        "vrrp_groups": [
+          101
+        ]
+      }
+    ]
+  },
+  "drills": [
+    {
+      "run_id": "run_01M7R3X9G0RN0A7SM90FT5PA0V",
+      "type": "ec.wan_down",
+      "params": {
+        "nePk": "1.NE",
+        "interface": "wan0"
+      },
+      "start": "2026-11-18T21:00:00.000Z",
+      "until": "2026-11-18T21:02:00.000Z",
+      "abort": false
+    }
+  ]
+}

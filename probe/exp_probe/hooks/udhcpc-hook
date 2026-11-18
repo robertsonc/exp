@@ -1,0 +1,7 @@
+#!/bin/sh
+# busybox udhcpc calls this with an event name (deconfig, bound, renew, nak, leasefail) and the lease
+# in environment variables. It runs INSIDE the port's namespace; the Python side configures only that
+# namespace (address, route, MTU, the namespace's resolv.conf) and writes lease.json.
+# EXP_PROBE_BIN / EXP_PROBE_CONFIG are exported by `exp-probe lease <port>` before it execs udhcpc.
+# ported from reference/exm/hooks/udhcpc-hook
+exec "${EXP_PROBE_BIN:?EXP_PROBE_BIN not set}" udhcpc-hook "$1"

@@ -1,0 +1,23 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XMBKQE2Y8MF0JASHNVDJ",
+  "ts": "2026-11-18T20:00:11.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dns_hb",
+  "outcome": "degraded",
+  "labels": {
+    "port": "c01",
+    "resolver": "8.8.8.8",
+    "resolver_kind": "dhcp"
+  },
+  "metrics": {
+    "rtt_ms": 1450.0,
+    "rcode": 0,
+    "answers": 1
+  },
+  "detail": {
+    "name": "apple.com"
+  },
+  "agent_ver": "0.1.0"
+}

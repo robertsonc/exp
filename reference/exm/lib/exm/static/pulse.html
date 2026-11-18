@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EXM Pulse</title>
+<style>
+:root{--bg:#1d1f27;--front:#292d3a;--line:rgba(255,255,255,.12);--text:#e6e8e9;--strong:#fff;--weak:#b1b9be;--ok:#05cc93;--warn:#ffbc44;--fail:#fc6161;--unk:#7d8a92}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:'HPE Graphik',Arial,Helvetica,sans-serif}
+.board{position:relative;min-height:100vh;padding:3vh 5vw 2vh;display:flex;flex-direction:column;transition:background-color .4s ease}
+.board.warn{background:rgba(255,188,68,.08)}.board.fail{background:rgba(252,97,97,.10)}.board.unk{background:rgba(125,138,146,.12)}
+.top{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:clamp(13px,1.15vw,22px);color:var(--weak)}
+.answer{min-height:24vh;display:flex;flex-direction:column;justify-content:center;gap:1.6vh}
+h1{margin:0;font-size:clamp(38px,6.6vw,128px);line-height:1.06;font-weight:500;letter-spacing:-.015em;color:var(--strong);text-wrap:balance}
+.sub{margin:0;max-width:70ch;font-size:clamp(17px,2.05vw,40px);line-height:1.3;color:var(--text)}
+.lanes{position:relative;flex:1;display:flex;flex-direction:column;justify-content:space-evenly;min-height:44vh}
+.lane{display:grid;grid-template-columns:minmax(230px,26%) minmax(0,1fr);align-items:center;gap:2.4vw}
+.lane>*{min-width:0}
+.label{display:flex;align-items:center;gap:16px}
+.icon{width:clamp(26px,1.9vw,36px);height:clamp(26px,1.9vw,36px);flex-shrink:0}
+.name{font-size:clamp(20px,1.75vw,34px);font-weight:500;color:var(--strong);line-height:1.2}
+.word{font-size:clamp(16px,1.45vw,28px);color:var(--weak);line-height:1.2}
+.trace{display:block;width:100%;height:clamp(64px,9.5vh,130px)}
+.where{display:flex;flex-direction:column;gap:8px;max-width:90ch}
+.where-text{margin:0;font-size:clamp(15px,1.35vw,26px);line-height:1.3;color:var(--strong)}
+.chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:clamp(12px,.9vw,16px)}
+.chip{padding:2px 10px;border-radius:999px;border:1.5px solid transparent;white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:rgba(5,204,147,.45)}
+.chip.fail{color:#1d1f27;background:var(--fail);font-weight:600}
+.chip.sus{color:var(--warn);border-color:var(--warn);border-style:dashed}
+.chip.unk{color:var(--unk);border-color:rgba(125,138,146,.35)}
+.chips .sep{color:var(--weak)}
+.why{font-size:clamp(13px,1vw,19px);line-height:1.25;margin-top:4px;color:var(--weak);overflow-wrap:anywhere}
+.why.fail{color:var(--fail)}.why.warn{color:var(--warn)}
+.lanes{touch-action:pan-y}
+.lane .trace{cursor:ew-resize}
+.since{position:absolute;top:0;bottom:0;width:0;border-left:1.5px solid rgba(255,255,255,.35);display:none;cursor:ew-resize;z-index:2}
+.since::before{content:'';position:absolute;top:0;bottom:0;left:-14px;width:28px}
+.since.cursor{border-left:2px solid var(--strong)}
+.since span{position:absolute;top:-1.6em;transform:translateX(-50%);white-space:nowrap;font-size:clamp(13px,.95vw,18px);font-weight:500;color:var(--text);user-select:none}
+.since.cursor span{color:var(--strong)}
+.since:focus-visible{outline:2px solid var(--strong);outline-offset:4px}
+.right{display:flex;align-items:center;gap:12px}
+.all{color:var(--weak);margin-right:14px;text-decoration:none;border-bottom:1px dotted var(--weak)}
+.all:hover{color:var(--strong)}
+.live-btn{font:inherit;font-size:.9em;color:var(--strong);background:transparent;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:3px 14px;cursor:pointer}
+.live-btn:hover{background:rgba(255,255,255,.08)}
+.board.paused{box-shadow:inset 0 0 0 2px rgba(255,255,255,.22)}
+.hint{color:var(--weak);opacity:.75}
+.failing{padding:4vh 5vw 2vh;border-top:1px solid var(--line)}
+.failing ul{list-style:none;margin:0;padding:0}
+.failing li{padding:7px 0;border-bottom:1px solid var(--line);font-size:15px;line-height:1.35}
+.failing li:last-child{border-bottom:0}
+.failing .what{color:var(--strong);overflow-wrap:anywhere}
+.failing .detail{display:block;color:var(--weak);font-size:13.5px;overflow-wrap:anywhere}
+.axis{display:flex;justify-content:space-between;margin-left:calc(max(230px,26%) + 2.4vw);font-size:clamp(12px,.95vw,18px);color:var(--weak);padding-top:6px}
+.halo{transform-box:fill-box;transform-origin:center;animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.8);opacity:0}}
+@media (prefers-reduced-motion:reduce){.halo{animation:none;opacity:0}.board{transition:none}}
+.details{padding:5vh 5vw 6vh;border-top:1px solid var(--line)}
+h2{margin:0 0 20px;font-size:clamp(20px,1.6vw,30px);font-weight:500;color:var(--strong)}
+h2 .muted{font-size:.6em;font-weight:400;color:var(--weak);margin-left:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr));gap:20px}
+.card{background:var(--front);border-radius:10px;padding:18px 20px;min-width:0}
+.card.wide{grid-column:1/-1}
+h3{margin:0 0 10px;font-size:17px;font-weight:500;color:var(--strong)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th{text-align:left;font-size:12.5px;font-weight:600;color:var(--weak);padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.25);white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.flags{color:var(--weak);font-size:13.5px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:1px}
+.foot{margin:22px 0 0;font-size:14px;color:var(--weak)}
+@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.board{min-height:auto}}
+@media (max-width:760px){.lane{grid-template-columns:minmax(0,1fr);gap:6px}.axis{margin-left:0}.answer{min-height:24vh}.top{flex-direction:column;gap:4px}.hint{display:none}}
+</style>
+</head>
+<body>
+<main>
+<section id="board" class="board" aria-label="Network experience right now">
+  <div class="top"><span><a id="all" class="all" href="/overview" hidden>All probes</a><span id="probe">EXM</span></span><span class="right"><span id="fresh">connecting</span><button class="live-btn" id="live-btn" type="button" hidden>Back to live</button></span></div>
+  <div class="answer">
+    <h1 id="headline" aria-live="polite">Connecting to the probe…</h1>
+    <p id="sub" class="sub"></p>
+    <div class="where" id="where" hidden><div class="chips" id="chips" aria-label="Where on the path"></div><p class="where-text" id="where-text"></p></div>
+  </div>
+  <div class="lanes" id="lanes">
+    <div class="since" id="since" tabindex="0" role="slider" aria-label="Moment being viewed; drag, or use the arrow keys"><span id="since-label"></span></div>
+    <div class="lane"><div class="label"><svg class="icon" viewBox="0 0 100 100" aria-hidden="true"></svg><div><div class="name">Network</div><div class="word">waiting</div><div class="why"></div></div></div><svg class="trace" role="img" aria-label="Network heartbeat"></svg></div>
+    <div class="lane"><div class="label"><svg class="icon" viewBox="0 0 100 100" aria-hidden="true"></svg><div><div class="name">DHCP</div><div class="word">waiting</div><div class="why"></div></div></div><svg class="trace" role="img" aria-label="DHCP heartbeat"></svg></div>
+    <div class="lane"><div class="label"><svg class="icon" viewBox="0 0 100 100" aria-hidden="true"></svg><div><div class="name">DNS</div><div class="word">waiting</div><div class="why"></div></div></div><svg class="trace" role="img" aria-label="DNS heartbeat"></svg></div>
+    <div class="lane"><div class="label"><svg class="icon" viewBox="0 0 100 100" aria-hidden="true"></svg><div><div class="name">Internet</div><div class="word">waiting</div><div class="why"></div></div></div><svg class="trace" role="img" aria-label="Internet heartbeat"></svg></div>
+    <div class="lane"><div class="label"><svg class="icon" viewBox="0 0 100 100" aria-hidden="true"></svg><div><div class="name">Wi-Fi</div><div class="word">waiting</div><div class="why"></div></div></div><svg class="trace" role="img" aria-label="Wi-Fi heartbeat"></svg></div>
+  </div>
+  <div class="axis"><span id="axis-left">15 minutes ago</span><span class="hint" id="hint">drag the line or click a beat to look back</span><span id="axis-right">now</span></div>
+</section>
+
+<section class="failing" id="failing" aria-labelledby="failing-h" hidden>
+  <h2 id="failing-h">What's failing</h2>
+  <div class="grid" id="failing-body"></div>
+</section>
+
+<section class="details" id="details" aria-labelledby="details-h">
+  <h2 id="details-h">Details<span class="muted" id="sum-age"></span></h2>
+  <div class="grid">
+    <div class="card wide"><h3>Clients, last 60 minutes</h3><div class="scroll"><table id="t-clients"></table></div></div>
+    <div class="card"><h3>Resolvers</h3><div class="scroll"><table id="t-res"></table></div></div>
+    <div class="card"><h3>Apps (Apdex)</h3><div class="scroll"><table id="t-apps"></table></div></div>
+    <div class="card"><h3>Marvis Minis targets</h3><div class="scroll"><table id="t-srv"></table></div></div>
+    <div class="card"><h3>Latest speed tests</h3><div class="scroll"><table id="t-speed"></table></div></div>
+    <div class="card"><h3 id="wifi-h">Wi-Fi client</h3><div class="scroll"><table id="t-wifi"></table></div></div>
+    <div class="card"><h3>Apps over Wi-Fi</h3><div class="scroll"><table id="t-wifi-apps"></table></div></div>
+  </div>
+  <p class="foot">Read-only view of this probe's results. <span id="delay"></span></p>
+</section>
+</main>
+<script src="/pulse-core.js"></script>
+<script>
+(() => {
+  'use strict';
+  const NS = 'http://www.w3.org/2000/svg';
+  const COL = { ok: '#05cc93', warn: '#ffbc44', fail: '#fc6161', unk: '#7d8a92' };
+  const NAMES = ['Network', 'DHCP', 'DNS', 'Internet', 'Wi-Fi'];
+  const WORDS = [
+    { ok: 'stable', warn: 'shaky', fail: 'unstable', unk: 'no data' },
+    { ok: 'answering', warn: 'partly answering', fail: 'failing', unk: 'no data' },
+    { ok: 'answering', warn: 'partly answering', fail: 'failing', unk: 'no data' },
+    { ok: 'good', warn: 'partly working', fail: 'down', unk: 'no data' },
+    { ok: 'good', warn: 'degraded', fail: 'down', unk: 'no data' },
+  ];
+  // Network, DHCP, DNS and Wi-Fi beat every 10 s (heartbeats); the internet line is app checks, ~every 30 s.
+  // Wi-Fi is a real wireless client (a remote probe), never mixed into the wired rows.
+  const { CADENCE, STATE_WINDOW, beats, stateOf, sinceOf, cls, lastOutage, flaps, whereOf, chips } = PulseCore;   // the rules: pulse-core.js
+  const WINDOW_TEXT = ['30 seconds', '30 seconds', '30 seconds', '2 minutes', '30 seconds'];
+  const STALE_MS = 90000;
+  // An hour of results: the lines show 15 minutes, the rest lets "since" find the start of a long problem.
+  const HISTORY_MIN = 60;
+  const params = new URLSearchParams(location.search);
+  // Which board: the collector serves one per probe (?probe=NAME); with a single probe it may be left out.
+  const PROBE = params.get('probe');
+  const withProbe = (path) => path + (path.includes('?') ? '&' : '?') + (PROBE ? 'probe=' + encodeURIComponent(PROBE) : '');
+  // view: null while live. Looking back it is {at, end, ev, keys}: the moment being looked at (at), the right edge
+  // of the lines (end, frozen until you go back to live) and the results around them.
+  const S = { ev: [], offset: 0, lastFail: {}, probe: '', loaded: false, connected: false, downSince: null, delays: [],
+    voice: params.get('voice'), view: null, drag: null, geo: null, markAt: null, failSig: '', edge: 'WAN edge' };
+
+  const $ = (id) => document.getElementById(id);
+  const lanes = [...document.querySelectorAll('.lane')];
+  const now = () => Date.now() - S.offset;                     // on the probe's clock
+  const ms = (iso) => Date.parse(iso);
+  const hhmm = (t) => new Date(t + S.offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  const hms = (t) => new Date(t + S.offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const dur = (d) => {
+    const s = Math.max(0, Math.round(d / 1000));
+    if (s < 90) return s + ' seconds';
+    const m = Math.round(s / 60);
+    if (m < 90) return m + ' minutes';
+    const h = Math.floor(m / 60), r = m % 60;
+    return h + (h === 1 ? ' hour' : ' hours') + (r ? ' ' + r + ' minutes' : '');
+  };
+  const findLast = (a, f) => { for (let i = a.length - 1; i >= 0; i--) if (f(a[i])) return a[i]; return null; };
+  const key = (e) => e.w + e.k + e.c + e.g + e.r;
+  const list = (a) => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+  const few = (a) => (a.length > 4 ? a.slice(0, 3).join(', ') + ' +' + (a.length - 3) : a.join(', '));
+  // Group errors that differ only by a timing: "timed out after 10001 milliseconds" and "...10000..." are one problem.
+  // Multi-step results repeat one cause ("x; x; x"): keep it once. Library jargon becomes what it means.
+  const norm = (s) => [...new Set(String(s || '').split('; ').map((p) => p
+    .replace(/\b\d{4,}(\.\d+)? ?milliseconds\b/g, (m) => Math.round(parseFloat(m) / 1000) + ' s')
+    .replace(/\btook \d+(\.\d+)? ?ms \(T \d+ ms\)/g, 'too slow').replace(/\b(gateway|DNS) \d+(\.\d+)? ?ms\b/g, '$1 slow')
+    .replace(/^gaierror: \[Errno -[23]\] .*$/, 'name lookup failed (no DNS answer)')
+    .replace(/^gaierror: \[Errno -[25]\] .*$/, 'name lookup failed')))].join('; ');
+  const capText = (s) => (/^[a-z]+:/.test(s) ? s : cap(s));    // an error name like "gaierror:" keeps its case
+  const plain = () => S.voice === 'plain';
+  const pick = (p, snark) => (plain() ? p : snark);
+
+  function el(tag, attrs, parent) {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+
+  function setIcon(svg, s) {
+    if (svg.dataset.s === s) return;
+    svg.dataset.s = s;
+    svg.replaceChildren();
+    if (s === 'ok') {
+      el('circle', { cx: 50, cy: 50, r: 46, fill: COL.ok }, svg);
+      el('path', { d: 'M29 52 L44 66 L72 36', fill: 'none', stroke: '#1d1f27', 'stroke-width': 11, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg);
+    } else if (s === 'warn') {
+      el('path', { d: 'M50 8 L94 88 H6 Z', fill: COL.warn, stroke: COL.warn, 'stroke-width': 8, 'stroke-linejoin': 'round' }, svg);
+      el('path', { d: 'M50 38 V60', stroke: '#1d1f27', 'stroke-width': 11, 'stroke-linecap': 'round' }, svg);
+      el('circle', { cx: 50, cy: 76, r: 6, fill: '#1d1f27' }, svg);
+    } else if (s === 'fail') {
+      el('circle', { cx: 50, cy: 50, r: 46, fill: COL.fail }, svg);
+      el('path', { d: 'M33 33 L67 67 M67 33 L33 67', fill: 'none', stroke: '#1d1f27', 'stroke-width': 11, 'stroke-linecap': 'round' }, svg);
+    } else {
+      el('circle', { cx: 50, cy: 50, r: 44, fill: 'none', stroke: COL.unk, 'stroke-width': 8 }, svg);
+      el('path', { d: 'M30 50 H70', stroke: COL.unk, 'stroke-width': 11, 'stroke-linecap': 'round' }, svg);
+    }
+  }
+
+  // ---- the facts behind a line that isn't fine
+  const recentTrace = (V, t) => findLast(V, (e) => e.k === 'trace' && t - ms(e.w) <= 60000);
+  function gatewayFacts(g) {
+    const parts = [];
+    (g && g.ug || []).forEach(([ip, bad, n]) => parts.push(ip + ' not answering (' + bad + ' of ' + n + ' ports)'));
+    if (g && g.nl && g.nl.length) parts.push('no link: ' + few(g.nl));
+    if (g && g.flap && g.flap.length) parts.push('link dropped: ' + few(g.flap));
+    return parts;
+  }
+  function traceFact(tr) {
+    if (!tr) return '';
+    if (tr.rc) return tr.g + ' reachable in ' + tr.dt + ' hops';
+    return tr.lh ? 'traceroute to ' + tr.g + ' stops after ' + tr.lh + ' (hop ' + tr.lt + ')' : 'traceroute to ' + tr.g + ': no hop answers';
+  }
+  function whyOf(i, s, V, t) {
+    if (s !== 'fail' && s !== 'warn') return '';
+    if (i === 0) {
+      const f = gatewayFacts(findLast(V, (e) => e.k === 'gateway'));
+      if (f.length) return f.join(' · ');
+    }
+    if (i === 3) {
+      const tr = recentTrace(V, t);
+      if (tr) return traceFact(tr);
+    }
+    const e = findLast(V, (x) => x.l === i && x.e && x.o !== 'ok' && t - ms(x.w) <= Math.max(STATE_WINDOW[i], 60000));
+    return e ? clip(norm(e.e), 80) : '';
+  }
+
+  // ---- voice. The rules decide what is true; this decides how it's said. Same facts in both voices.
+  const hash = (s) => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+  // One line per incident: seeded by when it started, so it doesn't change every second, and the next one gets another.
+  const one = (pool, seed) => pool[hash(seed) % pool.length];
+  const fillIn = (s, f) => s.replace(/\{(\w+)\}/g, (_, k) => (f && f[k] !== undefined && f[k] !== null ? String(f[k]) : ''));
+  const tier = (d) => (d >= 3600000 ? 'epic' : d >= 600000 ? 'long' : 'fresh');
+  const LINES = {
+    netGw: {
+      fresh: ['The gateway has left the building.', 'Nobody can reach the gateway.', 'The gateway has stopped taking calls.', 'The gateway is not answering. Rude.'],
+      long: ['The gateway is still gone.', "Still no gateway. It isn't coming back on its own.", 'The gateway has been gone a while. Somebody go and look.'],
+      epic: ['The gateway has been gone over an hour. This is a site visit now.', 'Still no gateway. At this point, bring a ladder.'],
+    },
+    netLink: {
+      fresh: ['Somebody unplugged something.', "No link. That's a cable, not a config.", 'The ports went dark.', 'Link down. Put the cable back.'],
+      long: ["Still no link. Cables don't heal.", 'The ports are still dark. The cable is still out.'],
+    },
+    netOther: { fresh: ['The network is falling over.', 'The network is coming apart.'], long: ['The network is still falling over.'] },
+    dhcpDns: {
+      fresh: ['DHCP and DNS are both down. Bold.', 'No addresses, no names. Impressive.', 'DHCP and DNS went down together. Cute.'],
+      long: ["DHCP and DNS are still down. Someone's having a night.", 'Still no DHCP and no DNS. The users have noticed.'],
+    },
+    dhcp: {
+      fresh: ['DHCP has stopped handing out addresses.', 'DHCP is out of office.', 'No offers. DHCP has gone quiet.', 'DHCP has closed the doors.'],
+      long: ['DHCP is still not answering. New arrivals are queueing at 169.254.', 'Still no DHCP. Nobody new gets on.'],
+    },
+    internet: {
+      fresh: ['The internet is down. No, really.', "We're an intranet now.", 'The internet has left the building.', 'No internet. Just us and the LAN.'],
+      long: ['Still no internet. Have you tried turning it off and on again?', 'The internet is still down. Morale is holding. Barely.', 'Still offline. The cat videos will have to wait.'],
+      epic: ['The internet has been down over an hour. This is a story now.', 'Still no internet. Somebody start the incident report.'],
+    },
+    dns: {
+      fresh: ['It was DNS.', "It's always DNS.", "It's not DNS. There's no way it's DNS. It was DNS.", 'DNS. Of course.'],
+      long: ["Still DNS. It's always DNS.", 'DNS is still down. Nobody is surprised.'],
+    },
+    dnsNight: ["It's {hour}. Of course it's DNS.", 'DNS, at {hour}. Naturally.'],
+    wifiOff: {
+      fresh: ['The laptop wandered off to {sd}.', 'The test laptop has eloped with {sd}.', 'The laptop is on {sd}. It was told not to.'],
+      long: ["The laptop is still on {sd}. It isn't coming back by itself.", 'Still on {sd}. The AP must still be down.'],
+    },
+    wifiGone: { fresh: ["The laptop can't find {tg}.", '{tg} has vanished.', 'No {tg} in the air.'], long: ['{tg} is still missing.'] },
+    wifiDown: { fresh: ['Wi-Fi has left the chat.', 'The Wi-Fi is down. The laptop is sulking.'], long: ['Wi-Fi is still down.'] },
+    netWarn: ['The network is flaky.', 'The network is having a wobble.', 'Something keeps unplugging itself.'],
+    dhcpWarn: ['DHCP is having a moment.', 'DHCP is dropping the odd offer.', 'DHCP is mostly awake.'],
+    dnsWarn: ['DNS is dropping queries. Of course it is.', 'DNS is mostly working. Mostly.', 'DNS is a bit flaky. Nobody is shocked.'],
+    appsFail: ['Some apps are broken. Not ours, presumably.', 'A few apps are down. Not my circus.', 'Some apps are failing. The internet itself is fine-ish.'],
+    appsSlow: ['The internet is crawling.', "Everything is slow. Someone's streaming in 4K.", 'The internet is wading through treacle.'],
+    wifiWarn: ['Wi-Fi is limping.', 'Wi-Fi is fine-ish.', 'Wi-Fi is having an off day.'],
+    flap: ["{lane} can't make up its mind.", '{lane} keeps falling over and getting back up.', '{lane} is flapping. Pick a state, any state.'],
+    recovered: ['Back after {dur} down. Zero apologies.', "And we're back. Nobody touch anything.", 'Restored after {dur}. Someone owes someone a beer.',
+      "It's back. Act like it never happened.", 'Back up after {dur}. Write it down before you forget.'],
+    allGood: ["All good. Don't touch anything.", 'Nothing is on fire.', 'All quiet. Suspiciously quiet.', 'Uptime is holding. Hands off the config.',
+      'Green across the board. Enjoy it while it lasts.', 'All good. Nobody push a change.', 'Working as designed. For once.',
+      'No news is good news.', 'All systems nominal. Touch wood.'],
+    allGoodNight: ['All quiet. Go get some sleep.', "All good. Even the network's asleep.", 'Nothing is broken. Go to bed.'],
+    allGoodFriday: ["It's Friday. Don't you dare push that change.", 'All good. Read-only Friday is working.', 'Green on a Friday. Leave it that way.'],
+    laptopAway: ['Wired is fine. The laptop went to lunch.', 'Wired is fine. The Wi-Fi laptop has wandered off.'],
+    silent: { fresh: ['Silence for {dur}.', 'The probe has gone quiet. Check its pulse.'], long: ["Still nothing from the probe. That's not a good sign.", 'The probe has been quiet for {dur}. Go and look.'] },
+    lost: ['Lost the probe.', 'Lost the probe. It was like that when I got here.', 'The probe has stopped talking to us.'],
+    waiting: ['Waiting on results.', 'Results are on their way. Probably.'],
+  };
+  // The probe's local clock, for "it's 3 a.m." and "it's Friday".
+  const local = (t) => new Date(t + S.offset);
+  const hourText = (t) => { const h = local(t).getHours(); return h === 0 ? 'midnight' : h === 12 ? 'noon' : (h % 12) + (h < 12 ? ' a.m.' : ' p.m.'); };
+  function line(kind, seed, t, f) {
+    const p = LINES[kind];
+    if (!p) return null;
+    const pool = Array.isArray(p) ? p : (p[tier(t - (f && f.since ? f.since : t))] || p.long || p.fresh);
+    return fillIn(one(pool, kind + ':' + seed), f);
+  }
+
+  // Where the fault is, said in the board's voice. w: PulseCore.whereOf(...).
+  function whereText(w) {
+    if (!w) return '';
+    const f = Object.assign({ edge: S.edge }, w, { ports: w.ports ? few(w.ports) : '', sv: w.sv ? ' (' + w.sv + ')' : '',
+      sdpart: w.sd ? ' (it is on ' + w.sd + ')' : '', lt: w.lt || '?', lh: w.lh || 'the first hop' });
+    const P = {
+      link: 'Where: {ports}: no link. A cable or the switch.',
+      switch: "Where: the wired side. Wi-Fi reaches {ip}, the ports don't: the switch, its uplink or the VLAN.",
+      gateway: 'Where: the gateway or the link to it. Neither wired nor Wi-Fi reach {ip}.',
+      lan: "Where: between the ports and {ip}: the switch or the gateway's LAN side.",
+      edge: 'Where: the {edge}. The path stops after {lh} (hop {lt}); the management path reaches {target} around it.',
+      isp: 'Where: upstream of the {edge}. The management path can’t reach {target} either.',
+      wan: 'Where: past the gateway. The path to {target} stops after {lh} (hop {lt}).',
+      resolver: "Where: the resolver. {sx} isn't answering, {ax} is.",
+      dns_path: 'Where: DNS on the way out. The path is up, but neither {sx} nor {ax} answers.',
+      apps: 'Where: the apps or their CDNs. The path and DNS are fine.',
+      dhcp: "Where: the DHCP server{sv}. The gateway answers, offers don't come.",
+      ssid: "Where: the AP or SSID. The laptop can't get on {tg}{sdpart}.",
+      wifi: 'Where: the Wi-Fi side: the AP, its uplink or the WLAN. Wired reaches the gateway.',
+    };
+    const X = {
+      link: "That's a cable. No link on {ports}.",
+      switch: "Wi-Fi gets to {ip}, the wires don't. Look at the switch.",
+      gateway: "Nobody gets to {ip}, wired or wireless. It's the gateway or the cable to it.",
+      lan: 'Somewhere between the ports and {ip}. Start with the switch.',
+      edge: "It's the {edge}. The ISP answers around it; our traffic dies after {lh}.",
+      isp: "It's upstream. Even the management path can't get out. Call the ISP and enjoy the hold music.",
+      wan: 'Past the gateway: traffic dies after {lh} (hop {lt}).',
+      resolver: '{sx} is ghosting us; {ax} answers fine. Hand out a different resolver.',
+      dns_path: 'Something is eating DNS on the way out. The path is up; {sx} and {ax} are both silent.',
+      apps: "The pipe is fine and DNS is fine. The apps are someone else's problem.",
+      dhcp: "The gateway answers; the DHCP server{sv} doesn't.",
+      ssid: "The laptop can't get on {tg}{sdpart}. Check the AP.",
+      wifi: "Wired reaches the gateway, Wi-Fi doesn't. It's the AP or its uplink.",
+    };
+    return fillIn((plain() ? P : X)[w.seg] || '', f);
+  }
+
+  function verdict(t, st, bsets, V, live) {
+    const v = verdictText(t, st, bsets, V, live);
+    if (v.from) {
+      const s = sinceOf(v.from, v.sev === 'fail');
+      v.since = s.t;
+      if (v.since && v.sub) v.sub = v.sub.replace('{since}', s.open ? 'before ' + hhmm(v.since) : hms(v.since));
+    }
+    if (v.lane !== undefined && v.sev !== 'ok') {          // flapping is its own story
+      const n = flaps(bsets[v.lane], v.lane, t, 600000);
+      if (n >= 3) { v.kind = 'flap'; v.sub = 'It has failed ' + n + ' times in the last 10 minutes. ' + v.sub; }
+    }
+    if (!plain() && v.kind) {
+      const f = Object.assign({ since: v.since, lane: NAMES[v.lane], hour: hourText(t) }, v.f);
+      v.h = line(v.kind, v.seed !== undefined ? v.seed : (v.since || ''), t, f) || v.h;
+    }
+    v.where = v.sev === 'ok' || v.stale ? null : whereOf(V, t, st);
+    return v;
+  }
+
+  function verdictText(t, st, bsets, V, live) {
+    const newest = V.length ? Math.max(...V.map((e) => ms(e.w))) : null;
+    if (!S.loaded) return { h: pick('Connecting to the probe…', 'Dialing the probe…'), sub: '', sev: 'unk' };
+    if (!live && S.view.loading && !V.length) return { h: 'Rewinding…', sub: 'Fetching the results around ' + hms(t) + '.', sev: 'unk' };
+    if (live && !S.connected && S.downSince && t - S.downSince > 10000)
+      return { h: 'Lost the connection to the probe.', kind: 'lost', seed: S.downSince, sub: 'Since ' + hms(S.downSince) + '. Reconnecting; nothing on this screen is current' + pick('.', ", so don't quote it."), sev: 'unk', stale: true };
+    if (newest === null) return { h: pick('No results yet.', 'Nothing yet.'), sub: 'Waiting for the first test to finish.' + pick('', ' It gets there.'), sev: 'unk' };
+    if (t - newest > STALE_MS)
+      return { h: 'No data for ' + dur(t - newest) + '.', kind: 'silent', seed: newest, f: { since: newest, dur: dur(t - newest) },
+        sub: 'The probe stopped reporting at ' + hms(newest) + '. Nothing on this screen is current.' + pick('', ' Dead or sulking; either way, go and look.'), sev: 'unk', stale: true, lastAt: newest };
+    const [net, dh, dn, web, wf] = st;
+    // "Our network, DNS and the internet are fine." -- every line that is fine, minus the ones named in the headline.
+    const LABEL = ['our network', 'DHCP', 'DNS', 'the internet', 'Wi-Fi'];
+    const lastWifi = findLast(V, (e) => e.k === 'wifi_hb');
+    const fine = (...skip) => {
+      const ok = st.map((x, i) => (x.s === 'ok' && !skip.includes(i) ? LABEL[i] : null)).filter(Boolean);
+      return ok.length ? cap(list(ok)) + (ok.length > 1 ? ' are fine.' : ' is fine.') : '';
+    };
+    const ratio = (x, i, what) => (x.f ? x.f + ' of ' + x.n + ' ' + what + ' failed' : x.d + ' of ' + x.n + ' ' + what + ' were slow')
+      + ' in the last ' + WINDOW_TEXT[i] + '.';
+    const lastGw = findLast(V, (e) => e.k === 'gateway');
+    const night = local(t).getHours() < 6;
+    if (net.s === 'fail') {
+      const g = lastGw || {}, ug = g.ug || [], nl = g.nl || [];
+      const facts = ug.map(([ip, bad, n]) => 'Gateway ' + ip + " isn't answering on " + bad + ' of ' + n + ' ports');
+      if (nl.length) facts.push(nl.length + ' of ' + g.n + ' ports have no link (' + few(nl) + ')');
+      const what = facts.length ? facts.join('; ') : 'Ports keep losing link or the gateway';
+      return { h: 'The network is unstable.', kind: ug.length ? 'netGw' : nl.length ? 'netLink' : 'netOther', lane: 0, sub: what + ' since {since}.', sev: 'fail', from: bsets[0] };
+    }
+    if (dh.s === 'fail' && dn.s === 'fail')
+      return { h: 'DHCP and DNS are failing.', kind: 'dhcpDns', lane: 1, sub: 'Since {since}. ' + pick('', "New devices get no address and the rest can't look anything up. ") + fine(1, 2), sev: 'fail', from: bsets[1] };
+    if (dh.s === 'fail')
+      return { h: 'DHCP is failing.', kind: 'dhcp', lane: 1, sub: 'No offers since {since}. ' + pick('', 'New arrivals get 169.254 and a bad attitude. ') + fine(1), sev: 'fail', from: bsets[1] };
+    if (web.s === 'fail') {
+      const tr = recentTrace(V, t);
+      const path = !tr ? '' : tr.rc ? pick(tr.g + ' is reachable, so suspect DNS or the apps. ', tr.g + " answers fine, so it isn't the pipe. ")
+        : cap(traceFact(tr)) + '. ';
+      return { h: 'The internet is down.', kind: 'internet', lane: 3, sub: 'Since {since}. ' + path + (dn.s === 'fail' ? pick("DNS isn't answering either. ", 'DNS is down too, before you ask. ') : '') + fine(2, 3), sev: 'fail', from: bsets[3] };
+    }
+    if (dn.s === 'fail') {
+      const e = findLast(V, (x) => x.l === 2 && x.e);
+      const m = e && /from (\S+?)(?: within|$|;)/.exec(e.e);
+      return { h: 'DNS is failing.', kind: night ? 'dnsNight' : 'dns', lane: 2, sub: 'No answers' + (m ? ' from ' + m[1] : '') + ' since {since}. ' + pick('', "It's always DNS. ") + fine(2), sev: 'fail', from: bsets[2] };
+    }
+    if (wf.s === 'fail') {
+      const off = lastWifi && lastWifi.tg && lastWifi.sd !== lastWifi.tg;
+      const f = { sd: lastWifi && lastWifi.sd, tg: lastWifi && lastWifi.tg };
+      return { h: 'Wi-Fi is down.', kind: off ? (lastWifi.sd ? 'wifiOff' : 'wifiGone') : 'wifiDown', lane: 4, f,
+        sub: (off && !plain() ? "It's supposed to be on " + lastWifi.tg + '. ' : (lastWifi && lastWifi.e ? cap(lastWifi.e) + '. ' : '')) + 'Since {since}. ' + fine(4), sev: 'fail', from: bsets[4] };
+    }
+    if (net.s === 'warn') {
+      const bad = new Set();
+      V.filter((e) => e.k === 'gateway' && t - ms(e.w) <= STATE_WINDOW[0]).forEach((e) => [...(e.down || []), ...(e.flap || [])].forEach((p) => bad.add(p)));
+      return { h: 'The network is shaky.', kind: 'netWarn', lane: 0, sub: (bad.size ? list([...bad].sort()) + (bad.size > 1 ? ' are' : ' is') : 'Some ports are') + ' dropping link or missing the gateway.' + pick('', ' Cable, port or gremlins.'), sev: 'warn', from: bsets[0] };
+    }
+    if (dh.s === 'warn')
+      return { h: 'DHCP is partly failing.', kind: 'dhcpWarn', lane: 1, sub: ratio(dh, 1, 'DHCP checks'), sev: 'warn', from: bsets[1] };
+    if (dn.s === 'warn')
+      return { h: 'DNS is partly failing.', kind: 'dnsWarn', lane: 2, sub: ratio(dn, 2, 'DNS checks'), sev: 'warn', from: bsets[2] };
+    if (web.s === 'warn')
+      return web.itemFails
+        ? { h: 'Some apps are failing.', kind: 'appsFail', lane: 3, sub: web.itemFails + ' of ' + web.items + ' app checks failed in the last 2 minutes.', sev: 'warn', from: bsets[3] }
+        : { h: 'The internet is slow.', kind: 'appsSlow', lane: 3, sub: web.itemSlow + ' of ' + web.items + ' app checks were slow in the last 2 minutes.', sev: 'warn', from: bsets[3] };
+    if (wf.s === 'warn')
+      return { h: 'Wi-Fi is degraded.', kind: 'wifiWarn', lane: 4, sub: (lastWifi && lastWifi.e ? cap(lastWifi.e) + '. ' : ratio(wf, 4, 'Wi-Fi checks') + ' ') + fine(4), sev: 'warn', from: bsets[4] };
+    // A laptop that sleeps or leaves is a data gap, not a network fault: say so without hiding the wired answer.
+    if (wf.s === 'unk' && st.slice(0, 4).every((x) => x.s === 'ok'))
+      return { h: 'All good on the wired network.', kind: 'laptopAway', seed: lastWifi ? lastWifi.w : '', sub: (lastWifi ? 'No Wi-Fi results since ' + hhmm(ms(lastWifi.w)) : 'No Wi-Fi results yet') + ': the test laptop isn’t reporting.', sev: 'unk' };
+    const missing = st.map((x, i) => (x.s === 'unk' ? NAMES[i] : null)).filter(Boolean);
+    if (missing.length)
+      return { h: 'Waiting for results.', kind: 'waiting', seed: Math.floor(t / 600000), sub: 'No recent ' + list(missing) + ' results.' + pick('', " They'll turn up."), sev: 'unk' };
+    // Just recovered: for 15 minutes after a line comes back, say what happened, so nobody walks up to "All good" and misses it.
+    const outs = [0, 1, 2, 3, 4].map((i) => ({ i, o: lastOutage(bsets[i], i, t, 900000) })).filter((x) => x.o && x.o.start !== null);
+    if (outs.length) {
+      const { i, o } = outs.sort((a, b) => b.o.end - a.o.end)[0];
+      const d = dur(o.end - o.start);
+      const span = o.open ? 'until ' + hms(o.end) + ' (since before ' + hhmm(o.start) + ')' : 'for ' + d + ' (' + hms(o.start) + '–' + hms(o.end) + ')';
+      return { h: 'All good again.', kind: 'recovered', seed: o.start, f: { dur: o.open ? 'over ' + d : d },
+        sub: NAMES[i] + ' was down ' + span + '. Back for ' + dur(t - o.end) + '.', sev: 'ok' };
+    }
+    const lt = local(t), friday = lt.getDay() === 5 && lt.getHours() >= 15;
+    const kind = night ? 'allGoodNight' : friday ? 'allGoodFriday' : 'allGood', seed = Math.floor(t / 600000);
+    if (!live) {           // looking back: the failures we know of are the ones loaded around this moment
+      const lf = findLast(V, (e) => e.l !== null && e.l !== undefined && (e.o === 'fail' || e.o === 'portal'));
+      return { h: 'All good.', kind, seed, sub: lf ? 'No failed tests for ' + dur(t - ms(lf.w)) + '.' : 'No failed tests in the 15 minutes before.', sev: 'ok' };
+    }
+    const lf = Object.values(S.lastFail).map(ms).filter((x) => !isNaN(x));
+    const last = lf.length ? Math.max(...lf) : null;
+    return { h: 'All good.', kind, seed, sub: last && t - last < 86400000 ? 'No failed tests for ' + dur(t - last) + '.' : 'No failed tests in the last 24 hours.', sev: 'ok' };
+  }
+
+  // t: right edge of the lines; cur: the moment being looked at (t when live). st: state at cur; stEnd: at t.
+  function drawLane(i, bs, st, stEnd, t, cur, win, live, stale) {
+    const svg = lanes[i].querySelector('.trace');
+    const W = Math.max(200, svg.clientWidth), H = Math.max(80, svg.clientHeight);
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.replaceChildren();
+    const x0 = t - win, X = (v) => ((v - x0) / win) * (W - 14);
+    const b = Math.round(H * 0.74), hN = H * 0.32, hS = H * 0.66;
+    const vis = bs.filter((x) => x.t >= x0);
+    const last = bs.length ? bs[bs.length - 1].t : null;
+    const end = last === null ? x0 : (!stale && t - last < 3 * CADENCE[i] ? t : last);
+    // A line starts at its first result: no flat line for time with no data.
+    const first = bs.length ? bs[0].t : null;
+    const startX = first === null || first <= x0 ? 0 : Math.max(0, X(first) - 12);
+    let d = 'M' + startX.toFixed(1) + ' ' + b;
+    const slow = [], fails = [], gaps = [];
+    let prev = null;
+    for (const be of vis) {
+      const x = +X(be.t).toFixed(1);
+      // A stretch with no results is drawn grey, never as a calm green line.
+      if (prev !== null && be.t - prev > 3 * CADENCE[i]) {
+        const gx0 = +(X(prev) + 8).toFixed(1), gx1 = +(x - 6).toFixed(1);
+        if (gx1 > gx0) { d += 'L' + gx0 + ' ' + b + 'M' + gx1 + ' ' + b; gaps.push([gx0, gx1]); }
+      }
+      prev = be.t;
+      if (be.o === 'fail') { fails.push(x); continue; }
+      const h = be.o === 'slow' ? hS : hN * (0.93 + (Math.floor(be.t / 1000) % 5) * 0.035);
+      const seg = 'L' + (x - 5) + ' ' + b + 'L' + (x - 2.5) + ' ' + (b + 7) + 'L' + x + ' ' + (b - h).toFixed(1) + 'L' + (x + 3.5) + ' ' + (b + 12) + 'L' + (x + 7) + ' ' + b;
+      d += seg;
+      if (be.o === 'slow') slow.push('M' + (x - 5) + ' ' + b + seg);
+    }
+    const endX = Math.max(0, X(end));
+    d += 'L' + endX.toFixed(1) + ' ' + b;
+    el('path', { d, fill: 'none', stroke: COL.ok, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: 0.85 }, svg);
+    gaps.forEach(([g0, g1]) => el('line', { x1: g0, x2: g1, y1: b, y2: b, stroke: '#606a70', 'stroke-width': 2 }, svg));
+    slow.forEach((p) => el('path', { d: p, fill: 'none', stroke: COL.warn, 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg));
+    const gap = (2.5 * CADENCE[i] / win) * (W - 14);
+    fails.forEach((x, k) => {
+      const nx = fails[k + 1];
+      el('line', { x1: x - 7, x2: nx !== undefined && nx - x < gap ? nx : x + 7, y1: b, y2: b, stroke: COL.fail, 'stroke-width': 4, 'stroke-linecap': 'round' }, svg);
+      el('circle', { cx: x, cy: b, r: 5.5, fill: COL.fail }, svg);
+    });
+    const failingAtEnd = fails.length && stEnd.s === 'fail' && last !== null && bs[bs.length - 1].o === 'fail';
+    if (failingAtEnd) el('line', { x1: fails[fails.length - 1], x2: X(t), y1: b, y2: b, stroke: COL.fail, 'stroke-width': 4, 'stroke-linecap': 'round' }, svg);
+    if (endX < X(t) - 1 && !failingAtEnd) el('line', { x1: endX, x2: X(t), y1: b, y2: b, stroke: '#606a70', 'stroke-width': 2 }, svg);
+    // Looking back: what came after the moment is dimmed, and the state dot rides the line.
+    if (cur < t - 500) el('rect', { x: X(cur), y: 0, width: Math.max(0, W - X(cur)), height: H, fill: '#1d1f27', opacity: 0.66 }, svg);
+    const fill = stale || st.s === 'unk' ? COL.unk : COL[st.s];
+    if (live && !stale) el('circle', { class: 'halo', cx: X(cur), cy: b, r: 8, fill }, svg);
+    el('circle', { cx: X(cur), cy: b, r: 8, fill, stroke: '#1d1f27', 'stroke-width': 3 }, svg);
+    svg.setAttribute('aria-label', NAMES[i] + ' heartbeat: ' + vis.length + ' results shown, ' + vis.filter((x) => x.o === 'fail').length + ' failed, ' + vis.filter((x) => x.o === 'slow').length + ' slow');
+    const left = svg.getBoundingClientRect().left;
+    return { X, left, W, win, inv: (px) => x0 + ((px - left) / (W - 14)) * win };
+  }
+
+  // ---- where: one sentence and the path, with the break marked
+  function renderWhere(w) {
+    const box = $('where');
+    const text = whereText(w), path = w ? chips(w.seg) : null;
+    const sig = text + '|' + JSON.stringify(path) + '|' + S.edge;
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    box.hidden = !text;
+    $('where-text').textContent = text;
+    const row = $('chips');
+    row.replaceChildren();
+    row.hidden = !path;
+    (path || []).forEach((c, k) => {
+      if (k) { const sep = document.createElement('span'); sep.className = 'sep'; sep.textContent = '›'; row.appendChild(sep); }
+      const chip = document.createElement('span');
+      chip.className = 'chip ' + c.s;
+      chip.textContent = c.name === 'EDGE' ? S.edge : c.name;
+      chip.title = { ok: 'answering', fail: 'the break', sus: 'one of these', unk: "past the break: can't tell" }[c.s];
+      row.appendChild(chip);
+    });
+  }
+
+  // ---- "What's failing": the evidence behind each line that isn't fine, at the moment shown
+  function hopsText(hp) {
+    const out = [];
+    for (let k = 0; k < hp.length;) {
+      if (hp[k]) { out.push((k + 1) + ' ' + hp[k]); k++; continue; }
+      let j = k;
+      while (j + 1 < hp.length && !hp[j + 1]) j++;
+      out.push((j > k ? (k + 1) + '–' + (j + 1) : String(k + 1)) + ' *');
+      k = j + 1;
+    }
+    return out.join(' · ');
+  }
+  function failCard(i, x, V, t) {
+    const lines = [];
+    if (i === 0) {
+      const g = findLast(V, (e) => e.k === 'gateway');
+      (g && g.ug || []).forEach(([ip, bad, n]) => lines.push(['Gateway ' + ip + ' not answering', bad + ' of ' + n + ' ports']));
+      if (g && g.nl && g.nl.length) lines.push(['No link', g.nl.join(', ')]);
+      if (g && g.flap && g.flap.length) lines.push(['Link dropped and came back', g.flap.join(', ')]);
+    }
+    if (i === 2) {
+      const d = findLast(V, (e) => e.k === 'dns_hb' && t - ms(e.w) <= 60000 && ('sp' in e || 'ap' in e));
+      if (d) {
+        // A lost echo is common (rate limits): a server "answers ping" if any reply came back in the last 30 s.
+        const rtt = (ip) => {
+          const r = findLast(V, (e) => e.k === 'dns_hb' && t - ms(e.w) <= 30000
+            && ((e.sx === ip && typeof e.sp === 'number') || (e.ax === ip && typeof e.ap === 'number')));
+          return r ? (r.sx === ip ? r.sp : r.ap) : null;
+        };
+        const p = (ip) => { const v = rtt(ip); return ip + (v === null ? ' no ping reply in 30 s' : ' answers ping (' + v + ' ms)'); };
+        lines.push(['Ping', [d.sx && p(d.sx), d.ax && ('ap' in d) && p(d.ax)].filter(Boolean).join(' · ')
+          + (d.o === 'fail' && rtt(d.sx) !== null ? '. ' + d.sx + ' is reachable but not answering DNS.' : '')]);
+      }
+    }
+    if (i === 3) {
+      const tr = recentTrace(V, t);
+      if (tr) {
+        lines.push(['Traceroute to ' + tr.g + ' from ' + tr.c + ' at ' + hms(ms(tr.w)), (tr.rc ? 'reached it at hop ' + tr.dt : 'no reply from ' + tr.g) + ': ' + hopsText(tr.hp || [])]);
+        if (!tr.rc) {
+          const good = findLast(V, (e) => e.k === 'trace' && e.rc);
+          if (good) lines.push(['Last full path, ' + hms(ms(good.w)), 'reached ' + good.g + ' at hop ' + good.dt + ': ' + hopsText(good.hp || [])]);
+        }
+      }
+    }
+    const span = Math.max(STATE_WINDOW[i], 60000);
+    const groups = new Map();
+    V.filter((e) => e.l === i && e.k !== 'gateway' && t - ms(e.w) <= span && e.o !== 'ok').forEach((e) => {
+      const what = e.e ? norm(e.e) : e.o === 'degraded' ? 'slow' : e.o;
+      const g = groups.get(what) || { n: 0, c: new Set(), g: new Set() };
+      g.n++; if (e.c) g.c.add(e.c); if (e.g && (e.k === 'app' || e.k === 'speedtest')) g.g.add(e.g);
+      groups.set(what, g);
+    });
+    [...groups.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 5).forEach(([what, g]) => {
+      lines.push([clip(capText(what), 160), g.n + (g.n > 1 ? ' results' : ' result') + (g.c.size ? ' · ' + few([...g.c].sort()) : '') + (g.g.size ? ' · ' + few([...g.g].sort()) : '')]);
+    });
+    return { title: NAMES[i] + ': ' + WORDS[i][x.s], s: x.s, lines: lines.length ? lines : [['No error text in the last ' + dur(span), '']] };
+  }
+  function renderFailing(t, st, V, live) {
+    const bad = st.map((x, i) => (x.s === 'fail' || x.s === 'warn' ? i : -1)).filter((i) => i >= 0);
+    const box = $('failing');
+    if (!bad.length) { box.hidden = true; S.failSig = ''; return; }
+    const cards = bad.map((i) => failCard(i, st[i], V, t));
+    const sig = JSON.stringify([live, live ? '' : hms(t), cards]);
+    if (sig === S.failSig) return;
+    S.failSig = sig;
+    $('failing-h').textContent = live ? "What's failing" : 'What was failing at ' + hms(t);
+    $('failing-body').replaceChildren(...cards.map((c) => {
+      const card = document.createElement('div'); card.className = 'card';
+      const h = document.createElement('h3'); const dot = document.createElement('span');
+      dot.className = 'dot'; dot.style.background = COL[c.s]; h.append(dot, c.title); card.appendChild(h);
+      const ul = document.createElement('ul');
+      c.lines.forEach(([what, detail]) => {
+        const li = document.createElement('li');
+        const a = document.createElement('span'); a.className = 'what'; a.textContent = what; li.appendChild(a);
+        if (detail) { const b = document.createElement('span'); b.className = 'detail'; b.textContent = detail; li.appendChild(b); }
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+      return card;
+    }));
+    box.hidden = false;
+  }
+
+  function render() {
+    const narrow = window.innerWidth < 760;
+    const win = (narrow ? 5 : 15) * 60000;
+    const live = !S.view;
+    const nowT = now();
+    S.ev = S.ev.filter((e) => nowT - ms(e.w) <= (HISTORY_MIN + 1) * 60000);     // the live buffer; looking back has its own
+    const t = live ? nowT : S.view.end, cur = live ? nowT : S.view.at;
+    const pool = (live ? S.ev : S.view.ev).filter((e) => ms(e.w) <= t);
+    const V = pool.filter((e) => ms(e.w) <= cur);
+    const bAll = [0, 1, 2, 3, 4].map((i) => beats(pool, i));
+    const bNow = bAll.map((bs) => bs.filter((b) => b.t <= cur));
+    const st = bNow.map((bs, i) => stateOf(bs, i, cur, i === 3));
+    const stEnd = live ? st : bAll.map((bs, i) => stateOf(bs, i, t, false));
+    const v = verdict(cur, st, bNow, V, live);
+    const stale = !!v.stale;
+    $('headline').textContent = v.h;
+    $('sub').textContent = v.sub;
+    renderWhere(v.where);
+    $('board').className = 'board ' + (v.sev === 'ok' ? '' : v.sev) + (live ? '' : ' paused');
+    const geo = [];
+    st.forEach((x, i) => {
+      const s = stale ? 'unk' : x.s;
+      setIcon(lanes[i].querySelector('.icon'), s);
+      let word = WORDS[i][s];
+      if (i === 4 && s !== 'unk') {          // the signal is the one number a Wi-Fi row needs
+        const lastW = findLast(V, (e) => e.k === 'wifi_hb');
+        const lw = findLast(V, (e) => e.k === 'wifi_hb' && typeof e.rs === 'number');
+        if (lastW && lastW.tg && lastW.sd !== lastW.tg) word += ' · on ' + (lastW.sd || 'no network');   // not the network being monitored
+        else if (lw) word += ' · ' + lw.rs + ' dBm';
+      }
+      lanes[i].querySelector('.word').textContent = word;
+      const why = lanes[i].querySelector('.why');
+      why.textContent = stale ? '' : whyOf(i, s, V, cur);
+      why.className = 'why ' + s;
+      geo.push(drawLane(i, bAll[i], x, stEnd[i], t, cur, win, live && S.connected, live && stale));
+    });
+    S.geo = geo[0];
+    // The bar: when live it marks where the current problem began; drag it (or click a beat) to look back.
+    let markAt = null, label = '';
+    if (!live) { markAt = cur; label = hms(cur); }
+    else {
+      const sinceAt = stale ? v.lastAt : (v.since || null);
+      if (sinceAt && nowT - sinceAt < win && !narrow) { markAt = sinceAt; label = (stale ? 'last result ' : 'since ') + hms(sinceAt); }
+    }
+    S.markAt = markAt;
+    const mark = $('since');
+    mark.classList.toggle('cursor', !live);
+    if (markAt !== null) {
+      const box = $('lanes').getBoundingClientRect();
+      mark.style.left = (geo[0].left - box.left + geo[0].X(markAt)) + 'px';
+      mark.style.display = 'block';
+      $('since-label').textContent = label;
+      mark.setAttribute('aria-valuetext', label);
+    } else mark.style.display = 'none';
+    $('axis-left').textContent = live ? (narrow ? '5' : '15') + ' minutes ago' : hhmm(t - win);
+    $('axis-right').textContent = live || nowT - t < 2000 ? 'now' : hhmm(t);
+    $('hint').textContent = live ? 'drag the line or click a beat to look back' : '← → step · Esc for live';
+    renderFailing(cur, stale ? [] : st, V, live);
+    const newest = pool.length ? Math.max(...pool.map((e) => ms(e.w))) : null;
+    $('probe').textContent = (S.probe || 'EXM') + ' · ' + hhmm(nowT);
+    $('live-btn').hidden = live;
+    if (!live) $('fresh').textContent = 'looking at ' + hms(cur) + ', ' + dur(nowT - cur) + ' ago' + (S.view.loading ? ' · loading…' : '');
+    else $('fresh').textContent = newest === null ? (S.connected ? 'live, waiting for results' : 'connecting')
+      : (S.connected && !stale ? 'live, newest result ' : 'not live, newest result ') + dur(nowT - newest) + ' ago';
+    if (S.delays.length) {
+      const sorted = [...S.delays].sort((a, b) => a - b), med = sorted[Math.floor(sorted.length / 2)];
+      $('delay').textContent = 'Results reach this screen ' + (med / 1000).toFixed(1) + ' s after each test finishes (median of the last ' + sorted.length + ').';
+    }
+  }
+
+  // ---- looking back
+  const iso = (t) => new Date(t).toISOString();
+  function enterView(at) {
+    if (!S.view) S.view = { at, end: now(), ev: S.ev.slice(), keys: new Set(S.ev.map(key)), loading: false };
+    return S.view;
+  }
+  function goLive() {
+    S.view = null; S.drag = null;
+    updateUrl();
+    loadHistory().then(render);
+  }
+  function updateUrl() {
+    const q = new URLSearchParams(location.search);
+    if (S.view) q.set('at', iso(Math.round(S.view.at / 1000) * 1000)); else q.delete('at');
+    const qs = q.toString();
+    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+  }
+  let fetchTimer = null;
+  function wantData() {               // results for the window being shown, fetched once panning settles
+    clearTimeout(fetchTimer);
+    fetchTimer = setTimeout(async () => {
+      const v = S.view;
+      if (!v) return;
+      const end = v.end;
+      v.loading = true;
+      try {
+        const j = await (await fetch(withProbe('/api/history?minutes=' + (HISTORY_MIN - 15) + '&at=' + encodeURIComponent(iso(end).replace(/\.\d+Z$/, 'Z'))), { cache: 'no-store' })).json();
+        if (S.view !== v) return;
+        for (const e of j.events) if (!v.keys.has(key(e))) { v.keys.add(key(e)); v.ev.push(e); }
+        const lo = v.end - HISTORY_MIN * 60000, hi = v.end + 40 * 60000;   // keep the lookback, and what's near for panning back
+        v.ev = v.ev.filter((e) => { const w = ms(e.w); return w >= lo && w <= hi; }).sort((a, b) => ms(a.w) - ms(b.w));
+        v.keys = new Set(v.ev.map(key));
+      } catch (e) { /* the next pan retries */ }
+      v.loading = false;
+      render();
+    }, 150);
+  }
+  function setAt(at) {
+    const v = S.view, g = S.geo, win = g ? g.win : 15 * 60000;
+    const t = Math.min(at, now());
+    if (t < v.end - win || t > v.end) {            // keep the line on screen: move the window with it
+      v.end = Math.min(now(), t + win / 2);
+      wantData();
+    }
+    v.at = Math.max(v.end - win, Math.min(v.end, t));
+  }
+  function dragTo(clientX) {
+    const g = S.geo;
+    if (!g || !S.drag) return;
+    S.drag.x = clientX;
+    const x = clientX + S.drag.grab;
+    S.drag.edge = x < g.left ? -1 : x > g.left + g.W - 14 ? 1 : 0;
+    S.view.at = Math.max(S.view.end - g.win, Math.min(S.view.end, g.inv(x)));
+    S.drag.dirty = true;
+  }
+  function panTick(ts) {              // held past an edge, the window scrolls: faster the further past
+    const d = S.drag;
+    if (!d) return;
+    const dt = d.last ? Math.min(100, ts - d.last) : 0;
+    d.last = ts;
+    if (d.edge && S.view && S.geo) {
+      const g = S.geo, x = d.x + d.grab;
+      const over = d.edge < 0 ? g.left - x : x - (g.left + g.W - 14);
+      const speed = 20 + Math.min(Math.max(over, 0), 300) * 3;     // timeline ms per real ms
+      const v = S.view;
+      v.end = Math.min(now(), v.end + d.edge * speed * dt);
+      v.at = d.edge < 0 ? v.end - g.win : v.end;
+      wantData();
+      d.dirty = true;
+    }
+    if (d.dirty) { d.dirty = false; render(); }
+    requestAnimationFrame(panTick);
+  }
+  const lanesEl = $('lanes');
+  lanesEl.addEventListener('pointerdown', (e) => {
+    if (!S.geo || e.button > 0) return;
+    const onBar = e.target.closest('#since');
+    if (!onBar && !e.target.closest('.trace')) return;          // the labels are not a time
+    e.preventDefault();
+    const barX = onBar && S.markAt !== null ? S.geo.left + S.geo.X(S.markAt) : e.clientX;
+    enterView(S.markAt !== null ? S.markAt : now());
+    S.drag = { grab: barX - e.clientX, x: e.clientX, edge: 0, last: 0 };
+    try { lanesEl.setPointerCapture(e.pointerId); } catch (err) { /* no active pointer (synthetic or cancelled): drag still works */ }
+    dragTo(e.clientX);
+    requestAnimationFrame(panTick);
+  });
+  lanesEl.addEventListener('pointermove', (e) => { if (S.drag) dragTo(e.clientX); });
+  const endDrag = () => {
+    if (!S.drag) return;
+    S.drag = null;
+    const v = S.view;
+    if (v && now() - v.at < 1500 && now() - v.end < 1500) { goLive(); return; }   // dropped back on "now"
+    updateUrl(); wantData(); render();
+  };
+  lanesEl.addEventListener('pointerup', endDrag);
+  lanesEl.addEventListener('pointercancel', endDrag);
+  $('live-btn').addEventListener('click', goLive);
+  window.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'Escape' || e.key === 'End') { if (S.view) goLive(); return; }
+    const step = { ArrowLeft: -10000, ArrowRight: 10000, PageUp: -15 * 60000, PageDown: 15 * 60000 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const v = enterView(now());
+    setAt(v.at + step * (e.shiftKey && Math.abs(step) < 60000 ? 6 : 1));
+    if (now() - v.at < 1000) { goLive(); return; }
+    updateUrl(); render();
+  });
+
+  async function loadHistory() {
+    try {
+      const r = await fetch(withProbe('/api/history?minutes=' + HISTORY_MIN), { cache: 'no-store' });
+      const j = await r.json();
+      S.offset = Date.now() - j.now;
+      S.probe = j.label || j.probe;
+      $('all').hidden = !(j.boards > 1);
+      if (!params.get('voice')) S.voice = j.voice;
+      if (j.edge) S.edge = j.edge;
+      S.lastFail = j.last_fail || {};
+      const seen = new Set(j.events.map(key));
+      const extra = S.ev.filter((e) => !seen.has(key(e)));
+      S.ev = j.events.concat(extra).sort((a, b) => ms(a.w) - ms(b.w));
+      S.loaded = true;
+    } catch (e) { /* keep what we have; the stream retries */ }
+  }
+
+  function connect() {
+    const es = new EventSource(withProbe('/events'));
+    es.addEventListener('hello', (m) => {
+      const h = JSON.parse(m.data);
+      S.offset = Date.now() - h.now;
+      S.connected = true;
+      S.downSince = null;
+      loadHistory();                // fill anything missed while disconnected
+    });
+    es.onmessage = (m) => {
+      const e = JSON.parse(m.data);
+      S.ev.push(e);
+      if (e.l !== null && e.l !== undefined && (e.o === 'fail' || e.o === 'portal')) {
+        const k = String(e.l);
+        if (!S.lastFail[k] || e.w > S.lastFail[k]) S.lastFail[k] = e.w;
+      }
+      const lag = now() - ms(e.w);
+      if (lag >= 0 && lag < 60000) { S.delays.push(lag); if (S.delays.length > 50) S.delays.shift(); }
+    };
+    es.onerror = () => {
+      if (S.connected) { S.connected = false; S.downSince = now(); }
+    };
+  }
+
+  // ---- details tables
+  function table(id, head, rows) {
+    const tb = $(id);
+    tb.replaceChildren();
+    const tr = document.createElement('tr');
+    head.forEach(([label, num]) => { const th = document.createElement('th'); th.textContent = label; if (num) th.className = 'n'; tr.appendChild(th); });
+    const thead = document.createElement('thead'); thead.appendChild(tr); tb.appendChild(thead);
+    const body = document.createElement('tbody');
+    rows.forEach((row) => {
+      const r = document.createElement('tr');
+      row.forEach((cell, k) => {
+        const td = document.createElement('td');
+        if (head[k][1]) td.className = 'n';
+        if (cell && typeof cell === 'object' && 'dot' in cell) {
+          const s = document.createElement('span'); s.className = 'dot'; s.style.background = cell.dot; td.appendChild(s);
+          td.appendChild(document.createTextNode(cell.text));
+        } else if (cell && typeof cell === 'object' && 'flags' in cell) {
+          td.className = 'flags'; td.textContent = cell.flags;
+        } else td.textContent = cell === null || cell === undefined ? '–' : String(cell);
+        r.appendChild(td);
+      });
+      body.appendChild(r);
+    });
+    tb.appendChild(body);
+  }
+  const num = (v, dp = 1) => (v === null || v === undefined ? null : (Math.round(v * 10 ** dp) / 10 ** dp).toLocaleString());
+  const scoreDot = (v, good, bad) => (v === null || v === undefined ? COL.unk : v >= good ? COL.ok : v >= bad ? COL.warn : COL.fail);
+
+  async function loadSummary() {
+    try {
+      const j = await (await fetch(withProbe('/api/summary'), { cache: 'no-store' })).json();
+      if (j.pending) return;
+      $('sum-age').textContent = 'updated ' + hhmm(ms(j.generated)) + ', refreshed every 30 s';
+      const clients = Object.entries(j.clients);
+      table('t-clients', [['Client'], ['DHCP ok %', 1], ['DORA p50 ms', 1], ['DORA p95 ms', 1], ['DNS p50 ms', 1], ['DNS p95 ms', 1], ['Worst app'], ['Flags']],
+        clients.map(([id, c]) => {
+          const dd = c.dns.dhcp || c.dns.dhcp1 || {};          // dhcp1..N when DHCP hands out several resolvers
+          const worst = Object.entries(c.apps).sort((a, b) => a[1].apdex - b[1].apdex)[0];
+          const flags = [...c.dhcp.flags, ...c.intercepted.map((x) => 'intercepted:' + x), ...c.dot_fail.map((x) => 'dot-fail:' + x)];
+          return [{ dot: scoreDot(c.dhcp.ok_pct, 99, 90), text: id }, num(c.dhcp.ok_pct), num(c.dhcp.total_p50), num(c.dhcp.total_p95), num(dd.p50), num(dd.p95),
+            worst ? worst[0] + ' (' + worst[1].apdex.toFixed(2) + ')' : null, { flags: flags.join(', ') || '–' }];
+        }));
+      table('t-res', [['Resolver'], ['p50 ms', 1], ['p95 ms', 1], ['Timeouts %', 1]],
+        Object.entries(j.resolvers).sort().map(([r, v]) => [{ dot: v.timeout_pct === null ? COL.unk : v.timeout_pct < 1 ? COL.ok : v.timeout_pct < 10 ? COL.warn : COL.fail, text: /^dhcp\d*$/.test(r) ? r + ' (given to clients)' : r }, num(v.p50), num(v.p95), num(v.timeout_pct)]));
+      table('t-apps', [['App'], ['Apdex', 1], ['Clients', 1]],
+        Object.entries(j.apps).sort((a, b) => a[1].apdex - b[1].apdex).map(([a, v]) => [{ dot: scoreDot(v.apdex, 0.94, 0.85), text: a }, v.apdex.toFixed(2), v.clients]));
+      table('t-srv', [['Port'], ['Address'], ['Requests', 1], ['Statuses'], ['Sources', 1]],
+        Object.entries(j.servers).map(([id, v]) => [id, v.address, v.requests || 0,
+          Object.entries(v.statuses || {}).map(([s, n]) => s + ' ×' + n).join(', ') || '–', Object.keys(v.sources || {}).length]));
+      const sp = clients.flatMap(([id, c]) => Object.entries(c.speed).map(([p, v]) => ({ id, p, ...v }))).sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 6);
+      table('t-speed', [['When'], ['Client'], ['Provider'], ['Down Mb/s', 1], ['Up Mb/s', 1], ['Added latency ms', 1]],
+        sp.map((v) => [{ dot: v.outcome === 'ok' ? COL.ok : v.outcome === 'degraded' ? COL.warn : COL.fail, text: hhmm(ms(v.ts)) }, v.id, v.p, num(v.down, 0), num(v.up, 0), v.bloat === null || v.bloat === undefined ? null : num(Math.max(0, v.bloat))]));
+      const wf = Object.values(j.wifi || {})[0];
+      if (wf) {
+        $('wifi-h').textContent = 'Wi-Fi client: ' + wf.label;
+        const want = wf.want_ssid;
+        const monitoring = !want ? 'whichever network the laptop is on (no ssid set)'
+          : want + (wf.beats && wf.target_ssid !== want ? ' (not yet passed to the laptop)' : '')
+            + (wf.beats && wf.ssid !== want ? ' · the laptop is on ' + (wf.ssid || 'no network') : '');
+        const rows = [['Monitoring', monitoring]].concat(wf.beats ? [
+          ['Network', [wf.ssid, wf.channel ? 'channel ' + wf.channel : null, wf.security].filter(Boolean).join(' · ')],
+          ['Signal now', wf.rssi + ' dBm · noise ' + wf.noise + ' dBm · SNR ' + wf.snr + ' dB'],
+          ['Signal, last hour', 'median ' + wf.rssi_p50 + ' dBm · weakest ' + wf.rssi_min + ' dBm'],
+          ['Link rate', wf.tx_rate + ' Mb/s'],
+          ['Address', [wf.ip, 'gateway ' + wf.gateway, 'DNS ' + wf.dns_server].join(' · ')],
+          ['Gateway over Wi-Fi', 'p50 ' + num(wf.gw_p50) + ' ms · p95 ' + num(wf.gw_p95) + ' ms'],
+          ['DNS over Wi-Fi', 'p50 ' + num(wf.dns_p50) + ' ms'],
+          ['Checks passing', wf.ok_pct + '% of ' + wf.beats + ' in the last hour'],
+        ] : [['Status', 'no Wi-Fi results in the last hour']]);
+        if (wf.speed) rows.push(['Speed test', (wf.speed.down_mbps ?? '–') + ' down / ' + (wf.speed.up_mbps ?? '–') + ' up Mb/s · '
+          + (wf.speed.responsiveness_rpm ?? '–') + ' RPM · at ' + hhmm(ms(wf.speed.ts))]);
+        table('t-wifi', [['Measure'], ['Value']], rows);
+        table('t-wifi-apps', [['App'], ['OK %', 1], ['p50 ms', 1], ['Checks', 1]],
+          Object.entries(wf.apps || {}).map(([a, v]) => [{ dot: v.last === 'ok' ? COL.ok : v.last === 'degraded' ? COL.warn : COL.fail, text: a }, num(v.ok_pct), num(v.p50), v.n]));
+      }
+      if (!S.scrolled && location.hash.length > 1) {      // a link to #details lands there once the tables have height
+        S.scrolled = true;
+        const target = document.getElementById(location.hash.slice(1));
+        if (target) target.scrollIntoView();
+      }
+    } catch (e) { /* try again next round */ }
+  }
+
+  loadHistory().then(() => {
+    const at = params.get('at') ? Date.parse(params.get('at')) : NaN;     // a shared link to a moment
+    if (!isNaN(at) && at < now() - 1000) {
+      S.view = { at, end: Math.min(now(), at + 7.5 * 60000), ev: [], keys: new Set(), loading: true };
+      wantData();
+    }
+    render();
+  });
+  connect();
+  loadSummary();
+  setInterval(render, 1000);
+  setInterval(loadSummary, 30000);
+  window.addEventListener('resize', render);
+})();
+</script>
+</body>
+</html>

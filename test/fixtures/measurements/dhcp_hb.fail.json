@@ -1,0 +1,18 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XGEK0662CZBJYRW1MBP8",
+  "ts": "2026-11-18T20:00:07.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dhcp_hb",
+  "outcome": "fail",
+  "labels": {
+    "port": "c01",
+    "server": "none"
+  },
+  "metrics": {
+    "offers": 0
+  },
+  "error": "no DHCPOFFER within 3 s",
+  "agent_ver": "0.1.0"
+}

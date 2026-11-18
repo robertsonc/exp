@@ -1,0 +1,11 @@
+# Lint config for exp_common (py3.10 target). TRY004 etc. are intentionally not selected: the
+# public contract is "ValueError on invalid input" (see schema.py).
+target-version = "py310"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["E501", "S101", "S603", "S607", "S311"]
+
+[lint.per-file-ignores]
+"tests/*" = ["S", "B"]

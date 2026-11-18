@@ -1,0 +1,11 @@
+extend = "../ruff.toml"
+line-length = 130
+
+[lint]
+# Percent-format is the house style in these scripts (uniform, no f-string/format mix).
+# S603/S607: every subprocess call here uses an argv list (never a shell) with a fixed program
+# name resolved from PATH on purpose (git, docker, openssl).
+ignore = ["UP031", "S603", "S607", "B904", "S103", "UP022"]
+
+[lint.per-file-ignores]
+"vendor.py" = ["S310"]   # urlopen: URL scheme is validated https-only by load_lock()

@@ -1,0 +1,16 @@
+[Unit]
+Description=exp agent update rollback check
+Documentation=https://github.com/example-org/exp/blob/main/docs/spec/06-agent.md
+# Only meaningful while a self-update is waiting for confirmation (the marker is written by the agent).
+ConditionPathExists=/var/lib/exp/agent/pending.json
+
+[Service]
+Type=oneshot
+# A small stdlib-only checker installed beside (not inside) the versioned trees by install.sh and by the
+# agent's self-update: it exists from the first install and needs neither agent version to be runnable.
+# It does nothing unless a pending marker and a previous tree exist.
+ExecStart=/opt/exp/agent/rollback-check
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadWritePaths=/opt/exp /etc/exp /var/lib/exp /run/exp

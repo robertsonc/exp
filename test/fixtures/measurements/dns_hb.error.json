@@ -1,0 +1,16 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XPA3XZSSSJS20JHKZWT5",
+  "ts": "2026-11-18T20:00:13.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dns_hb",
+  "outcome": "error",
+  "labels": {
+    "port": "c01",
+    "resolver": "8.8.8.8",
+    "resolver_kind": "dhcp"
+  },
+  "error": "port c01 has no lease (no resolver known)",
+  "agent_ver": "0.1.0"
+}

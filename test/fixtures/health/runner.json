@@ -1,0 +1,34 @@
+{
+  "schema": "exp.health/1",
+  "status": "ok",
+  "detail": "",
+  "version": "0.1.0",
+  "uptime_s": 86000,
+  "metrics": {
+    "drills_active": 0,
+    "pullers": [
+      {
+        "source": "mist",
+        "last_ok": "2026-11-18T20:00:00.000Z",
+        "errors_1h": 0
+      },
+      {
+        "source": "ec",
+        "last_ok": null,
+        "errors_1h": 3
+      }
+    ]
+  },
+  "facts": {
+    "inventory": {
+      "ec": [
+        {
+          "nePk": "1.NE",
+          "interfaces": [
+            "wan0"
+          ]
+        }
+      ]
+    }
+  }
+}

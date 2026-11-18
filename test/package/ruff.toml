@@ -1,0 +1,8 @@
+extend = "../../ruff.toml"
+line-length = 130
+
+[lint]
+ignore = ["UP031", "S603", "S607", "B904", "S103", "UP022"]
+
+[lint.per-file-ignores]
+"*.py" = ["S101", "S105", "S106", "S108"]

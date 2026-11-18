@@ -1,0 +1,730 @@
+{
+  "beats/beats.json": {
+    "schema": "beats.schema.json",
+    "expected": "valid"
+  },
+  "beats/empty.json": {
+    "schema": "beats.schema.json",
+    "expected": "valid"
+  },
+  "configs/collector.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/collector.webhook-allow.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/dashboard.json": {
+    "schema": "dashboard.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/dashboard.tls-provided.json": {
+    "schema": "dashboard.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/probe.collector-null.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/probe.host-mode.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/probe.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/probe.test-options.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/probe.wifi.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/runner.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "valid"
+  },
+  "desired/all-in-one.json": {
+    "schema": "desired.schema.json",
+    "expected": "valid"
+  },
+  "desired/collector-host.json": {
+    "schema": "desired.schema.json",
+    "expected": "valid"
+  },
+  "desired/dashboard-host.json": {
+    "schema": "desired.schema.json",
+    "expected": "valid"
+  },
+  "desired/decommission.json": {
+    "schema": "desired.schema.json",
+    "expected": "valid"
+  },
+  "desired/probe-host.json": {
+    "schema": "desired.schema.json",
+    "expected": "valid"
+  },
+  "desired/rotate.json": {
+    "schema": "desired.schema.json",
+    "expected": "valid"
+  },
+  "desired/unknown-component-type.json": {
+    "schema": "desired.schema.json",
+    "expected": "valid"
+  },
+  "health/collector-fail.json": {
+    "schema": "health.schema.json",
+    "expected": "valid"
+  },
+  "health/collector.json": {
+    "schema": "health.schema.json",
+    "expected": "valid"
+  },
+  "health/dashboard.json": {
+    "schema": "health.schema.json",
+    "expected": "valid"
+  },
+  "health/probe-degraded.json": {
+    "schema": "health.schema.json",
+    "expected": "valid"
+  },
+  "health/probe.json": {
+    "schema": "health.schema.json",
+    "expected": "valid"
+  },
+  "health/runner.json": {
+    "schema": "health.schema.json",
+    "expected": "valid"
+  },
+  "incidents/again.json": {
+    "schema": "incident.schema.json",
+    "expected": "valid"
+  },
+  "incidents/back.json": {
+    "schema": "incident.schema.json",
+    "expected": "valid"
+  },
+  "incidents/down.json": {
+    "schema": "incident.schema.json",
+    "expected": "valid"
+  },
+  "incidents/flapping.json": {
+    "schema": "incident.schema.json",
+    "expected": "valid"
+  },
+  "incidents/folded.json": {
+    "schema": "incident.schema.json",
+    "expected": "valid"
+  },
+  "incidents/probe-silent.json": {
+    "schema": "incident.schema.json",
+    "expected": "valid"
+  },
+  "invalid/beats/bad-line.json": {
+    "schema": "beats.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/beats/bad-marker-kind.json": {
+    "schema": "beats.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/beats/triple.json": {
+    "schema": "beats.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/beats/value-4.json": {
+    "schema": "beats.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-bad-voice.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-ingest-over-limit.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-unknown-line.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-vm-public.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-webhook-allow-bad-entry.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-webhook-allow-too-many.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/dashboard-bad-tls-mode.json": {
+    "schema": "dashboard.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/dashboard-http-url.json": {
+    "schema": "dashboard.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/dashboard-missing-collectors.json": {
+    "schema": "dashboard.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-allow-shared-not-bool.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-apdex-min-over-1.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-bad-mode.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-bad-port-role.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-collector-http.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-collector-missing-pin.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-fingerprint-lowercase.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-iface-too-long.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-iface-traversal.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-missing-mgmt-iface.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-no-ports.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-ping-shell-injection.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-reserved-label.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-target-port-no-address.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-wrong-schema-const.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/runner-bad-puller-source.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/runner-missing-collector.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/action-arbitrary-command.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/artifact-url-foreign.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/bad-host-id.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/creds-non-string.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/creds-path-traversal.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/missing-decommission.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/probe-config-invalid-inside.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/restart-without-component.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/health/bad-status.json": {
+    "schema": "health.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/health/metrics-not-object.json": {
+    "schema": "health.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/incidents/bad-id-prefix.json": {
+    "schema": "incident.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/incidents/bad-kind.json": {
+    "schema": "incident.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/incidents/bad-line.json": {
+    "schema": "incident.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/incidents/bad-where-seg.json": {
+    "schema": "incident.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/incidents/missing-start.json": {
+    "schema": "incident.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/incidents/naive-start.json": {
+    "schema": "incident.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/manifest/bad-arch.json": {
+    "schema": "manifest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/manifest/bad-artifact-name.json": {
+    "schema": "manifest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/manifest/bad-component.json": {
+    "schema": "manifest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/manifest/bad-sha.json": {
+    "schema": "manifest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/manifest/no-artifacts.json": {
+    "schema": "manifest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/bad-ulid-forbidden-letter.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/bad-ulid-lowercase.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/bad-ulid-short.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/detail-array-257.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/detail-key-dash.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/detail-not-object.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/detail-string-1025.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/detail-string-control-char.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/detail-too-deep.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/duration-string.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/error-513.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/label-value-129.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/label-value-control-char.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/label-value-not-string.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/labels-21.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/lowercase-z-ts.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/metric-name-dash.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/metric-null-value.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/metric-string-value.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/metrics-51.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/missing-id.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/missing-probe.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/missing-ts.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/naive-ts.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/offset-ts.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/reserved-label-name.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/reserved-label-outcome.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/reserved-label-probe.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/reserved-label-site.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/reserved-label-target.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/slug-probe-uppercase.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/slug-site-underscore.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/target-257.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/test-not-ident.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/test-too-long.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/unknown-outcome.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/measurements/wrong-schema.json": {
+    "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/state/bad-line-key.json": {
+    "schema": "state.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/state/bad-line-state.json": {
+    "schema": "state.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/state/bad-seg.json": {
+    "schema": "state.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/state/bad-voice.json": {
+    "schema": "state.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/status/bad-in-use-by.json": {
+    "schema": "status.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/status/bad-reconcile-result.json": {
+    "schema": "status.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/status/bad-tls-fingerprint.json": {
+    "schema": "status.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/status/missing-agent.json": {
+    "schema": "status.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/status/negative-rate.json": {
+    "schema": "status.schema.json",
+    "expected": "invalid"
+  },
+  "manifest/manifest.json": {
+    "schema": "manifest.schema.json",
+    "expected": "valid"
+  },
+  "measurements/app.degraded.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/app.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/app.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dhcp.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dhcp.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dhcp_hb.degraded.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dhcp_hb.error.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dhcp_hb.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dhcp_hb.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dns.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dns.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dns_hb.alternate.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dns_hb.degraded.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dns_hb.error.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dns_hb.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/dns_hb.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/drill.failed.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/drill.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/ext_ec.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/ext_mist.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/gateway.degraded.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/gateway.error.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/gateway.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/gateway.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/minimal.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/path.degraded.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/path.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/ping.degraded.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/ping.error.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/ping.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/ping.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/probe_self.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/target_access.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/throughput.error.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/throughput.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/trace.control.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/trace.degraded.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/trace.error.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/trace.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/trace.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/wifi_hb.degraded.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/wifi_hb.error.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/wifi_hb.fail.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/wifi_hb.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "measurements/wifi_join.ok.json": {
+    "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "state/all-ok.json": {
+    "schema": "state.schema.json",
+    "expected": "valid"
+  },
+  "state/dns-fail.json": {
+    "schema": "state.schema.json",
+    "expected": "valid"
+  },
+  "state/gateway-fail.json": {
+    "schema": "state.schema.json",
+    "expected": "valid"
+  },
+  "state/no-data.json": {
+    "schema": "state.schema.json",
+    "expected": "valid"
+  },
+  "status/collector-host.json": {
+    "schema": "status.schema.json",
+    "expected": "valid"
+  },
+  "status/first-report-null-rates.json": {
+    "schema": "status.schema.json",
+    "expected": "valid"
+  },
+  "status/probe-host.json": {
+    "schema": "status.schema.json",
+    "expected": "valid"
+  },
+  "status/rolled-back.json": {
+    "schema": "status.schema.json",
+    "expected": "valid"
+  }
+}

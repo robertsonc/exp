@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+# Node / Cloudflare
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+wrangler.toml.local
+# Secrets & local config (never commit)
+secrets/
+# ...except the manager's secrets-handling SOURCE code (it holds no secrets; AES-GCM/token logic)
+!/manager/worker/src/secrets/
+*.key
+*.pem
+*.local.json
+config.json
+.env
+# OS
+.DS_Store
+.venv/
+node_modules/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/

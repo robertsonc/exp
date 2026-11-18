@@ -1,0 +1,428 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "desired.schema.json",
+  "title": "exp.desired/1",
+  "description": "Per-host desired state compiled by the manager (01 section 7). The agent treats it as the whole truth for the host. ETag is \"<host_id>:<version>\" (HTTP rule, not schema). Component config is validated against the per-type config schema; unknown component types pass with only the type checked. A decommission document has components=[] and decommission=true. creds never appear in config, logs or status.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.desired/1"
+    },
+    "host_id": {
+      "$ref": "common.schema.json#/$defs/h_id"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generated_at": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "org": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/slug"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "site": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/slug"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "timezone": {
+          "$ref": "common.schema.json#/$defs/timezone"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "common.schema.json#/$defs/semver"
+        },
+        "artifact": {
+          "$ref": "common.schema.json#/$defs/art_id"
+        },
+        "poll_interval_s": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 3600
+        },
+        "status_interval_s": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 300
+        }
+      },
+      "required": [
+        "version"
+      ]
+    },
+    "release": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "common.schema.json#/$defs/semver"
+        },
+        "manifest_url": {
+          "type": "string",
+          "pattern": "^/api/agent/v1/releases/[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?/manifest$"
+        },
+        "signature_url": {
+          "type": "string",
+          "pattern": "^/api/agent/v1/releases/[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?/manifest\\.sig$"
+        }
+      },
+      "required": [
+        "version",
+        "manifest_url",
+        "signature_url"
+      ]
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/component_known"
+          },
+          {
+            "$ref": "#/$defs/component_unknown"
+          }
+        ]
+      },
+      "maxItems": 16,
+      "uniqueItems": true
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      },
+      "maxItems": 32
+    },
+    "decommission": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
+    "host_id",
+    "version",
+    "generated_at",
+    "components",
+    "decommission"
+  ],
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/art_id"
+        },
+        "name": {
+          "$ref": "common.schema.json#/$defs/artifact_name"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^/api/agent/v1/artifacts/art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "sha256": {
+          "$ref": "common.schema.json#/$defs/sha256_hex"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483648
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "url",
+        "sha256",
+        "size"
+      ]
+    },
+    "creds": {
+      "type": "object",
+      "properties": {},
+      "description": "File name -> string content, written verbatim to /etc/exp/<type>/creds/<name> (root 0600). Names are plain file names: no slashes, no leading dot, so a manager bug cannot write outside the creds directory.",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 262144
+      },
+      "maxProperties": 16,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+      }
+    },
+    "component_known": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "probe"
+            },
+            "id": {
+              "$ref": "common.schema.json#/$defs/slug"
+            },
+            "component_id": {
+              "$ref": "common.schema.json#/$defs/cmp_id"
+            },
+            "version": {
+              "$ref": "common.schema.json#/$defs/semver"
+            },
+            "artifact": {
+              "$ref": "#/$defs/artifact"
+            },
+            "config": {
+              "$ref": "probe.config.schema.json"
+            },
+            "creds": {
+              "$ref": "#/$defs/creds"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "component_id",
+            "version",
+            "artifact",
+            "config",
+            "creds"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "collector"
+            },
+            "id": {
+              "$ref": "common.schema.json#/$defs/slug"
+            },
+            "component_id": {
+              "$ref": "common.schema.json#/$defs/cmp_id"
+            },
+            "version": {
+              "$ref": "common.schema.json#/$defs/semver"
+            },
+            "artifact": {
+              "$ref": "#/$defs/artifact"
+            },
+            "config": {
+              "$ref": "collector.config.schema.json"
+            },
+            "creds": {
+              "$ref": "#/$defs/creds"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "component_id",
+            "version",
+            "artifact",
+            "config",
+            "creds"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "dashboard"
+            },
+            "id": {
+              "$ref": "common.schema.json#/$defs/slug"
+            },
+            "component_id": {
+              "$ref": "common.schema.json#/$defs/cmp_id"
+            },
+            "version": {
+              "$ref": "common.schema.json#/$defs/semver"
+            },
+            "artifact": {
+              "$ref": "#/$defs/artifact"
+            },
+            "config": {
+              "$ref": "dashboard.config.schema.json"
+            },
+            "creds": {
+              "$ref": "#/$defs/creds"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "component_id",
+            "version",
+            "artifact",
+            "config",
+            "creds"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "runner"
+            },
+            "id": {
+              "$ref": "common.schema.json#/$defs/slug"
+            },
+            "component_id": {
+              "$ref": "common.schema.json#/$defs/cmp_id"
+            },
+            "version": {
+              "$ref": "common.schema.json#/$defs/semver"
+            },
+            "artifact": {
+              "$ref": "#/$defs/artifact"
+            },
+            "config": {
+              "$ref": "runner.config.schema.json"
+            },
+            "creds": {
+              "$ref": "#/$defs/creds"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "component_id",
+            "version",
+            "artifact",
+            "config",
+            "creds"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "speedtest"
+            },
+            "id": {
+              "$ref": "common.schema.json#/$defs/slug"
+            },
+            "component_id": {
+              "$ref": "common.schema.json#/$defs/cmp_id"
+            },
+            "version": {
+              "$ref": "common.schema.json#/$defs/semver"
+            },
+            "artifact": {
+              "$ref": "#/$defs/artifact"
+            },
+            "config": {
+              "type": "object"
+            },
+            "creds": {
+              "$ref": "#/$defs/creds"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "component_id",
+            "version",
+            "artifact",
+            "config",
+            "creds"
+          ],
+          "description": "speedtest (M6): config schema exp.speedtest.config/1 is added to shared/schemas at M6 start."
+        }
+      ]
+    },
+    "component_unknown": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "allOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            },
+            {
+              "not": {
+                "enum": [
+                  "probe",
+                  "collector",
+                  "dashboard",
+                  "runner",
+                  "speedtest"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "description": "A type this schema does not know: the agent ignores and reports it (01 section 7). Only the type is checked."
+    },
+    "action": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/act_id"
+            },
+            "type": {
+              "enum": [
+                "rotate_agent_secret",
+                "collect_diagnostics"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/act_id"
+            },
+            "type": {
+              "const": "restart_component"
+            },
+            "component_id": {
+              "$ref": "common.schema.json#/$defs/cmp_id"
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "component_id"
+          ]
+        }
+      ]
+    }
+  }
+}

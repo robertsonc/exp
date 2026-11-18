@@ -1,0 +1,31 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YFPKD1DM1VK4AG18X3BQ",
+  "ts": "2026-11-18T20:00:39.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "target_access",
+  "outcome": "ok",
+  "labels": {
+    "port": "s01",
+    "proto": "tcp"
+  },
+  "metrics": {
+    "requests": 120,
+    "errors": 0,
+    "p50_ms": 3.0
+  },
+  "detail": {
+    "top_clients": [
+      {
+        "ip": "10.1.0.31",
+        "n": 40
+      },
+      {
+        "ip": "10.1.0.32",
+        "n": 22
+      }
+    ]
+  },
+  "agent_ver": "0.1.0"
+}

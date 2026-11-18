@@ -1,0 +1,5 @@
+extend = "../../ruff.toml"
+line-length = 130
+
+[lint]
+ignore = ["UP031", "S603", "S607", "S104", "B904"]

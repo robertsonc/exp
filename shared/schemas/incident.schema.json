@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "incident.schema.json",
+  "title": "exp incident",
+  "description": "Incident (01 section 5). Has no schema field. folded_into is set when this incident was folded under a parent cause. Strings in facts are probe-influenced: renderers must escape them. line is a line_key or \"probe\" (the silent-probe incident, CR-wp2-incident-line-probe); State and Beats keep line_key.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "common.schema.json#/$defs/inc_id"
+    },
+    "probe": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "site": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "line": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/line_key"
+        },
+        {
+          "const": "probe"
+        }
+      ]
+    },
+    "kind": {
+      "enum": [
+        "down",
+        "again",
+        "flapping",
+        "back"
+      ]
+    },
+    "start": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "end": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/ts"
+        }
+      ]
+    },
+    "where": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "seg": {
+              "$ref": "common.schema.json#/$defs/seg"
+            },
+            "ip": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "common.schema.json#/$defs/ipv4"
+                }
+              ]
+            }
+          },
+          "required": [
+            "seg"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 512
+      },
+      "maxItems": 32
+    },
+    "folded_into": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/inc_id"
+        }
+      ]
+    },
+    "acked_by": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "maxLength": 128
+        }
+      ]
+    },
+    "link": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/https_url"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "probe",
+    "site",
+    "line",
+    "kind",
+    "start",
+    "end",
+    "facts",
+    "folded_into",
+    "acked_by"
+  ]
+}

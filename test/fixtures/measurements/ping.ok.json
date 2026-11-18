@@ -1,0 +1,18 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XW5KBGZSYBDVR2GQM4JM",
+  "ts": "2026-11-18T20:00:19.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "ping",
+  "outcome": "ok",
+  "target": "1.1.1.1",
+  "labels": {
+    "port": "c01"
+  },
+  "metrics": {
+    "rtt_ms": 10.2,
+    "loss_pct": 0
+  },
+  "agent_ver": "0.1.0"
+}

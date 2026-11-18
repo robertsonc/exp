@@ -1,0 +1,13 @@
+[Unit]
+Description=EXM collector: drop streamed results older than retention_days
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/exm-collector/bin/exm-collector prune
+User=exm-collector
+Group=exm-collector
+ReadWritePaths=/var/lib/exm-collector
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

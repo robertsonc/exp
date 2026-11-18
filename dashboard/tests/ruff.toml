@@ -1,0 +1,5 @@
+extend = "../../ruff.toml"
+line-length = 140
+
+[lint.per-file-ignores]
+"*.py" = ["S101", "S105", "S106", "S108", "S603", "S104", "B007"]

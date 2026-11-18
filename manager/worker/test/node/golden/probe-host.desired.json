@@ -1,0 +1,83 @@
+{
+  "schema": "exp.desired/1",
+  "host_id": "h_TV06149TSX39GPX3AGQX4AHQY4",
+  "org": {
+    "id": "default",
+    "name": "HPE Event NOC"
+  },
+  "site": {
+    "id": "hall-b",
+    "name": "Hall B",
+    "timezone": "America/Chicago"
+  },
+  "components": [
+    {
+      "type": "probe",
+      "id": "probe-a1",
+      "component_id": "cmp_TV06149TSX39GPX3AGQX4AHQY4",
+      "version": "0.1.0",
+      "artifact": {
+        "id": "art_RWQTZG5G3R314AGPX3AGQX4AHQ",
+        "name": "exp-probe-0.1.0-noarch.tar.gz",
+        "url": "/api/agent/v1/artifacts/art_RWQTZG5G3R314AGPX3AGQX4AHQ",
+        "sha256": "6832369b02b169791ef031b0cea2b5db8a931575e74a003a37a3a127211a349a",
+        "size": 1102
+      },
+      "config": {
+        "schema": "exp.probe.config/1",
+        "probe_id": "probe-a1",
+        "site": "hall-b",
+        "collector": {
+          "url": "https://10.32.98.25:8443",
+          "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6",
+          "fallback": []
+        },
+        "mode": "netns",
+        "mgmt_iface": "eno1",
+        "ports": [
+          {
+            "id": "c01",
+            "iface": "enp10s0f0",
+            "role": "client",
+            "vlan": null,
+            "dhcp": {
+              "hostname": "exp-hallb-c01",
+              "vendor_class": "exp-probe",
+              "client_id": "mac"
+            }
+          }
+        ],
+        "heartbeat": {
+          "interval_s": 10,
+          "gateway": true,
+          "dhcp": true,
+          "dns": true
+        },
+        "tests": {
+          "dhcp": {
+            "interval_s": 300,
+            "offer_collect_s": 3
+          }
+        }
+      },
+      "creds": {
+        "ingest_token": "expi_PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP"
+      }
+    }
+  ],
+  "actions": [],
+  "decommission": false,
+  "agent": {
+    "version": "0.1.0",
+    "artifact": "art_9C6KWERB0P2Z38ENV28FNW29FP",
+    "poll_interval_s": 30,
+    "status_interval_s": 60
+  },
+  "release": {
+    "version": "0.1.0",
+    "manifest_url": "/api/agent/v1/releases/0.1.0/manifest",
+    "signature_url": "/api/agent/v1/releases/0.1.0/manifest.sig"
+  },
+  "version": 1,
+  "generated_at": "2026-11-18T20:00:00.000Z"
+}

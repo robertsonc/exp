@@ -1,0 +1,24 @@
+{
+  "schema": "exp.dashboard.config/1",
+  "dashboard_id": "dash-main",
+  "title": "HPE EXP — Hall B",
+  "url": "https://10.32.98.30",
+  "listen": {
+    "https": "0.0.0.0:443",
+    "http_redirect": "0.0.0.0:80"
+  },
+  "voice": "sysadmin",
+  "timezone": "America/Chicago",
+  "auth": {
+    "sso": {
+      "manager_url": "https://exp.example.com",
+      "issuer": "exp-manager:default"
+    },
+    "session_hours": 12,
+    "local_users": true,
+    "noc_tokens": true
+  },
+  "tls": {
+    "mode": "self_signed"
+  }
+}

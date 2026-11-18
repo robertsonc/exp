@@ -1,0 +1,44 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XAK3S86Z5JATM52C3M7Z",
+  "ts": "2026-11-18T20:00:01.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "gateway",
+  "outcome": "ok",
+  "labels": {
+    "l0": "v",
+    "l1": "v",
+    "l2": "v",
+    "l3": "v",
+    "l4": "v",
+    "l5": "v",
+    "l6": "v",
+    "l7": "v",
+    "l8": "v",
+    "l9": "v",
+    "l10": "v",
+    "l11": "v",
+    "l12": "v",
+    "l13": "v",
+    "l14": "v",
+    "l15": "v",
+    "l16": "v",
+    "l17": "v",
+    "l18": "v",
+    "l19": "v",
+    "l20": "v"
+  },
+  "duration_ms": 0.58,
+  "metrics": {
+    "link_up": 1,
+    "rtt_ms": 0.58,
+    "loss_pct": 0,
+    "carrier_changes": 2
+  },
+  "detail": {
+    "gateway_ip": "10.1.0.1",
+    "gateway_mac": "00:00:5e:00:01:65"
+  },
+  "agent_ver": "0.1.0"
+}

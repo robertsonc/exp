@@ -1,0 +1,29 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YATB87HCG2CANCKKC07G",
+  "ts": "2026-11-18T20:00:34.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "wifi_hb",
+  "outcome": "ok",
+  "labels": {
+    "port": "w01",
+    "ssid": "ACME_CORP",
+    "band": "5"
+  },
+  "metrics": {
+    "link_up": 1,
+    "rssi_dbm": -52,
+    "noise_dbm": -92,
+    "snr_db": 40,
+    "tx_rate_mbps": 243,
+    "channel": 108,
+    "gw_rtt_ms": 2.4
+  },
+  "detail": {
+    "bssid": "aa:bb:cc:00:11:22",
+    "security": "wpa3-sae",
+    "on_target": true
+  },
+  "agent_ver": "0.1.0"
+}

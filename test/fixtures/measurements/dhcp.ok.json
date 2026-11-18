@@ -1,0 +1,32 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3Y02K35JT1VBHSY858JM4",
+  "ts": "2026-11-18T20:00:23.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dhcp",
+  "outcome": "ok",
+  "labels": {
+    "port": "c01",
+    "server": "10.1.0.2"
+  },
+  "duration_ms": 45.0,
+  "metrics": {
+    "discover_offer_ms": 20.0,
+    "request_ack_ms": 25.0,
+    "total_ms": 45.0,
+    "lease_s": 598,
+    "offers": 1
+  },
+  "detail": {
+    "ip": "10.1.0.31",
+    "router": "10.1.0.1",
+    "dns": [
+      "8.8.8.8"
+    ],
+    "options": {
+      "subnet_mask": "255.255.255.0"
+    }
+  },
+  "agent_ver": "0.1.0"
+}

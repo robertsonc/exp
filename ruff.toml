@@ -1,0 +1,12 @@
+target-version = "py310"
+line-length = 110
+extend-exclude = ["reference", ".venv", "node_modules", "manager"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+
+[lint.per-file-ignores]
+"**/tests/**" = ["S101", "S105", "S106", "S108"]
+"**/test_*.py" = ["S101", "S105", "S106", "S108"]
+"**/conftest.py" = ["S101"]
+"test/**" = ["S101", "S105", "S106", "S108"]

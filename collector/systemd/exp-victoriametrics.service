@@ -1,0 +1,51 @@
+[Unit]
+Description=exp VictoriaMetrics (single node, loopback only) for collector @VERSION@
+After=network.target
+
+[Service]
+Type=simple
+User=exp-vm
+Group=exp-vm
+# Arguments are derived from the validated collector config by `exp-collector vm-exec`, which
+# execs the vendored binary with an argv list (never a shell; nothing from config is interpolated
+# into this unit):
+#   -httpListenAddr=127.0.0.1:8428 -retentionPeriod=<metrics_days>d
+#   -storageDataPath=@STATE@/vm -memory.allowedPercent=<pct>
+#   -search.maxQueryDuration=10s -search.maxSeries=500
+ExecStart=@PREFIX@/bin/exp-collector vm-exec --config @CONFIG@ --state-dir @STATE@
+Restart=always
+RestartSec=2
+TimeoutStopSec=60
+# The agent creates @STATE@/vm owned by exp-vm (0700) before the first start.
+ReadWritePaths=@STATE@/vm
+UMask=0077
+LimitNOFILE=65536
+# Hardening: VM only ever talks to loopback.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

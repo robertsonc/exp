@@ -1,0 +1,24 @@
+# exp-probe: DHCP lease holder for client port %i, inside its namespace (busybox udhcpc -f -R).
+# `exp-probe lease` execs udhcpc, so SIGTERM from systemd reaches udhcpc, which sends DHCPRELEASE (-R).
+# Instance = port id; the hook writes /run/exp/probe/%i/lease.json.
+[Unit]
+Description=exp probe: DHCP lease holder for port %i (v@VERSION@)
+Requires=exp-probe-netns.service
+After=exp-probe-netns.service
+PartOf=exp-probe-netns.service
+
+[Service]
+Type=simple
+ExecStart=@PREFIX@/bin/exp-probe lease %i --config @CONFIG@
+RuntimeDirectory=exp/probe
+RuntimeDirectoryPreserve=yes
+Restart=always
+RestartSec=2
+TimeoutStopSec=15
+KillMode=mixed
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,51 @@
+{
+  "schema": "exp.manifest/1",
+  "version": "0.1.0",
+  "created": "2026-11-18T19:00:00.000Z",
+  "min_agent_version": "0.1.0",
+  "artifacts": [
+    {
+      "name": "../../exp-agent.tar.gz",
+      "component": "agent",
+      "arch": "noarch",
+      "sha256": "df2e85db3ba805808404868229ae0fa1bcbacc631e2adb2b574675525eff74c7",
+      "size": 800000
+    },
+    {
+      "name": "exp-probe-0.1.0-noarch.tar.gz",
+      "component": "probe",
+      "arch": "noarch",
+      "sha256": "254b98ffdf52741f4c45027970580d90d6040105584a764d34570043bb886c33",
+      "size": 800001
+    },
+    {
+      "name": "exp-collector-0.1.0-amd64.tar.gz",
+      "component": "collector",
+      "arch": "amd64",
+      "sha256": "943c05bf74ad2bc5e4cf32ca6d30d8831b886fcd9d928547f783d730a76b5a75",
+      "size": 800002
+    },
+    {
+      "name": "exp-collector-0.1.0-arm64.tar.gz",
+      "component": "collector",
+      "arch": "arm64",
+      "sha256": "943c05bf74ad2bc5e4cf32ca6d30d8831b886fcd9d928547f783d730a76b5a75",
+      "size": 800003
+    },
+    {
+      "name": "exp-dashboard-0.1.0-noarch.tar.gz",
+      "component": "dashboard",
+      "arch": "noarch",
+      "sha256": "50ffd62ace06db27dd2fd06e4afa3897d40f2877720d3dd4f3315e0cb9af76e9",
+      "size": 800004
+    },
+    {
+      "name": "exp-runner-0.1.0-noarch.tar.gz",
+      "component": "runner",
+      "arch": "noarch",
+      "sha256": "feac1e1bf9dc9a435423772504a5848aeb58bb9302d81b634784c3c8c5263ec3",
+      "size": 800005
+    }
+  ],
+  "notes_url": "https://github.com/example-org/exp/releases/tag/v0.1.0"
+}

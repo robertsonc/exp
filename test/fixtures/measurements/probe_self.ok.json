@@ -1,0 +1,22 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YGNVS4ZG6BS1T6QYHMGD",
+  "ts": "2026-11-18T20:00:40.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "probe_self",
+  "outcome": "ok",
+  "metrics": {
+    "spool_depth": 0,
+    "spool_bytes": 0,
+    "push_lag_s": 0.4,
+    "clock_offset_ms": 1.1,
+    "cpu_pct": 7.5,
+    "rss_mb": 96,
+    "dropped_total": 0
+  },
+  "detail": {
+    "ntp_synced": true
+  },
+  "agent_ver": "0.1.0"
+}

@@ -1,0 +1,24 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YEQBJN07PQ4GYV96BG5X",
+  "ts": "2026-11-18T20:00:38.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "wifi_join",
+  "outcome": "ok",
+  "labels": {
+    "port": "w01",
+    "ssid": "ACME_CORP"
+  },
+  "metrics": {
+    "assoc_ms": 120.0,
+    "auth_ms": 45.0,
+    "dhcp_ms": 210.0,
+    "total_ms": 375.0
+  },
+  "detail": {
+    "bssid": "aa:bb:cc:00:11:22",
+    "reason": "roam"
+  },
+  "agent_ver": "0.1.0"
+}

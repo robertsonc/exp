@@ -1,0 +1,17 @@
+[Unit]
+Description=EXM probe: test server on port %i (Marvis Minis target)
+Documentation=file:///opt/exm/README.md
+After=exm-netns.service
+BindsTo=exm-netns.service
+
+[Service]
+Type=simple
+# Claims the fixed address (refusing if another host answers for it), then serves
+# HTTP/HTTPS inside the port's namespace. A refused claim exits non-zero and is
+# retried every 30 s, so freeing the address lets it come up on its own.
+ExecStart=/opt/exm/bin/exm server-daemon %i
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=exm-netns.service

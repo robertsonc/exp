@@ -1,0 +1,29 @@
+{
+  "schema": "exp.desired/1",
+  "host_id": "h_TV06149TSX39GPX3AGQX4AHQY4",
+  "org": {
+    "id": "default",
+    "name": "HPE Event NOC"
+  },
+  "site": {
+    "id": "hall-b",
+    "name": "Hall B",
+    "timezone": "America/Chicago"
+  },
+  "components": [],
+  "actions": [],
+  "decommission": true,
+  "agent": {
+    "version": "0.1.0",
+    "artifact": "art_9C6KWERB0P2Z38ENV28FNW29FP",
+    "poll_interval_s": 30,
+    "status_interval_s": 60
+  },
+  "release": {
+    "version": "0.1.0",
+    "manifest_url": "/api/agent/v1/releases/0.1.0/manifest",
+    "signature_url": "/api/agent/v1/releases/0.1.0/manifest.sig"
+  },
+  "version": 1,
+  "generated_at": "2026-11-18T20:00:00.000Z"
+}

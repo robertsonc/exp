@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.exm.wifi</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__HOME__/exm-wifi/exm-wifi.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>EXM_WIFI_PROBE</key>
+    <string>__PROBE__</string>
+    <key>EXM_WIFI_IFACE</key>
+    <string>__IFACE__</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>__HOME__/exm-wifi/agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/exm-wifi/agent.log</string>
+</dict>
+</plist>

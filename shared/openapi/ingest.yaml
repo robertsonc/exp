@@ -1,0 +1,296 @@
+# exp OpenAPI contract (WP-0). Source of truth: docs/spec/01-contracts.md
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: exp ingest API (probe to collector)
+  version: 1.0.0
+  description: '01-contracts.md section 4. Base path `/ingest/v1`. A probe pushes NDJSON batches of `exp.measurement/1`
+    records authenticated with its per-probe ingest token (`expi_`). The collector durably stores to SQLite
+    even when VictoriaMetrics is down.
+
+
+    Processing order per batch: authenticate -> probe identity -> per line: parse, validate, identity
+    binding (`probe` = token identity, `site` = configured site), time window, dedupe on `(probe,id)`,
+    store.
+
+
+    Errors use the envelope `{"error":{"code","message","details"}}`.'
+  license:
+    name: Proprietary
+    identifier: LicenseRef-exp
+servers:
+- url: https://{collector}:8443/ingest/v1
+  description: Collector (TLS pinned by probes)
+  variables:
+    collector:
+      default: collector.local
+tags:
+- name: ingest
+security:
+- ingestToken: []
+paths:
+  /measurements:
+    post:
+      operationId: ingestMeasurements
+      summary: Push a batch of measurements
+      description: 'Limits: at most 1000 lines; at most 4 MiB on the wire; at most 16 MiB decompressed
+        (reading stops beyond that and the request fails with 413); each line at most 64 KiB.
+
+
+        Time window: `ts` more than 60 s in the future is rejected per line with `ts_future`; older than
+        the record retention is `ts_too_old`. Older-but-valid timestamps are normal (spool backfill).'
+      tags:
+      - ingest
+      parameters:
+      - name: Content-Encoding
+        in: header
+        required: false
+        description: Optional gzip compression of the body.
+        schema:
+          enum:
+          - gzip
+          - identity
+      - name: User-Agent
+        in: header
+        required: false
+        description: '`exp-probe/<version>`.'
+        schema:
+          type: string
+          maxLength: 128
+          pattern: ^exp-probe/.+$
+      requestBody:
+        required: true
+        description: 'Limits: at most 1000 lines; at most 4 MiB on the wire; at most 16 MiB decompressed
+          (reading stops beyond that and the request fails with 413); each line at most 64 KiB.'
+        content:
+          application/x-ndjson:
+            schema:
+              type: string
+              description: 'NDJSON: one `exp.measurement/1` JSON object per line, UTF-8, `\n` separated.'
+              maxLength: 16777216
+            x-exp-line-schema:
+              $ref: ../schemas/measurement.schema.json
+            x-exp-limits:
+              max_lines: 1000
+              max_wire_bytes: 4194304
+              max_decompressed_bytes: 16777216
+              max_line_bytes: 65536
+      x-exp-line-error-codes:
+      - invalid_json
+      - line_too_long
+      - invalid_measurement
+      - identity_mismatch
+      - ts_future
+      - ts_too_old
+      responses:
+        '200':
+          description: 'Processed. Per-line results: the probe deletes accepted, duplicate and rejected
+            lines from its spool and logs the rejects.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResult'
+        '400':
+          description: Not NDJSON, more than 1000 lines, or corrupt gzip. The probe logs, splits the batch
+            and retries.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                not_ndjson:
+                  value:
+                    error:
+                      code: not_ndjson
+                      message: not ndjson
+                      details: {}
+                too_many_lines:
+                  value:
+                    error:
+                      code: too_many_lines
+                      message: too many lines
+                      details: {}
+                bad_gzip:
+                  value:
+                    error:
+                      code: bad_gzip
+                      message: bad gzip
+                      details: {}
+        '401':
+          description: Missing or invalid token. The probe stops pushing, reports health `auth_failed`,
+            retries every 60 s.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_token:
+                  value:
+                    error:
+                      code: invalid_token
+                      message: invalid token
+                      details: {}
+        '413':
+          description: Over 4 MiB on the wire or 16 MiB decompressed. The probe splits the batch.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                payload_too_large:
+                  value:
+                    error:
+                      code: payload_too_large
+                      message: payload too large
+                      details: {}
+                decompressed_too_large:
+                  value:
+                    error:
+                      code: decompressed_too_large
+                      message: decompressed too large
+                      details: {}
+        '415':
+          description: Content-Type is not application/x-ndjson.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                unsupported_media_type:
+                  value:
+                    error:
+                      code: unsupported_media_type
+                      message: unsupported media type
+                      details: {}
+        '429':
+          description: Backpressure. Wait `Retry-After` seconds.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                rate_limited:
+                  value:
+                    error:
+                      code: rate_limited
+                      message: rate limited
+                      details: {}
+          headers:
+            Retry-After: &id001
+              description: Seconds to wait before retrying.
+              schema:
+                type: integer
+                minimum: 0
+                maximum: 3600
+        '503':
+          description: Collector unavailable. Exponential backoff 1 s to 60 s with jitter.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                unavailable:
+                  value:
+                    error:
+                      code: unavailable
+                      message: unavailable
+                      details: {}
+          headers:
+            Retry-After: *id001
+components:
+  securitySchemes:
+    ingestToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expi_<43 base64url chars>
+      description: Per-probe ingest token, prefix `expi_` (01-contracts.md section 1). Stored server-side
+        as sha256 hex; compared in constant time. The token identity binds `probe`; `site` is the configured
+        site.
+    dashboardToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expd_<43 base64url chars>
+      description: Per-dashboard dashboard-to-collector token, prefix `expd_`.
+    agentSecret:
+      type: http
+      scheme: bearer
+      bearerFormat: expa_<43 base64url chars>
+      description: Per-agent secret, prefix `expa_`.
+    accessJwt:
+      type: apiKey
+      in: header
+      name: Cf-Access-Jwt-Assertion
+      description: Cloudflare Access JWT. The Worker verifies RS256 signature (team JWKS), `aud`, `iss`,
+        `exp`/`nbf` on every admin request; missing or invalid -> 401. `Cf-Access-Authenticated-User-Email`
+        is never trusted alone.
+  schemas:
+    IngestResult:
+      type: object
+      properties:
+        accepted:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: Lines stored.
+        duplicates:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: Lines whose (probe,id) was already stored.
+        rejected:
+          type: array
+          items:
+            $ref: '#/components/schemas/RejectedLine'
+          maxItems: 1000
+        server_time:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - accepted
+      - duplicates
+      - rejected
+      - server_time
+      additionalProperties: true
+      examples:
+      - accepted: 997
+        duplicates: 2
+        rejected:
+        - line: 41
+          id: 01JD0000000000000000000000
+          error:
+            code: identity_mismatch
+            message: probe 'x' does not match token identity
+        server_time: '2026-11-18T20:00:01.002Z'
+    RejectedLine:
+      type: object
+      properties:
+        line:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: 1-based line number within the batch.
+        id:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ulid
+        error:
+          type: object
+          properties:
+            code:
+              enum:
+              - invalid_json
+              - line_too_long
+              - invalid_measurement
+              - identity_mismatch
+              - ts_future
+              - ts_too_old
+            message:
+              type: string
+              maxLength: 512
+          required:
+          - code
+          - message
+          additionalProperties: true
+      required:
+      - line
+      - error
+      additionalProperties: true
