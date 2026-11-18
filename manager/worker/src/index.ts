@@ -9,7 +9,10 @@ import type { AppBindings, Env } from "./env";
 import { ApiError, ConfigError, errorResponse, notFound } from "./errors";
 import { renderInstallSh } from "./install/install";
 import { UI_ASSETS, UI_HEADERS } from "../.generated/ui-assets";
-import { uiFallback } from "./ui/embedded";
+import { type EmbeddedAssets, type HeaderRules, uiFallback } from "./ui/embedded";
+
+/** The embedded UI (empty in the default build). An object so tests can substitute a fixture. */
+export const embeddedUi: { assets: EmbeddedAssets; rules: HeaderRules } = { assets: UI_ASSETS, rules: UI_HEADERS };
 
 export const app = new Hono<AppBindings>();
 
@@ -39,7 +42,7 @@ app.notFound(async (c) => {
   // anything outside the API is the SPA (served from static assets); the API itself answers 404 JSON
   if (!p.startsWith("/api/") && p !== "/install.sh" && p !== "/healthz") {
     // ASSETS binding, or (deploy.sh --embed-ui: no binding) the UI bundled into the script; the map is empty in the default build
-    const ui = uiFallback(c.env, c.req.raw, UI_ASSETS, UI_HEADERS);
+    const ui = uiFallback(c.env, c.req.raw, embeddedUi.assets, embeddedUi.rules);
     if (ui) return ui;
   }
   return errorResponse(notFound("no such path"));
