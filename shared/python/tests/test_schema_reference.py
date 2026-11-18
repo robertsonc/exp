@@ -3,7 +3,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from exp_common.schema import Measurement, measure  # noqa: E402
+from exp_common.schema import Measurement, measure
 
 
 def test_happy_path_and_series():
@@ -42,7 +42,8 @@ def test_rejections():
     assert _rejected(duration_ms=10 ** 400)              # giant int duration
     for bad in (("BAD ID", "dns", "ok"), ("p", "dns", "nope"), ("p", "bad test", "ok")):
         try:
-            measure(*bad); assert False, bad
+            measure(*bad)
+            raise AssertionError(bad)
         except ValueError:
             pass
 

@@ -1,0 +1,28 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3Y8VV82694FSCWG5CKB6A",
+  "ts": "2026-11-18T20:00:32.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "path",
+  "outcome": "ok",
+  "labels": {
+    "port": "c01",
+    "peer": "s01",
+    "proto": "udp"
+  },
+  "metrics": {
+    "rtt_ms": 1.2,
+    "jitter_ms": 0.3,
+    "loss_fwd_pct": 0.0,
+    "loss_rev_pct": 0.0,
+    "mos": 4.4,
+    "pqi": 98.0,
+    "experience": 4.5
+  },
+  "detail": {
+    "loss_pattern": "none",
+    "dscp": 0
+  },
+  "agent_ver": "0.1.0"
+}

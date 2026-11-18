@@ -1,0 +1,88 @@
+{
+  "schema": "exp.state/1",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "at": "2026-11-18T20:06:00.000Z",
+  "live": true,
+  "newest_s": 3,
+  "verdict": {
+    "severity": "ok",
+    "headline": "Everything looks good.",
+    "sub": "",
+    "voice": "sysadmin",
+    "where": null
+  },
+  "lines": [
+    {
+      "key": "network",
+      "label": "Network",
+      "state": "ok",
+      "word": "ok",
+      "since": null,
+      "detail": "",
+      "last_outage": null,
+      "flaps": 0
+    },
+    {
+      "key": "dhcp",
+      "label": "DHCP",
+      "state": "ok",
+      "word": "ok",
+      "since": null,
+      "detail": "",
+      "last_outage": null,
+      "flaps": 0
+    },
+    {
+      "key": "dns",
+      "label": "DNS",
+      "state": "ok",
+      "word": "ok",
+      "since": null,
+      "detail": "",
+      "last_outage": null,
+      "flaps": 0
+    },
+    {
+      "key": "internet",
+      "label": "Internet",
+      "state": "ok",
+      "word": "ok",
+      "since": null,
+      "detail": "",
+      "last_outage": null,
+      "flaps": 0
+    },
+    {
+      "key": "apps",
+      "label": "Apps",
+      "state": "ok",
+      "word": "ok",
+      "since": null,
+      "detail": "",
+      "last_outage": null,
+      "flaps": 0
+    },
+    {
+      "key": "wifi",
+      "label": "Wi-Fi",
+      "state": "ok",
+      "word": "ok",
+      "since": null,
+      "detail": "",
+      "last_outage": null,
+      "flaps": 0
+    },
+    {
+      "key": "path",
+      "label": "Path",
+      "state": "ok",
+      "word": "ok",
+      "since": null,
+      "detail": "",
+      "last_outage": null,
+      "flaps": 0
+    }
+  ],
+  "failing": []
+}

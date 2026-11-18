@@ -1,0 +1,24 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YKKK14F3T8Y7AYVPP5JZ",
+  "ts": "2026-11-18T20:00:43.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "drill",
+  "outcome": "ok",
+  "labels": {
+    "run": "run_01M7R3X9G069FVJXC5YPJF5ZVZ",
+    "phase": "start",
+    "type": "local.dns_block"
+  },
+  "metrics": {
+    "ok": 1
+  },
+  "detail": {
+    "target": "c01",
+    "params": {
+      "port": "c01"
+    }
+  },
+  "agent_ver": "0.1.0"
+}

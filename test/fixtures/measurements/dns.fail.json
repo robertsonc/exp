@@ -1,0 +1,22 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3Y30BJAJA91F5T4AJPM7E",
+  "ts": "2026-11-18T20:00:26.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dns",
+  "outcome": "fail",
+  "labels": {
+    "port": "c01",
+    "resolver": "8.8.8.8"
+  },
+  "target": "www.google.com",
+  "metrics": {
+    "answers": 0
+  },
+  "detail": {
+    "name": "www.google.com"
+  },
+  "error": "no answers (24 timeouts, 0 errors)",
+  "agent_ver": "0.1.0"
+}

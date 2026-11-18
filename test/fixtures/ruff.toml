@@ -1,0 +1,6 @@
+# Dev-tooling fixtures: correctness lints only (the root ruff.toml, when present, governs product code).
+target-version = "py310"
+line-length = 300
+
+[lint]
+select = ["E", "F", "W", "B"]

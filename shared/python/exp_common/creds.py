@@ -14,7 +14,7 @@ import os
 import re
 import stat
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class CredentialMissing(CredentialError):
     """The named credential file does not exist."""
 
 
-def credentials_dir(directory: Union[str, Path, None] = None) -> Path:
+def credentials_dir(directory: str | Path | None = None) -> Path:
     d = directory if directory is not None else os.environ.get("CREDENTIALS_DIRECTORY")
     if not d:
         raise CredentialError("no credentials directory: CREDENTIALS_DIRECTORY is not set "
@@ -38,7 +38,7 @@ def credentials_dir(directory: Union[str, Path, None] = None) -> Path:
     return Path(d)
 
 
-def read_credential_bytes(name: str, directory: Union[str, Path, None] = None,
+def read_credential_bytes(name: str, directory: str | Path | None = None,
                           max_bytes: int = MAX_CREDENTIAL_BYTES,
                           require_private: bool = False) -> bytes:
     """Raw bytes of credential `name` with one trailing b"\\n" stripped.
@@ -91,7 +91,7 @@ def read_credential_bytes(name: str, directory: Union[str, Path, None] = None,
     return data
 
 
-def read_credential(name: str, directory: Union[str, Path, None] = None,
+def read_credential(name: str, directory: str | Path | None = None,
                     max_bytes: int = MAX_CREDENTIAL_BYTES, require_private: bool = False) -> str:
     """Credential as UTF-8 text, one trailing newline stripped."""
     data = read_credential_bytes(name, directory, max_bytes, require_private)
@@ -101,7 +101,7 @@ def read_credential(name: str, directory: Union[str, Path, None] = None,
         raise CredentialError(f"credential {name!r} is not valid UTF-8") from exc
 
 
-def read_credential_json(name: str, directory: Union[str, Path, None] = None,
+def read_credential_json(name: str, directory: str | Path | None = None,
                          max_bytes: int = MAX_CREDENTIAL_BYTES) -> Any:
     """Credential parsed as JSON. Parse errors report position only, never content."""
     text = read_credential(name, directory, max_bytes)
@@ -114,7 +114,7 @@ def read_credential_json(name: str, directory: Union[str, Path, None] = None,
         raise CredentialError(f"credential {name!r} is nested too deeply") from None
 
 
-def has_credential(name: str, directory: Union[str, Path, None] = None) -> bool:
+def has_credential(name: str, directory: str | Path | None = None) -> bool:
     try:
         read_credential_bytes(name, directory)
     except CredentialError:
@@ -122,7 +122,7 @@ def has_credential(name: str, directory: Union[str, Path, None] = None) -> bool:
     return True
 
 
-def optional_credential(name: str, directory: Union[str, Path, None] = None) -> Optional[str]:
+def optional_credential(name: str, directory: str | Path | None = None) -> str | None:
     """Value, or None only when the file is simply absent; unsafe/unreadable files still raise."""
     try:
         return read_credential(name, directory)

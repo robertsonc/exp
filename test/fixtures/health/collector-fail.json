@@ -1,0 +1,11 @@
+{
+  "schema": "exp.health/1",
+  "status": "fail",
+  "detail": "victoriametrics down; storing to SQLite only",
+  "version": "0.1.0",
+  "uptime_s": 60,
+  "metrics": {
+    "vm_up": 0
+  },
+  "facts": {}
+}

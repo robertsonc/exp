@@ -16,16 +16,16 @@ import os
 import secrets
 import stat
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
-__all__ = ["AtomicWriteError", "atomic_write", "atomic_write_text", "atomic_write_json"]
+__all__ = ["AtomicWriteError", "atomic_write", "atomic_write_json", "atomic_write_text"]
 
 
 class AtomicWriteError(OSError):
     """The write was refused or failed; the target is untouched."""
 
 
-def atomic_write(path: Union[str, Path], data: Union[bytes, str], mode: int = 0o644) -> None:
+def atomic_write(path: str | Path, data: bytes | str, mode: int = 0o644) -> None:
     if isinstance(data, str):
         data = data.encode("utf-8")
     elif not isinstance(data, (bytes, bytearray)):
@@ -92,11 +92,11 @@ def atomic_write(path: Union[str, Path], data: Union[bytes, str], mode: int = 0o
         os.close(dfd)
 
 
-def atomic_write_text(path: Union[str, Path], text: str, mode: int = 0o644) -> None:
+def atomic_write_text(path: str | Path, text: str, mode: int = 0o644) -> None:
     atomic_write(path, text.encode("utf-8"), mode)
 
 
-def atomic_write_json(path: Union[str, Path], obj: Any, mode: int = 0o644, indent: Union[int, None] = 2,
+def atomic_write_json(path: str | Path, obj: Any, mode: int = 0o644, indent: int | None = 2,
                       sort_keys: bool = True) -> None:
     """Write `obj` as UTF-8 JSON plus a trailing newline. NaN/Infinity are refused."""
     text = json.dumps(obj, indent=indent, sort_keys=sort_keys, ensure_ascii=False, allow_nan=False)

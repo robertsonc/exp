@@ -1,0 +1,80 @@
+{
+  "schema": "exp.state/1",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "at": "2026-11-18T20:06:00.000Z",
+  "live": true,
+  "newest_s": 3,
+  "verdict": {
+    "severity": "fail",
+    "headline": "Nobody can reach the gateway.",
+    "sub": "Gateway 10.1.0.1 isn't answering on 12 of 12 ports since 22:00:21.",
+    "voice": "angry",
+    "where": {
+      "seg": "gateway",
+      "label": "Gateway",
+      "ip": "10.1.0.1",
+      "explain": "Nobody gets to 10.1.0.1, wired or wireless. It's the gateway or the cable to it.",
+      "chain": [
+        {
+          "seg": "ports",
+          "state": "ok"
+        },
+        {
+          "seg": "switch",
+          "state": "ok"
+        },
+        {
+          "seg": "gateway",
+          "state": "fail"
+        },
+        {
+          "seg": "edge",
+          "state": "unknown"
+        },
+        {
+          "seg": "isp",
+          "state": "unknown"
+        },
+        {
+          "seg": "dns",
+          "state": "unknown"
+        },
+        {
+          "seg": "apps",
+          "state": "unknown"
+        }
+      ]
+    }
+  },
+  "lines": [
+    {
+      "key": "network",
+      "label": "Network",
+      "state": "fail",
+      "word": "unstable",
+      "since": "2026-11-18T03:00:21.000Z",
+      "detail": "10.1.0.1 not answering (12 of 12 ports)",
+      "last_outage": null,
+      "flaps": 0
+    }
+  ],
+  "failing": [
+    {
+      "line": "network",
+      "items": [
+        {
+          "text": "no reply from 10.1.0.1",
+          "count": 12,
+          "ports": [
+            "c01",
+            "c02"
+          ],
+          "tests": [
+            "gateway"
+          ]
+        }
+      ]
+    }
+  ]
+}

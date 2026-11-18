@@ -32,9 +32,9 @@ import subprocess
 import tempfile
 import time
 import urllib.parse
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping, Optional, Sequence, Union
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def fingerprint_of_der(der: bytes) -> str:
     return ":".join(h[i:i + 2] for i in range(0, 64, 2))
 
 
-def fingerprint_of_pem(pem: Union[str, bytes]) -> str:
+def fingerprint_of_pem(pem: str | bytes) -> str:
     """Fingerprint of the first certificate in a PEM string/bytes."""
     text = pem.decode("ascii", "strict") if isinstance(pem, bytes) else pem
     m = re.search(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", text, re.DOTALL)
@@ -93,7 +93,7 @@ def fingerprint_of_pem(pem: Union[str, bytes]) -> str:
     return fingerprint_of_der(ssl.PEM_cert_to_DER_cert(m.group(0)))
 
 
-def fingerprint_of_pem_file(path: Union[str, Path]) -> str:
+def fingerprint_of_pem_file(path: str | Path) -> str:
     return fingerprint_of_pem(Path(path).read_bytes())
 
 
@@ -124,13 +124,13 @@ def _context() -> ssl.SSLContext:
 def _handshake(host: str, port: int, connect_timeout: float, read_timeout: float) -> ssl.SSLSocket:
     try:
         raw = socket.create_connection((host, port), timeout=connect_timeout)
-    except socket.timeout as exc:
+    except TimeoutError as exc:
         raise PinnedTimeout(f"connect to {host}:{port} timed out after {connect_timeout}s") from exc
     try:
         raw.settimeout(connect_timeout)      # bounds the handshake too
         sni = None if _is_ip(host) else host
         tls = _context().wrap_socket(raw, server_hostname=sni)
-    except socket.timeout as exc:
+    except TimeoutError as exc:
         raw.close()
         raise PinnedTimeout(f"TLS handshake with {host}:{port} timed out") from exc
     except (ssl.SSLError, OSError):
@@ -204,8 +204,8 @@ class Response:
         return json.loads(self.body.decode("utf-8"))
 
 
-def request(method: str, url: str, pins: Union[str, Sequence[str]], *, body: Optional[bytes] = None,
-            headers: Optional[Mapping[str, str]] = None,
+def request(method: str, url: str, pins: str | Sequence[str], *, body: bytes | None = None,
+            headers: Mapping[str, str] | None = None,
             connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
             read_timeout: float = DEFAULT_READ_TIMEOUT,
             total_timeout: float = DEFAULT_TOTAL_TIMEOUT,
@@ -244,7 +244,7 @@ def request(method: str, url: str, pins: Union[str, Sequence[str]], *, body: Opt
             chunks.append(chunk)
         return Response(resp.status, resp.reason, {k.lower(): v for k, v in resp.getheaders()},
                         b"".join(chunks))
-    except socket.timeout as exc:
+    except TimeoutError as exc:
         raise PinnedTimeout(f"timed out talking to {u.hostname}:{port}") from exc
     finally:
         conn.close()
@@ -252,9 +252,9 @@ def request(method: str, url: str, pins: Union[str, Sequence[str]], *, body: Opt
 
 # --------------------------------------------------------------------------------- test helpers
 
-def generate_self_signed_cert(directory: Union[str, Path], cn: str = "localhost", days: int = 365,
+def generate_self_signed_cert(directory: str | Path, cn: str = "localhost", days: int = 365,
                               san: Sequence[str] = ("DNS:localhost", "IP:127.0.0.1"),
-                              not_before: Optional[str] = None, not_after: Optional[str] = None,
+                              not_before: str | None = None, not_after: str | None = None,
                               ) -> tuple[Path, Path]:
     """Create a self-signed EC P-256 cert + key (PEM) in `directory` using the openssl CLI (argv,
     no shell). Returns (cert_path, key_path); key mode 0600. For tests and the collector's
@@ -302,7 +302,7 @@ def generate_self_signed_cert(directory: Union[str, Path], cn: str = "localhost"
     return cert, key
 
 
-def _run(argv: list[str], cwd: Optional[Path] = None) -> None:
+def _run(argv: list[str], cwd: Path | None = None) -> None:
     try:
         subprocess.run(argv, check=True, capture_output=True, timeout=60, cwd=cwd)
     except subprocess.CalledProcessError as exc:
@@ -312,7 +312,17 @@ def _run(argv: list[str], cwd: Optional[Path] = None) -> None:
 
 
 __all__ = [
-    "TlsPinError", "PinMismatch", "PinFormatError", "PinnedTimeout", "normalize_fingerprint",
-    "fingerprint_of_der", "fingerprint_of_pem", "fingerprint_of_pem_file", "pins_match",
-    "probe_fingerprint", "request", "Response", "generate_self_signed_cert",
+    "PinFormatError",
+    "PinMismatch",
+    "PinnedTimeout",
+    "Response",
+    "TlsPinError",
+    "fingerprint_of_der",
+    "fingerprint_of_pem",
+    "fingerprint_of_pem_file",
+    "generate_self_signed_cert",
+    "normalize_fingerprint",
+    "pins_match",
+    "probe_fingerprint",
+    "request",
 ]

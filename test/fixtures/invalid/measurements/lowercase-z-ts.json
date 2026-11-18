@@ -1,0 +1,25 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XAK3S86Z5JATM52C3M7Z",
+  "ts": "2026-11-18t20:00:00.123z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "gateway",
+  "outcome": "ok",
+  "labels": {
+    "port": "c01",
+    "iface": "enp10s0f0"
+  },
+  "duration_ms": 0.58,
+  "metrics": {
+    "link_up": 1,
+    "rtt_ms": 0.58,
+    "loss_pct": 0,
+    "carrier_changes": 2
+  },
+  "detail": {
+    "gateway_ip": "10.1.0.1",
+    "gateway_mac": "00:00:5e:00:01:65"
+  },
+  "agent_ver": "0.1.0"
+}

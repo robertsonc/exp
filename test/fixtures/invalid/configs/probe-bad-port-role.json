@@ -1,0 +1,133 @@
+{
+  "schema": "exp.probe.config/1",
+  "probe_id": "probe-a1",
+  "site": "hall-b",
+  "collector": {
+    "url": "https://10.32.98.25:8443",
+    "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6",
+    "fallback": []
+  },
+  "mode": "netns",
+  "mgmt_iface": "eno1",
+  "ports": [
+    {
+      "id": "c01",
+      "iface": "enp10s0f0",
+      "role": "monitor",
+      "vlan": null,
+      "dhcp": {
+        "hostname": "exp-hallb-c01",
+        "vendor_class": "exp-probe",
+        "client_id": "mac"
+      }
+    },
+    {
+      "id": "s01",
+      "iface": "enp130s1f0",
+      "role": "target",
+      "address": "10.1.0.250/24",
+      "gateway": "10.1.0.1",
+      "serve": {
+        "http": true,
+        "https": true,
+        "icmp": true,
+        "reflector": true,
+        "iperf3": false
+      },
+      "faults_allowed": true
+    }
+  ],
+  "heartbeat": {
+    "interval_s": 10,
+    "gateway": true,
+    "dhcp": true,
+    "dns": true,
+    "trace": {
+      "target": "8.8.8.8",
+      "pace_ms": 20,
+      "max_hops": 30,
+      "timeout_s": 2,
+      "control_path": true
+    },
+    "ping": [
+      "1.1.1.1",
+      "8.8.8.8"
+    ],
+    "dns_names": [
+      "google.com",
+      "apple.com",
+      "microsoft.com",
+      "cloudflare.com"
+    ],
+    "alternate_resolver": "1.1.1.1"
+  },
+  "tests": {
+    "dhcp": {
+      "interval_s": 300,
+      "offer_collect_s": 3.0
+    },
+    "dns": {
+      "interval_s": 300,
+      "names": [
+        "www.google.com",
+        "teams.microsoft.com"
+      ]
+    },
+    "app": {
+      "interval_s": 300,
+      "targets": [
+        {
+          "app": "google-search",
+          "url": "https://www.google.com/",
+          "apdex_t_ms": 500
+        }
+      ]
+    },
+    "throughput": {
+      "interval_s": 600,
+      "providers": [
+        "cloudflare"
+      ],
+      "iperf3": {
+        "server": "s01",
+        "duration_s": 10
+      }
+    },
+    "path": {
+      "interval_s": 60,
+      "peers": [
+        {
+          "peer": "s01",
+          "address": "10.1.0.250",
+          "port": 8862,
+          "proto": [
+            "udp",
+            "tcp"
+          ],
+          "duration_s": 10,
+          "rate_kbps": 256
+        }
+      ]
+    },
+    "wifi": null
+  },
+  "spool": {
+    "max_mb": 500,
+    "max_days": 7
+  },
+  "labels": {
+    "zone": "floor-1"
+  },
+  "drills": [
+    {
+      "run_id": "run_01M7R3X9G069FVJXC5YPJF5ZVZ",
+      "type": "local.dns_block",
+      "params": {
+        "port": "c01"
+      },
+      "start": "2026-11-18T21:00:00.000Z",
+      "until": "2026-11-18T21:02:00.000Z",
+      "abort": false
+    }
+  ]
+}

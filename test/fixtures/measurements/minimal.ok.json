@@ -1,0 +1,9 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YNJ33XQTDXMX31F611PG",
+  "ts": "2026-11-18T20:00:45Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "custom_test",
+  "outcome": "ok"
+}

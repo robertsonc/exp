@@ -1,0 +1,32 @@
+{
+  "schema": "exp.dashboard.config/1",
+  "dashboard_id": "dash-main",
+  "title": "HPE EXP — Hall B",
+  "url": "https://10.32.98.30",
+  "listen": {
+    "https": "0.0.0.0:443",
+    "http_redirect": "0.0.0.0:80"
+  },
+  "collectors": [
+    {
+      "collector_id": "col-hallb",
+      "site": "hall-b",
+      "url": "https://10.32.98.25:8443",
+      "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6"
+    }
+  ],
+  "voice": "sysadmin",
+  "timezone": "America/Chicago",
+  "auth": {
+    "sso": {
+      "manager_url": "https://exp.example.com",
+      "issuer": "exp-manager:default"
+    },
+    "session_hours": 12,
+    "local_users": true,
+    "noc_tokens": true
+  },
+  "tls": {
+    "mode": "letsencrypt"
+  }
+}

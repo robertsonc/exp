@@ -1,0 +1,25 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XJD3PEQNC3ZTY1RS33CD",
+  "ts": "2026-11-18T20:00:09.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dns_hb",
+  "outcome": "ok",
+  "labels": {
+    "port": "c01",
+    "resolver": "8.8.8.8",
+    "resolver_kind": "dhcp"
+  },
+  "duration_ms": 12.2,
+  "metrics": {
+    "rtt_ms": 12.2,
+    "rcode": 0,
+    "answers": 6,
+    "ping_rtt_ms": 11.9
+  },
+  "detail": {
+    "name": "google.com"
+  },
+  "agent_ver": "0.1.0"
+}

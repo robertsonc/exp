@@ -1,0 +1,27 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3Y6XBWDMB73C7CEHJJ4Y6",
+  "ts": "2026-11-18T20:00:30.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "throughput",
+  "outcome": "ok",
+  "labels": {
+    "port": "c01",
+    "provider": "cloudflare"
+  },
+  "duration_ms": 3500.0,
+  "metrics": {
+    "down_mbps": 719.85,
+    "up_mbps": 270.76,
+    "latency_idle_ms": 40.6,
+    "latency_loaded_ms": 31.9,
+    "jitter_ms": 7.0,
+    "retransmits": 0
+  },
+  "detail": {
+    "server": "162.159.140.220",
+    "streams": 1
+  },
+  "agent_ver": "0.1.0"
+}

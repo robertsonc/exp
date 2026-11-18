@@ -1,0 +1,23 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XKCB2CZ5E8ANPKKPFDSK",
+  "ts": "2026-11-18T20:00:10.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dns_hb",
+  "outcome": "ok",
+  "labels": {
+    "port": "c01",
+    "resolver": "1.1.1.1",
+    "resolver_kind": "alternate"
+  },
+  "metrics": {
+    "rtt_ms": 9.8,
+    "rcode": 0,
+    "answers": 4
+  },
+  "detail": {
+    "name": "google.com"
+  },
+  "agent_ver": "0.1.0"
+}

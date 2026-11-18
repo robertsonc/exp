@@ -1,0 +1,25 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YMJVB3TEMNHMA6D7TE99",
+  "ts": "2026-11-18T20:00:44.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "drill",
+  "outcome": "fail",
+  "labels": {
+    "run": "run_01M7R3X9G069FVJXC5YPJF5ZVZ",
+    "phase": "failed",
+    "type": "local.dns_block"
+  },
+  "metrics": {
+    "ok": 0
+  },
+  "detail": {
+    "verification": {
+      "expected": "dns blocked",
+      "observed": "dns ok"
+    }
+  },
+  "error": "verification failed",
+  "agent_ver": "0.1.0"
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YDR3TN6FC96CDCVPNHFS",
+  "ts": "2026-11-18T20:00:37.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "wifi_hb",
+  "outcome": "error",
+  "labels": {
+    "port": "w01",
+    "ssid": "ACME_CORP",
+    "band": "5"
+  },
+  "error": "wpa_supplicant not running",
+  "agent_ver": "0.1.0"
+}

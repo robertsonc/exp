@@ -1,0 +1,18 @@
+{
+  "id": "inc_01M7R3X9G0DNJ5N5V741WAF1H5",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "line": "dns",
+  "kind": "down",
+  "start": "2026-11-18T15:13:42.000Z",
+  "end": null,
+  "where": {
+    "seg": "nope"
+  },
+  "facts": [
+    "No answers from 1.1.1.1 since 15:13:42"
+  ],
+  "folded_into": null,
+  "acked_by": null,
+  "link": "https://10.32.98.30/probe/probe-a1?at=2026-11-18T15:13:42Z"
+}

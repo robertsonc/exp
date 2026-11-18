@@ -31,19 +31,16 @@ import re
 import stat
 import sys
 from pathlib import Path
-from typing import Any, NoReturn, Optional, Union
+from typing import Any, NoReturn
 
 log = logging.getLogger(__name__)
 
 DEFAULT_MAX_BYTES = 1024 * 1024
 MAX_ISSUES = 100
-MAX_REF_DEPTH = 64
+MAX_DEPTH = 200      # combined schema+document nesting evaluated; deeper is reported, not crashed on
 EX_CONFIG = 78
 
-KEYWORDS = frozenset("""$schema $id $ref $defs title description type properties required
-additionalProperties patternProperties propertyNames items prefixItems minItems maxItems uniqueItems
-enum const pattern minLength maxLength minimum maximum exclusiveMinimum exclusiveMaximum
-minProperties maxProperties anyOf oneOf allOf not default examples""".split())
+KEYWORDS = frozenset(["$schema", "$id", "$ref", "$defs", "title", "description", "type", "properties", "required", "additionalProperties", "patternProperties", "propertyNames", "items", "prefixItems", "minItems", "maxItems", "uniqueItems", "enum", "const", "pattern", "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minProperties", "maxProperties", "anyOf", "oneOf", "allOf", "not", "default", "examples"])
 
 _TYPES = frozenset({"null", "boolean", "object", "array", "number", "integer", "string"})
 _FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.json\Z")
@@ -54,7 +51,7 @@ _SCHEMA_CONST_RE = re.compile(r"exp\.([a-z0-9.]+)/[0-9]+\Z")
 class ConfigError(ValueError):
     """Config unreadable or invalid. `.errors` holds the list of `Issue`s (may be empty)."""
 
-    def __init__(self, message: str, errors: Optional[list["Issue"]] = None) -> None:
+    def __init__(self, message: str, errors: list[Issue] | None = None) -> None:
         self.errors = list(errors or [])
         self.summary = message
         detail = "".join(f"\n  - {i}" for i in self.errors)
@@ -68,7 +65,7 @@ class SchemaError(Exception):
 class Issue:
     """One validation problem: JSON-pointer path of the offending value + human message."""
 
-    __slots__ = ("path", "message")
+    __slots__ = ("message", "path")
 
     def __init__(self, path: str, message: str) -> None:
         self.path = path
@@ -126,7 +123,7 @@ def _load_schema_file(path: Path) -> Any:
     return doc
 
 
-def resolve_schema_file(schema: Union[str, Path]) -> Path:
+def resolve_schema_file(schema: str | Path) -> Path:
     """Map a schema name / file name / document schema const to a path under schemas_dir()."""
     if isinstance(schema, Path):
         return schema
@@ -214,10 +211,10 @@ def check_schema(schema: Any, where: str = "schema") -> None:
     sub(schema, "")
 
 
-_re_cache: dict[str, "re.Pattern[str]"] = {}
+_re_cache: dict[str, re.Pattern[str]] = {}
 
 
-def _compile(pattern: str, where: str) -> "re.Pattern[str]":
+def _compile(pattern: str, where: str) -> re.Pattern[str]:
     rx = _re_cache.get(pattern)
     if rx is None:
         try:
@@ -232,13 +229,13 @@ def _compile(pattern: str, where: str) -> "re.Pattern[str]":
 
 def _split_ref(ref: str) -> tuple[str, str]:
     """-> (file or "", pointer-with-leading-slash or "")."""
+    if not ref:
+        raise SchemaError("$ref is empty")
     file_part, _, frag = ref.partition("#")
     if file_part and not _FILE_RE.match(file_part):
         raise SchemaError(f"$ref {ref!r}: file part must be a plain schema file name")
     if frag and not frag.startswith("/"):
         raise SchemaError(f"$ref {ref!r}: fragment must be a JSON pointer starting with '/'")
-    if not file_part and not frag:
-        raise SchemaError(f"$ref {ref!r} is empty")
     return file_part, frag
 
 
@@ -284,7 +281,7 @@ def json_equal(a: Any, b: Any) -> bool:
     if _is_num(a) and _is_num(b):
         return a == b
     if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(json_equal(x, y) for x, y in zip(a, b))
+        return len(a) == len(b) and all(json_equal(x, y) for x, y in zip(a, b, strict=True))
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(json_equal(a[k], b[k]) for k in a)
     if type(a) is not type(b):
@@ -306,8 +303,12 @@ def _canon(v: Any) -> str:
 
 # -------------------------------------------------------------------------------------- validator
 
+class _TooDeep(Exception):
+    pass
+
+
 class _Ctx:
-    def __init__(self, base_dir: Optional[Path]) -> None:
+    def __init__(self, base_dir: Path | None) -> None:
         self.base_dir = base_dir
         self.active: set[tuple[str, str, int]] = set()
         self.docs: dict[str, Any] = {}
@@ -325,11 +326,11 @@ def _check(inst: Any, schema: Any, path: str, root: Any, root_name: str, ctx: _C
         return []
     if schema is False:
         return [Issue(path, "no value is allowed here")]
-    if depth > MAX_REF_DEPTH * 4:
-        raise SchemaError("schema nesting too deep")
+    if depth > MAX_DEPTH:
+        raise _TooDeep()
     out: list[Issue] = []
 
-    def rec(i: Any, s: Any, p: str, r: Any = None, rn: Optional[str] = None) -> list[Issue]:
+    def rec(i: Any, s: Any, p: str, r: Any = None, rn: str | None = None) -> list[Issue]:
         return _check(i, s, p, root if r is None else r, root_name if rn is None else rn, ctx, depth + 1)
 
     ref = schema.get("$ref")
@@ -458,7 +459,7 @@ def _tname(v: Any) -> str:
     return {str: "string", list: "array", dict: "object"}.get(type(v), type(v).__name__)
 
 
-def _prepare(schema: Union[dict, bool, str, Path]) -> tuple[Any, str, _Ctx]:
+def _prepare(schema: dict | bool | str | Path) -> tuple[Any, str, _Ctx]:
     if isinstance(schema, (str, Path)):
         path = resolve_schema_file(schema)
         root = _load_schema_file(path)
@@ -467,22 +468,22 @@ def _prepare(schema: Union[dict, bool, str, Path]) -> tuple[Any, str, _Ctx]:
     return schema, "<inline>", _Ctx(None)
 
 
-def iter_errors(doc: Any, schema: Union[dict, bool, str, Path]) -> list[Issue]:
+def iter_errors(doc: Any, schema: dict | bool | str | Path) -> list[Issue]:
     """All validation problems (capped at MAX_ISSUES). [] means valid. Raises SchemaError if the
     schema itself is unusable."""
     root, name, ctx = _prepare(schema)
     try:
         issues = _check(doc, root, "", root, name, ctx)
-    except RecursionError:
-        return [Issue("", "document is nested too deeply")]
+    except (RecursionError, _TooDeep):
+        return [Issue("", "document (or schema recursion) is nested too deeply")]
     return issues[:MAX_ISSUES]
 
 
-def is_valid(doc: Any, schema: Union[dict, bool, str, Path]) -> bool:
+def is_valid(doc: Any, schema: dict | bool | str | Path) -> bool:
     return not iter_errors(doc, schema)
 
 
-def validate(doc: Any, schema: Union[dict, bool, str, Path]) -> None:
+def validate(doc: Any, schema: dict | bool | str | Path) -> None:
     """Raise ConfigError (with `.errors`, JSON-pointer paths) unless `doc` conforms."""
     errs = iter_errors(doc, schema)
     if errs:
@@ -505,7 +506,7 @@ def _bad_constant(name: str) -> NoReturn:
     raise ValueError(f"non-finite number {name} is not valid JSON")
 
 
-def parse_json(text: Union[str, bytes], what: str = "document") -> Any:
+def parse_json(text: str | bytes, what: str = "document") -> Any:
     """Strict JSON parse: no duplicate keys, no NaN/Infinity. ConfigError on failure."""
     try:
         if isinstance(text, bytes):
@@ -521,11 +522,11 @@ def parse_json(text: Union[str, bytes], what: str = "document") -> Any:
         raise ConfigError(f"{what} is not valid JSON: {exc}") from exc
 
 
-def load_json(path: Union[str, Path], max_bytes: int = DEFAULT_MAX_BYTES) -> Any:
+def load_json(path: str | Path, max_bytes: int = DEFAULT_MAX_BYTES) -> Any:
     """Read and parse a JSON file of at most `max_bytes`. Clear ConfigError on every failure."""
     p = str(path)
     try:
-        fd = os.open(p, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+        fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))  # NONBLOCK: a FIFO must not hang us
     except FileNotFoundError as exc:
         raise ConfigError(f"{p}: file not found") from exc
     except PermissionError as exc:
@@ -549,7 +550,7 @@ def load_json(path: Union[str, Path], max_bytes: int = DEFAULT_MAX_BYTES) -> Any
     return parse_json(data, what=p)
 
 
-def load_config(path: Union[str, Path], expected_schema: Union[dict, str, Path],
+def load_config(path: str | Path, expected_schema: dict | str | Path,
                 max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
     """Load + validate a component config. Raises ConfigError naming the file and every problem;
     callers must not continue on error."""
@@ -562,7 +563,7 @@ def load_config(path: Union[str, Path], expected_schema: Union[dict, str, Path],
     return doc
 
 
-def load_config_or_exit(path: Union[str, Path], expected_schema: Union[dict, str, Path],
+def load_config_or_exit(path: str | Path, expected_schema: dict | str | Path,
                         component: str = "exp") -> dict[str, Any]:
     """`load_config`, but on failure log the reasons, print them to stderr, and exit 78
     (EX_CONFIG) so systemd marks the unit failed with a readable cause."""
@@ -575,7 +576,21 @@ def load_config_or_exit(path: Union[str, Path], expected_schema: Union[dict, str
 
 
 __all__ = [
-    "ConfigError", "SchemaError", "Issue", "KEYWORDS", "schemas_dir", "resolve_schema_file",
-    "check_schema", "iter_errors", "is_valid", "validate", "load_json", "parse_json",
-    "load_config", "load_config_or_exit", "json_equal", "DEFAULT_MAX_BYTES", "EX_CONFIG",
+    "DEFAULT_MAX_BYTES",
+    "EX_CONFIG",
+    "KEYWORDS",
+    "ConfigError",
+    "Issue",
+    "SchemaError",
+    "check_schema",
+    "is_valid",
+    "iter_errors",
+    "json_equal",
+    "load_config",
+    "load_config_or_exit",
+    "load_json",
+    "parse_json",
+    "resolve_schema_file",
+    "schemas_dir",
+    "validate",
 ]

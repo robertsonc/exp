@@ -17,19 +17,19 @@ import os
 import re
 import sys
 import traceback
-from typing import IO, Optional
+from typing import IO
 
 REDACTED = "[REDACTED]"
 
-_PATTERNS: list[tuple["re.Pattern[str]", str]] = [
+_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # PEM private keys (also when truncated: redact to end of text)
     (re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)",
                 re.DOTALL), "-----BEGIN PRIVATE KEY-----" + REDACTED + "-----END PRIVATE KEY-----"),
     # webhook URLs: whole URL (path carries the secret)
-    (re.compile(r"https?://hooks\.slack\.com/[^\s\"'<>)]*", re.I), "https://hooks.slack.com/" + REDACTED),
-    (re.compile(r"https?://[A-Za-z0-9.-]*\.webhook\.office(?:365)?\.com/[^\s\"'<>)]*", re.I),
+    (re.compile(r"https?://hooks\.slack\.com/[^\s\"'<>)]*", re.IGNORECASE), "https://hooks.slack.com/" + REDACTED),
+    (re.compile(r"https?://[A-Za-z0-9.-]*\.webhook\.office(?:365)?\.com/[^\s\"'<>)]*", re.IGNORECASE),
      "https://webhook.office.com/" + REDACTED),
-    (re.compile(r"https?://(?:[A-Za-z0-9-]+\.)?discord(?:app)?\.com/api/webhooks/[^\s\"'<>)]*", re.I),
+    (re.compile(r"https?://(?:[A-Za-z0-9-]+\.)?discord(?:app)?\.com/api/webhooks/[^\s\"'<>)]*", re.IGNORECASE),
      "https://discord.com/api/webhooks/" + REDACTED),
     # Authorization header (any scheme) incl. JSON/quoted forms
     (re.compile(r"(?i)(authorization[\"']?\s*[:=]\s*[\"']?)(?:(?:Bearer|Basic|Token|Digest)\s+)?[^\s,;\"'}]+"),
@@ -112,8 +112,8 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(obj, ensure_ascii=False, sort_keys=True)
 
 
-def setup_logging(component: str, level: str = "INFO", json: bool = False,  # noqa: A002
-                  stream: Optional[IO[str]] = None) -> logging.Logger:
+def setup_logging(component: str, level: str = "INFO", json: bool = False,
+                  stream: IO[str] | None = None) -> logging.Logger:
     """Configure the root logger with one scrubbing stderr handler; returns the component logger.
     Idempotent: re-calling replaces the handler installed by a previous call."""
     journald = bool(os.environ.get("JOURNAL_STREAM"))

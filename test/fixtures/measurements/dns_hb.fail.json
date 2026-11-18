@@ -1,0 +1,19 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XNAVN0KM0554RSWF98N2",
+  "ts": "2026-11-18T20:00:12.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "dns_hb",
+  "outcome": "fail",
+  "labels": {
+    "port": "c01",
+    "resolver": "8.8.8.8",
+    "resolver_kind": "dhcp"
+  },
+  "detail": {
+    "name": "google.com"
+  },
+  "error": "no answer from 8.8.8.8 within 2 s",
+  "agent_ver": "0.1.0"
+}

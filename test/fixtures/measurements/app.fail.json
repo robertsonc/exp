@@ -1,0 +1,22 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3Y5Y3EVSG7SMJGZAFD0TW",
+  "ts": "2026-11-18T20:00:29.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "app",
+  "outcome": "fail",
+  "labels": {
+    "port": "c01",
+    "app": "google-search"
+  },
+  "metrics": {
+    "status_code": 0,
+    "apdex": 0.0
+  },
+  "detail": {
+    "url": "https://www.google.com/"
+  },
+  "error": "Resolving timed out after 10000 milliseconds",
+  "agent_ver": "0.1.0"
+}

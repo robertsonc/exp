@@ -1,0 +1,31 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3XS7VVYMVV8ZNRG1TVNR8",
+  "ts": "2026-11-18T20:00:16.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "trace",
+  "outcome": "fail",
+  "labels": {
+    "port": "c01",
+    "path": "test"
+  },
+  "metrics": {
+    "reached": 0,
+    "hops": 1,
+    "last_ttl": 1
+  },
+  "detail": {
+    "hops": [
+      [
+        1,
+        "10.1.0.2",
+        302.7
+      ]
+    ],
+    "last_ip": "10.1.0.2",
+    "target": "8.8.8.8"
+  },
+  "error": "no reply from 8.8.8.8; path stops after 10.1.0.2 (hop 1)",
+  "agent_ver": "0.1.0"
+}

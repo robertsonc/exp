@@ -1,0 +1,30 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3Y3ZK4NGPAJDKGJCPCMZ6",
+  "ts": "2026-11-18T20:00:27.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "app",
+  "outcome": "ok",
+  "labels": {
+    "port": "c01",
+    "app": "google-search"
+  },
+  "duration_ms": 210.0,
+  "metrics": {
+    "dns_ms": 21.4,
+    "connect_ms": 30.0,
+    "tls_ms": 52.0,
+    "ttfb_ms": 98.0,
+    "total_ms": 210.0,
+    "status_code": 200,
+    "bytes": 18432,
+    "apdex": 1.0
+  },
+  "detail": {
+    "url": "https://www.google.com/",
+    "ip": "142.250.80.100",
+    "tls_version": "TLSv1.3"
+  },
+  "agent_ver": "0.1.0"
+}

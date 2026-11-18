@@ -1,0 +1,137 @@
+{
+  "schema": "exp.status/1",
+  "agent": {
+    "version": "0.1.0",
+    "desired_version": 42,
+    "applied_version": 42,
+    "uptime_s": 86400,
+    "last_poll": "2026-11-18T20:00:30.000Z"
+  },
+  "facts": {
+    "hostname": "srv-01",
+    "machine_id": "e558983e900d928352a10fd7854cbc89",
+    "os": {
+      "id": "ubuntu",
+      "version": "24.04"
+    },
+    "kernel": "6.8.0-45-generic",
+    "arch": "amd64",
+    "cpus": 8,
+    "mem_mb": 32000,
+    "disk_free_mb": 400000,
+    "python": "3.12.3",
+    "time": {
+      "synced": true,
+      "source": "systemd-timesyncd",
+      "offset_ms": 1.2
+    },
+    "interfaces": [
+      {
+        "name": "eno1",
+        "mac": "18:66:da:00:00:01",
+        "state": "up",
+        "speed_mbps": 1000,
+        "driver": "tg3",
+        "addrs": [
+          "10.32.98.25/23"
+        ],
+        "default_route": true,
+        "in_use_by": "mgmt"
+      }
+    ]
+  },
+  "metrics": {
+    "interval_s": 60,
+    "uptime_s": 1234567,
+    "cpu": {
+      "pct": 23.4,
+      "iowait_pct": 1.2,
+      "steal_pct": 0.0,
+      "load1": 0.8,
+      "load5": 0.6,
+      "load15": 0.5
+    },
+    "mem": {
+      "total_mb": 32000,
+      "used_mb": 8200,
+      "available_mb": 23800,
+      "pct": 25.6,
+      "swap_used_mb": 0
+    },
+    "disk": [
+      {
+        "mount": "/",
+        "total_gb": 437.0,
+        "used_gb": 13.1,
+        "pct": 3.0
+      },
+      {
+        "mount": "/var/lib/exp",
+        "total_gb": 437.0,
+        "used_gb": 13.1,
+        "pct": 3.0
+      }
+    ],
+    "disk_io": {
+      "read_kbps": 12.0,
+      "write_kbps": 340.5
+    },
+    "net": [
+      {
+        "iface": "eno1",
+        "role": "mgmt",
+        "link": "up",
+        "speed_mbps": 1000,
+        "rx_pps": 120.5,
+        "tx_pps": 98.2,
+        "rx_bps": 340000,
+        "tx_bps": 120000,
+        "rx_errors": 0,
+        "tx_errors": 0,
+        "rx_drops": 0,
+        "tx_drops": 0
+      }
+    ],
+    "temp_c_max": 54
+  },
+  "components": [
+    {
+      "type": "collector",
+      "id": "col-hallb",
+      "version": "0.1.0",
+      "state": "running",
+      "health": "ok",
+      "detail": "",
+      "since": "2026-11-17T20:00:00.000Z",
+      "process": {
+        "cpu_pct": 12.5,
+        "rss_mb": 410,
+        "restarts": 0,
+        "uptime_s": 86000
+      },
+      "metrics": {
+        "ingest_records_per_s": 305.2,
+        "probes_total": 1,
+        "probes_reporting": 1,
+        "vm_up": 1
+      },
+      "facts": {
+        "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6",
+        "listen": "10.32.98.25:8443"
+      }
+    }
+  ],
+  "reconcile": {
+    "at": "2026-11-18T19:59:00.000Z",
+    "result": "ok",
+    "error": null,
+    "duration_ms": 5400
+  },
+  "events": [
+    {
+      "ts": "2026-11-18T19:59:00.000Z",
+      "level": "info",
+      "msg": "installed exp-collector 0.1.0"
+    }
+  ]
+}

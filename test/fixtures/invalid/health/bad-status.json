@@ -1,0 +1,9 @@
+{
+  "schema": "exp.health/1",
+  "status": "healthy",
+  "detail": "",
+  "version": "0.1.0",
+  "uptime_s": 1,
+  "metrics": {},
+  "facts": {}
+}

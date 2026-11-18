@@ -1,0 +1,28 @@
+{
+  "schema": "exp.measurement/1",
+  "id": "01M7R3YCRV1GSHYKDB494519F2",
+  "ts": "2026-11-18T20:00:36.123Z",
+  "probe": "probe-a1",
+  "site": "hall-b",
+  "test": "wifi_hb",
+  "outcome": "fail",
+  "labels": {
+    "port": "w01",
+    "ssid": "ACME_CORP",
+    "band": "5"
+  },
+  "metrics": {
+    "link_up": 1,
+    "rssi_dbm": -51,
+    "noise_dbm": -90,
+    "snr_db": 39,
+    "tx_rate_mbps": 365,
+    "channel": 108
+  },
+  "detail": {
+    "bssid": "aa:bb:cc:00:11:22",
+    "on_target": false
+  },
+  "error": "no reply from gateway 10.1.0.1 over Wi-Fi",
+  "agent_ver": "0.1.0"
+}

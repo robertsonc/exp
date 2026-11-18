@@ -1,0 +1,18 @@
+{
+  "schema": "exp.health/1",
+  "status": "degraded",
+  "detail": "collector unreachable; spooling",
+  "version": "0.1.0",
+  "uptime_s": 86000,
+  "metrics": {
+    "measurements_per_min": 140,
+    "spool_depth": 4200,
+    "spool_bytes": 3100000,
+    "push_lag_s": 600.0
+  },
+  "facts": {
+    "collector_reachable": false,
+    "collector_url": "https://10.32.98.25:8443",
+    "mode": "netns"
+  }
+}

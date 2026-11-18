@@ -1,0 +1,106 @@
+{
+  "schema": "exp.desired/1",
+  "host_id": "h_01M7R3X9G03YGQ6JTHV0DKDPKQ",
+  "version": 42,
+  "generated_at": "2026-11-18T20:00:00.000Z",
+  "org": {
+    "id": "default",
+    "name": "HPE Event NOC"
+  },
+  "site": {
+    "id": "hall-b",
+    "name": "Hall B",
+    "timezone": "America/Chicago"
+  },
+  "agent": {
+    "version": "0.1.0",
+    "artifact": "art_01M7R3X9G0R4V0Q45D0YQATNJ2",
+    "poll_interval_s": 30,
+    "status_interval_s": 60
+  },
+  "release": {
+    "version": "0.1.0",
+    "manifest_url": "/api/agent/v1/releases/0.1.0/manifest",
+    "signature_url": "/api/agent/v1/releases/0.1.0/manifest.sig"
+  },
+  "components": [
+    {
+      "type": "collector",
+      "id": "col-hallb",
+      "component_id": "cmp_01M7R3X9G06DMG2J3N52E6FEBZ",
+      "version": "0.1.0",
+      "artifact": {
+        "id": "art_01M7R3X9G0H2BDQDXZ0N0MDFB5",
+        "name": "exp-collector-0.1.0-amd64.tar.gz",
+        "url": "/api/agent/v1/artifacts/art_01M7R3X9G0H2BDQDXZ0N0MDFB5",
+        "sha256": "943c05bf74ad2bc5e4cf32ca6d30d8831b886fcd9d928547f783d730a76b5a75",
+        "size": 23456789
+      },
+      "config": {
+        "schema": "exp.collector.config/1",
+        "collector_id": "col-hallb",
+        "site": "hall-b",
+        "listen": "10.32.98.25:8443",
+        "probes": [
+          {
+            "probe_id": "probe-a1",
+            "site": "hall-b",
+            "label": "Hall B east"
+          }
+        ],
+        "dashboards": [
+          "dash-main"
+        ],
+        "retention": {
+          "metrics_days": 30,
+          "records_days": 7
+        },
+        "vm": {
+          "listen": "127.0.0.1:8428",
+          "memory_allowed_pct": 40
+        },
+        "rules": {
+          "edge_label": "EC",
+          "lines": [
+            "network",
+            "dhcp",
+            "dns",
+            "internet",
+            "apps",
+            "wifi",
+            "path"
+          ]
+        },
+        "alerts": {
+          "enabled": true,
+          "board_url": "https://10.32.98.30",
+          "timezone": "America/Chicago",
+          "voice": "sysadmin",
+          "hold_down_s": 20,
+          "hold_back_s": 60,
+          "reopen_s": 300,
+          "calm_s": 600
+        },
+        "reflector": {
+          "enabled": true,
+          "port": 8862
+        },
+        "iperf3": {
+          "enabled": true,
+          "port": 5201
+        },
+        "ingest": {
+          "max_body_mb": 4,
+          "max_records": 1000
+        }
+      },
+      "creds": {
+        "ingest_tokens.json": "{\"probe-a1\":\"4b6bc8e17052c613a1c5b1690674666cfa125e2c5fa62cfe453d215d348921fe\"}",
+        "dashboard_tokens.json": "{\"dash-main\":\"b1da8a592532b2a953fca6688e1044562bbd1017070f304e0887006045b785f3\"}",
+        "webhooks.json": "[{\"id\":\"wh_1\",\"format\":\"slack\",\"url\":\"https://hooks.example.invalid/services/FIXTURE\"}]"
+      }
+    }
+  ],
+  "actions": [],
+  "decommission": false
+}

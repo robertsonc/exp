@@ -19,7 +19,6 @@ import re
 import secrets
 import threading
 import time
-from typing import Optional
 
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _DECODE = {c: i for i, c in enumerate(CROCKFORD)}
@@ -47,7 +46,7 @@ def _encode(value: int, length: int) -> str:
     return "".join(reversed(out))
 
 
-def new_ulid(now_ms: Optional[int] = None) -> str:
+def new_ulid(now_ms: int | None = None) -> str:
     """A new ULID. Monotonic per process: same-ms calls increment the random part."""
     global _last_ms, _last_rand
     with _lock:
@@ -88,7 +87,7 @@ def new_id(prefix: str) -> str:
     return prefix + new_ulid()
 
 
-def is_prefixed_id(value: object, prefix: Optional[str] = None) -> bool:
+def is_prefixed_id(value: object, prefix: str | None = None) -> bool:
     """True if ``value`` is ``<known prefix><ULID>`` (and has ``prefix`` if one is given)."""
     if not isinstance(value, str):
         return False
@@ -111,7 +110,7 @@ def new_token(kind: str) -> str:
     return _token_prefix(kind) + body
 
 
-def is_token(value: object, kind: Optional[str] = None) -> bool:
+def is_token(value: object, kind: str | None = None) -> bool:
     """Format check only (does not prove the token is valid)."""
     if not isinstance(value, str) or _TOKEN_RE.match(value) is None:
         return False
