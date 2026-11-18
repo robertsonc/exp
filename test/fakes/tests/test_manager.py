@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import FAKES, ROOT, check_openapi, check_response_headers, check_schema_file, request
+from fakes_support import FAKES, ROOT, check_openapi, check_response_headers, check_schema_file, request
 from exp_common import ids as exp_ids
 from exp_common import tlspin
 
@@ -359,6 +359,7 @@ def test_rotate_requires_action_then_grace_period(fake, clock):
     hid, sec = enrolled(fake, desired="probe-host")
     r = call(fake, "POST", "/rotate", {}, secret=sec)
     assert r.status == 409
+    assert r.json()["error"]["code"] == "rotation_not_requested"      # CR-wp4-rotate-409-code
     check_openapi("agent", "/rotate", "post", 409, r.json())
     control(fake, "PUT", f"/desired/{hid}", {"fixture": "rotate"})
     assert call(fake, "GET", "/desired", secret=sec).json()["actions"][0]["type"] == "rotate_agent_secret"

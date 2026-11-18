@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest import FAKES, ROOT, check_component, check_openapi, check_schema_file, request
+from fakes_support import FAKES, ROOT, check_component, check_openapi, check_schema_file, request
 from exp_common import ids as exp_ids
 from exp_common import tlspin
 
@@ -699,3 +699,13 @@ def test_control_api_is_loopback_only_and_works(fake):
     assert ingest(fake, nd([rec(1)])).status == 503
     assert request(fake.port, "GET", "/_fake/stats").json()["records"] == 0
     assert request(fake.port, "POST", "/_fake/force", {"status": 418}).status == 400
+
+
+def test_list_form_token_hashes_are_accepted_during_rotation_overlap():
+    """CR-wp4-token-overlap: a value may be [current_sha256, previous_sha256]; other shapes never match."""
+    cur, prev = fc.fixture_token("expi", "probe-a1-new"), PROBE_A1
+    hashes = {"probe-a1": [fc.token_hash(cur), fc.token_hash(prev)], "bad": 7, "worse": [None, {"x": 1}]}
+    assert fc.match_token(cur, hashes) == "probe-a1"
+    assert fc.match_token(prev, hashes) == "probe-a1"
+    assert fc.match_token(fc.fixture_token("expi", "other"), hashes) is None
+    assert fc.match_token("", hashes) is None

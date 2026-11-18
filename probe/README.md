@@ -42,7 +42,7 @@ Every subcommand takes `--config PATH` (default `/etc/exp/probe/config.json`), v
 `exp_common.config` against `exp.probe.config/1` and **refuses to start** on an invalid one, printing every
 problem (exit 78). Extra rules the schema cannot express: unique port ids and interfaces, no port on
 `mgmt_iface`, `host` mode = exactly one `client` port (`allow_shared: true`, host mode only, lets the single test
-NIC be the management NIC and disables the control-path trace; see `probe/docs/change-requests/CR-wp1-allow-shared.md`).
+NIC be the management NIC and disables the control-path trace; see `docs/spec/changes/CR-wp1-allow-shared.md`).
 
 ## Config in one screen
 
@@ -87,7 +87,7 @@ per client port: `dhcp.hostname` (default `exp-<probe_id>-<port_id>`, never a pe
   live per-namespace counters. `fail` = config invalid, daemon not running, namespace/port missing, no lease without a
   recent explanation, shipper stuck > 120 s with a backlog, `auth_failed`, `tls_pin_mismatch`. `degraded` (exit 0) =
   collector unreachable/not configured/throttling while the spool accepts, or a lease gap explained by a recent error.
-  See `probe/docs/change-requests/CR-wp1-health-exit.md`.
+  See `docs/spec/changes/CR-wp1-health-exit.md`.
 
 ## Measurement tests (M1)
 
@@ -107,7 +107,7 @@ except `curl`). Records follow the catalog in `01-contracts.md` section 3 exactl
 | `app` (scheduled) | `curl -w '%{json}'` (argv, in the namespace), redirects <= 5, 15 s; apdex on `total_ms` | curl error, HTTP >= 500, captive portal `fail`; HTTP 4xx, `total > 4T` or `apdex < 0.85` `degraded` |
 
 Optional knobs (all under `tests.<test>`, ignored by the frozen schema's other readers, see
-`probe/docs/change-requests/CR-wp1-test-options.md`): `thresholds` (`dhcp.offer_ms`/`total_ms`, `dns.rtt_ms`, `trace.rtt_ms`,
+`docs/spec/changes/CR-wp1-test-options.md`): `thresholds` (`dhcp.offer_ms`/`total_ms`, `dns.rtt_ms`, `trace.rtt_ms`,
 `ping.rtt_ms`, `app.slow_factor`/`apdex_min`), `dhcp.allowed_servers`, and per `app` target `expect_status` /
 `expect_body`. Captive-portal detection is built in for `*/generate_204`, `*/gen_204`, captive.apple.com,
 msftconnecttest.com and detectportal.firefox.com, and flags a plain-http target redirected to another site.

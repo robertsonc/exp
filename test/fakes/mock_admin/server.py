@@ -965,7 +965,7 @@ def r_noc_create(a: MockAdmin, r: Req) -> Resp:
     url = (d["config"].get("url") or "").rstrip("/")
     a.audit(r.email, "noc_token.create", f"dashboard:{d['id']}", {"noc_id": n["noc_id"], "label": body["label"]})
     a.mutated()
-    return ok({"noc": n, "token": tok, "url": f"{url}/noc#token={tok}" if url.startswith("https://") else None}, 201, NO_STORE)
+    return ok({"noc": n, "token": tok, "url": f"{url}/noc#t={tok}" if url.startswith("https://") else None}, 201, NO_STORE)
 
 
 def r_noc_revoke(a: MockAdmin, r: Req) -> Resp:

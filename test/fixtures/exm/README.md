@@ -46,9 +46,18 @@ start/end the engine reports; the first failing record is a second or two earlie
 | 8 | down | DNS | 04:21:32 | | `wan`: path stops after 10.1.0.2 (hop 1) toward 8.8.8.8 | 04:21:32 to 04:23:22: `trace` fails on all 12 ports **and** the alternate resolver is silent. EXM names this `edge` only when a control-path trace also succeeds; this fixture has no control-path trace (`path=control`), so the expected seg is `wan` |
 | 9 | resolved | DNS | | 04:23:42 | | |
 
-Minor failures that must **not** page (they stay under the hold-down): a 1m50s `dns_hb` failure on 8.8.8.8 at 02:45:02 to 02:46:52 (12 records);
-`dhcp_hb` failures between 03:29 and 03:36 (inside the gateway outage) and two 30-60 s blips at 03:49:53 and 04:02:33; scattered single Wi-Fi
-failures. Expected page sequence for the rules/incident replay: `down Network, resolved Network, down DNS, resolved DNS, down Wi-Fi,
+Replay window: EXM's replay loop starts at 02:55 (`reference/exm/test/unit.py`), and the nine pages above are the pages over 02:55-04:28
+(`exp-collector replay ... --from 2026-10-27T02:55:00Z --to 2026-10-27T04:28:00Z`). The 1m50s `dns_hb` failure on 8.8.8.8 at
+02:45:02 to 02:46:52 (12 records) lies before that window. Replayed from the start of the recording it DOES page under the specified
+`hold_down_s = 20` (a 110 s continuous failure outlasts the hold), "down DNS" at 02:45 and resolved at 02:48; that page is an expected
+extra for a full-file replay, not a defect. The hold is not shortened for it.
+
+Times: EXM stamps a result with its completion time; exp stamps the start time (`ts`). Incident starts therefore agree within about 2 s, and
+ends (first tick the line is good again) can differ by up to about 10 s (DNS: 03:51:24 vs 03:51:14, 04:06:44 vs 04:06:34).
+
+Minor failures that must **not** page (they stay under the hold-down, inside the 02:55-04:28 window): `dhcp_hb` failures between 03:29 and
+03:36 (inside the gateway outage) and two 30-60 s blips at 03:49:53 and 04:02:33; scattered single Wi-Fi failures. Expected page sequence
+for the rules/incident replay over 02:55-04:28: `down Network, resolved Network, down DNS, resolved DNS, down Wi-Fi,
 down DNS, resolved DNS, down DNS, resolved DNS`.
 
 Other golden cases from `reference/exm/test/unit.py` ("where" for every class: link, switch, gateway, lan, edge, isp, resolver, dns_path, apps,

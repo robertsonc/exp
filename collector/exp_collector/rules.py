@@ -7,7 +7,7 @@ and time travel (records read back from SQLite): same records in, same State out
 Ported from the EXM prior art, with the EXM line numbers replaced by exp line keys:
   # ported from reference/exm/lib/exm/pulse.py (beats, state_of, since_of, series, last_outage,
   #   flaps, where_of) and reference/exm/lib/exm/static/pulse-core.js (the JS twin).
-Differences that are deliberate (see CR notes in docs/changes):
+Differences that are deliberate (see CR notes in docs/spec/changes):
   * gateway / dns_hb / trace / ... are one record per port (exp.measurement/1), so a "beat" is a
     cluster of records measured together (multi-port aggregation, section 5 of the spec);
   * EXM's single "Internet" lane is split into `internet` (traceroute/ping) and `apps` (app tests);

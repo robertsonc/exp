@@ -430,7 +430,7 @@ class ManagerApp:
             d = host.desired or {}
             acts = [a for a in d.get("actions", []) if a.get("type") == "rotate_agent_secret"]
             if not acts:
-                raise ApiError(409, "no_rotate_action", "desired state carries no rotate_agent_secret action")
+                raise ApiError(409, "rotation_not_requested", "desired state carries no rotate_agent_secret action")
             now = self.now()
             host.previous = [(h, u) for h, u in host.previous if u > now]
             if host.secret_hash:

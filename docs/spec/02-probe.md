@@ -183,6 +183,8 @@ mismatch, close and report `tls_pin_mismatch` (never fall back to unpinned). TLS
 `selftest` (offline checks) · `test <test> --port <id> [--once]` (run one test, print measurements,
 do not spool) · `spool stat` · `target set <port> --http-delay-ms N --http-status N --netem "delay 100ms loss 1%" --for 5m` · `target clear <port>`.
 
+`health --json` exits 0 for `ok` and `degraded`, 1 for `fail` (`01-contracts.md` §8.1). `degraded` is used only for states this section defines as healthy: collector unreachable or unconfigured while the spool accepts writes, throttling (429), a client port without a lease that a recent error record explains. `fail`: invalid config, daemon not running, a missing namespace or port, an unexplained lease-less client port, spool write failures, a shipper not pushed for > 120 s with a backlog, `auth_failed` (401) and `tls_pin_mismatch`. In `host` mode `mgmt_iface` must differ from the test interface unless `allow_shared: true` (then the control-path traceroute is disabled); in `netns` mode it is ignored.
+
 `health --json` emits `exp.health/1` with the probe metrics and per-port counters of
 `01-contracts.md` §8.1 (read inside each namespace). It is healthy when: config valid, namespaces present for all ports, each client port has a
 lease (or a recent `error` explaining why), shipper pushed within 120 s (or the collector is down

@@ -31,7 +31,11 @@ route.
 
 **Auth:** `Authorization: Bearer <token>` → `sha256` → constant-time lookup in `ingest_tokens.json`
 (probes and runners) or `dashboard_tokens.json` (dashboards). Credentials are re-read when the agent
-updates them (inotify or 10-s mtime poll) so rotation needs no restart. Ingest tokens are valid only
+updates them (a poll of the credentials directory every ≤ 10 s by `(mtime_ns, size, inode)`; a bad file keeps the previous good set and
+is logged without its content). systemd refreshes `LoadCredential=` copies only at unit start, so the **agent restarts
+the unit** when it changes a credential file (`01-contracts.md` §11); the poll serves dev/test layouts and mirrors
+(`--creds-dir`). A token-file value is a sha256 string or, during a rotation overlap, `[current, previous]`
+(`01-contracts.md` §9.2); other shapes are ignored (logged once). Ingest tokens are valid only
 on `/ingest/*`; dashboard tokens only on `/api/*`.
 
 ## 3. Ingest pipeline
@@ -128,7 +132,7 @@ Port `alert.py` (`Alerter`) to `incidents.py` + `alerts.py`:
 - **Folding** (`PARENTS`): DHCP, DNS, and Internet failures that start while Network fails, and
   Internet while DNS fails, and Wi-Fi while Network fails with the laptop on the target network, are
   **consequences**: recorded with `folded_into`, not paged separately.
-- **Silent probe:** no records for 90 s → a `probe silent` incident ("Nothing on this screen is current").
+- **Silent probe:** no records for 90 s → a `probe silent` incident ("Nothing on this screen is current"), with `Incident.line = "probe"` (`01-contracts.md` §5; it names the probe itself, not a network line).
 - Every incident is written to `incidents`. Webhook delivery is optional (`webhooks.json`): Slack,
   Teams, JSON formats, with all probe-supplied text **escaped** so it cannot create links or
   mentions (port `_slack`/`_teams` escaping). 3 retries with backoff; failures are logged without
@@ -142,8 +146,8 @@ Port `alert.py` (`Alerter`) to `incidents.py` + `alerts.py`:
 Implements `01-contracts.md` §5. Implementation notes:
 - `beats` and `state` come from the rules engine; `records` from SQLite (cursor = `(ts_ms, id)`).
 - `summary` ports `report.py` `dashboard_summary` (clients, DHCP servers seen, DNS, apps, throughput,
-  target-server access) for the details tables.
-- `query_range` proxies to VM with the guards in the contract plus VM's own limits; timeout 10 s.
+  target-server access) for the details tables; row shapes are fixed in `01-contracts.md` §5.
+- `query_range` proxies to VM with the guards in the contract plus VM's own limits (`-search.maxSeries=500`, 11,000 points per series, 32 MiB answers); timeout 10 s.
 - **SSE hub:** each client has a bounded queue (1,000 events); a client that falls behind is
   disconnected (it reconnects and resumes). A 5-minute ring buffer supports `Last-Event-ID`.
 
@@ -180,6 +184,10 @@ ingest rates, backlog, storage, `days_to_full` — and facts `tls_fingerprint_sh
 | `sse.py`, `api.py` | `exm/web.py` (`Hub`) |
 
 ## 12. Golden data
+
+The golden page sequence (nine pages) is the replay over 02:55-04:28, as in EXM's own replay. A full-file replay also pages
+the 02:45 `dns_hb` failure (110 s outlasts `hold_down_s = 20`); the hold is not special-cased. End times differ from EXM's by up to
+~10 s because exp stamps the start time (`test/fixtures/exm/README.md`).
 
 WP-0 provides `test/fixtures/convert_exm.py`, which converts the real EXM outage fixture
 `reference/exm/test/fixtures/outage-2026-10-27.jsonl.gz` into `exp.measurement/1` NDJSON

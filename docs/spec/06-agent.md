@@ -65,14 +65,26 @@ without a token repairs the agent installation.
    4. Render `config.json` (atomic write, `0644`) and every `creds` entry (atomic, root `0600` in
       `creds/`, which is `0700`); remove creds files no longer present; create any credential file
       the units reference but desired state left empty (missing files stop units from starting).
+      For the collector, prepare `tls/` and `vm/` with the ownership in `01-contracts.md` §11 (root, never
+      following symlinks) before the first start.
    5. Type hooks: collector/dashboard → ensure TLS key + self-signed cert (`03-collector.md` §8);
       probe → run `exp-probe preflight` against the new config and **refuse port changes that fail
       it**, keeping the previous config.
    6. Render units from the artifact's `systemd/` templates into `/etc/systemd/system/` (names
       must match `exp-*.service|timer`); `daemon-reload`.
    7. Flip `current` if the version changed; restart units whose version, config, or creds changed
-      (creds-only change → `SIGHUP` if the component declares reload support, else restart).
-   8. **Health:** `exp-<c> health` must succeed within 60 s (poll every 2 s).
+      (a changed credential file → **restart that unit**: systemd refreshes `LoadCredential=` files only
+      when a unit (re)starts, so reload/`SIGHUP` is never used for credentials; `ExecReload=` may still serve
+      config-only changes a component implements — a unit with an `ExecReload=` line gets
+      `systemctl reload` for a config-only change). Order: `netns` units first, then template instances
+      (`exp-probe-lease@<port>`, `exp-probe-target@<port>`), then the remaining units that have `[Install]`.
+   8. **Health:** the agent runs `<prefix>/bin/exp-<c> health --json --config <config>` (5 s timeout,
+      `CREDENTIALS_DIRECTORY` set to the component's creds dir) and requires a pass within 60 s (poll every
+      2 s). **`status` `ok` or `degraded` passes; `fail`, a timeout, or no parsable JSON with a non-zero
+      exit fails** (`status: fail` with exit 0 is a contradiction and fails). A timeout is reported as
+      `degraded`, `detail: "health timeout"`. The component's `status`, `detail`, `metrics`, `facts` are copied
+      into the status report either way, after dropping malformed wiring facts
+      (`tls_fingerprint_sha256`, `listen`, `url`): the manager rejects the whole report on one.
    9. **On failure:** restore the previous version, config, and creds (kept in
       `/var/lib/exp/agent/previous/<c>/`), restart, re-check, report `rolled_back` with the error,
       and do not retry this desired version until it changes.
@@ -143,7 +155,26 @@ never downgraded below the manifest's `min_agent_version`.
 ## 8. CLI
 
 `exp-agent run` · `status` (local summary: desired/applied versions, components, last error) ·
-`reconcile --once` · `facts` · `enrol <token> [--manager URL]` · `uninstall [--local]` · `version` · `selftest`.
+`reconcile --once` · `facts` · `enrol [--manager URL] [--token-file PATH|-]` · `uninstall [--local]` · `version` · `selftest`.
+
+The one-time enrol token is a secret and is never in argv (SR-14; `/proc/<pid>/cmdline`): `exp-agent enrol` reads it
+from `$EXP_ENROL_TOKEN`, from `--token-file PATH`, or from stdin (`--token-file -`); a positional token is a usage
+error (exit 2). `install.sh` receives the token as its own argument from the `curl | bash -s --` one-liner and
+passes it on through the environment or a pipe.
+
+**Desired-state polling:** `GET desired` answering `404 not_found` (nothing compiled for this host yet) means
+"retry on the next poll"; it is not a failure that backs off. `install.sh` is a template: the manager substitutes
+exactly three single-quoted literals once each, after validating them (refuse to serve otherwise, never escape) —
+`@@MANAGER_URL@@` (`https://host[:port]`, no path/userinfo/query/quotes/whitespace), `@@AGENT_VERSION@@` (semver) and
+`@@RELEASE_PUBKEY_PEM@@` (PEM public key, base64 body only) — and serves it as `text/x-shellscript` with
+`Cache-Control: no-store`. The installer pins that key; an `enrol` response carrying a different
+`release_pubkey_pem` only warns (a key rotation needs a fresh `install.sh`). `EnrolResponse` may carry `host_name`.
+
+**Unit layout.** `exp-agent.service` runs `/opt/exp/agent/current/bin/exp-agent run --config /etc/exp/agent.json`.
+Self-update keeps `/opt/exp/agent/previous` (symlink) and `/var/lib/exp/agent/pending.json`;
+`exp-agent-rollback.service` runs the **previous** tree's `exp-agent rollback-check` under
+`ConditionPathExists=/var/lib/exp/agent/pending.json`, so a broken new agent cannot block its own rollback.
+`install.sh` creates `/opt/exp` and `/etc/exp` before the first start.
 
 ## 9. Acceptance tests (WP-6 definition of done)
 
@@ -153,6 +184,8 @@ In systemd containers (pattern: `reference/exm/test/package.sh`) against the man
    printed; re-running is idempotent.
 2. All shapes converge (collector, dashboard, probe with veth ports) and report healthy; probe
    data reaches the collector through the wiring the manager compiled.
+   *Ownership:* needs signed release tarballs built by `packaging/build.sh`, so it is verified by WP-7/WP-8
+   (`agent/tests/container/test_container_shapes.py`, run with `EXP_DIST_DIR=<signed dist>`), not inside `agent/`.
 3. Tampered manifest, bad signature, wrong sha256 → refused, nothing changed.
 4. A release whose `health` fails → automatic rollback, reported `rolled_back`; the same desired
    version is not retried.

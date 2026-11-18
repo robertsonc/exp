@@ -540,7 +540,8 @@ components:
           type: string
           maxLength: 2048
           description: The one-liner for the target host, e.g. `curl -fsSL https://<manager>/install.sh
-            | sudo bash -s -- --token <token>`.
+            | sudo bash -s -- expe_...` (the token is the positional argument of install.sh and is never
+            placed in a process's argv by the agent itself).
         expires_at:
           $ref: ../schemas/common.schema.json#/$defs/ts
       required:
@@ -1732,7 +1733,10 @@ components:
               $ref: '#/components/schemas/MetricPoint'
             maxItems: 10000
           description: Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour
-            buckets.
+            buckets. Every `t` is epoch SECONDS. Host keys are `cpu_pct mem_pct
+            disk_pct load1 net_rx_pps net_tx_pps net_rx_bps net_tx_bps net_errors net_drops disk_write_kbps`
+            (`net_*` come from the management interface and carry a null max). Component keys are the
+            chartable keys of 05-manager.md section 13.
       required:
       - range
       - step_s

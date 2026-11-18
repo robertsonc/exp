@@ -80,14 +80,22 @@ def bearer_token(header: str | None) -> str | None:
     return tok if tok and " " not in tok else None
 
 
-def match_token(token: str | None, hashes: dict[str, str]) -> str | None:
-    """Identity whose stored sha256 matches `token`, comparing every entry in constant time."""
+def match_token(token: str | None, hashes: dict[str, Any]) -> str | None:
+    """Identity whose stored sha256 matches `token`, comparing every entry in constant time.
+
+    A stored value is a sha256 hex string, or (CR-wp4-token-overlap, rotation overlap only) a list
+    [current_sha256, previous_sha256]. Any other shape never matches."""
     if not token:
         return None
     digest = exp_ids.token_hash(token)
     found: str | None = None
     for ident, stored in hashes.items():
-        if exp_ids.tokens_equal(digest, stored) and found is None:
+        cands = stored if isinstance(stored, list) else [stored]
+        hit = False
+        for cand in cands:
+            if isinstance(cand, str) and exp_ids.tokens_equal(digest, cand):
+                hit = True
+        if hit and found is None:
             found = ident
     return found
 

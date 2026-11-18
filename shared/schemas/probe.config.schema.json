@@ -101,6 +101,30 @@
                   "type": "number",
                   "minimum": 0.5,
                   "maximum": 30
+                },
+                "thresholds": {
+                  "type": "object",
+                  "properties": {
+                    "offer_ms": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 60000
+                    },
+                    "total_ms": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 60000
+                    }
+                  }
+                },
+                "allowed_servers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "maxItems": 16
                 }
               }
             }
@@ -125,6 +149,16 @@
                     "$ref": "common.schema.json#/$defs/host_or_ip"
                   },
                   "maxItems": 64
+                },
+                "thresholds": {
+                  "type": "object",
+                  "properties": {
+                    "rtt_ms": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 60000
+                    }
+                  }
                 }
               }
             }
@@ -149,6 +183,21 @@
                     "$ref": "#/$defs/app_target"
                   },
                   "maxItems": 64
+                },
+                "thresholds": {
+                  "type": "object",
+                  "properties": {
+                    "slow_factor": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "apdex_min": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  }
                 }
               }
             }
@@ -236,6 +285,50 @@
               "additionalProperties": true
             }
           ]
+        },
+        "trace": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "thresholds": {
+                  "type": "object",
+                  "properties": {
+                    "rtt_ms": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 60000
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "ping": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "thresholds": {
+                  "type": "object",
+                  "properties": {
+                    "rtt_ms": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 60000
+                    }
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -263,6 +356,11 @@
         "$ref": "common.schema.json#/$defs/drill_assignment"
       },
       "maxItems": 32
+    },
+    "allow_shared": {
+      "type": "boolean",
+      "default": false,
+      "description": "host mode only: the single test interface may be the management interface; the control-path traceroute is disabled. Ignored in netns mode, where a port on mgmt_iface is always refused."
     }
   },
   "required": [
@@ -474,6 +572,15 @@
           "type": "number",
           "minimum": 1,
           "maximum": 60000
+        },
+        "expect_status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "expect_body": {
+          "type": "string",
+          "maxLength": 256
         }
       },
       "required": [

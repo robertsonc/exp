@@ -104,7 +104,7 @@ class ProbeConfig:
         self.mode: str = raw["mode"]
         self.mgmt_iface: str = raw["mgmt_iface"]
         # `allow_shared` is not in the frozen schema (unknown fields are ignored by readers); the probe
-        # honours it at the top level in host mode only. See probe/docs/change-requests/CR-wp1-allow-shared.md.
+        # honours it at the top level in host mode only. See docs/spec/changes/CR-wp1-allow-shared.md.
         self.allow_shared: bool = bool(raw.get("allow_shared")) and self.mode == "host"
         self.ports: list[Port] = [
             Port(id=p["id"], iface=p["iface"], role=p["role"], vlan=p.get("vlan"),

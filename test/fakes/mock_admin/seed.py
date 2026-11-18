@@ -78,12 +78,12 @@ def series_points(entity: str, key: str, profile: dict[str, tuple[float, float, 
     for i in range(n):
         t = end - (n - 1 - i) * step
         if until is not None and t > until:
-            pts.append({"t": t * 1000, "avg": None, "max": None})
+            pts.append({"t": t, "avg": None, "max": None})
             continue
         avg = metric_value(entity, key, profile, t + step / 2)
         spread = abs(_noise(f"{entity}:{key}:max", t // step)) * (profile.get(key, (0, 0, 0))[2] * 0.6 + 0.01)
         mx = min(100.0, avg + spread) if key in PCT_KEYS else avg + spread
-        pts.append({"t": t * 1000, "avg": avg, "max": round(max(mx, avg), 2)})
+        pts.append({"t": t, "avg": avg, "max": round(max(mx, avg), 2)})
     return pts
 
 
@@ -342,6 +342,24 @@ def _apply_port_usage(host: dict[str, Any], comp: dict[str, Any]) -> None:
             iface["in_use_by"] = f"probe:{pid}" if pid else "none"
 
 
+# days_to_full per collector host (CR-wp5-fleet-api-gaps item 1): one under 7 days, one under 2, the rest healthy.
+DAYS_TO_FULL = {"hb-col-01": 5.4, "kn-col-01": 1.6, "hc-col-01": 41.0}
+
+
+def collector_metrics(host: dict[str, Any], comp: dict[str, Any], at: float) -> dict[str, Any]:
+    """The full exp.health/1 collector metric set (01-contracts section 8.1), deterministic per component."""
+    prof, cid = comp["_profile"], comp["component_id"]
+    days = DAYS_TO_FULL.get(host["name"], 60.0)
+    free_gb = round(days * 6.5, 1)
+    return {
+        "ingest_records_per_s": metric_value(cid, "ingest_records_per_s", prof, at),
+        "ingest_rejected_per_min": metric_value(cid, "rejects_per_min", prof, at),
+        "ingest_duplicates_per_min": 1.4, "ingest_bytes_per_s": 182000.0,
+        "probes_total": 6, "probes_reporting": 6, "vm_up": 1, "vm_backlog_points": 0, "vm_series": 5200,
+        "vm_storage_gb": 1.2, "records_db_gb": 0.4, "storage_free_gb": free_gb, "days_to_full": days,
+        "sse_clients": 2, "open_incidents": 0, "webhook_failures_1h": 0, "rules_eval_ms_p95": 3.2}
+
+
 def make_report(host: dict[str, Any], comps: list[dict[str, Any]], at: float) -> dict[str, Any]:
     prof = host["_profile"]
     r = fc.load_fixture("status/collector-host.json" if host["_role"] == "collector" else "status/probe-host.json")
@@ -367,6 +385,7 @@ def make_report(host: dict[str, Any], comps: list[dict[str, Any]], at: float) ->
                    health=c["health"], detail=c.get("_detail", ""), since=iso(at - 86400))
         if c["type"] == "collector":
             tpl["facts"] = dict(c["facts"])
+            tpl["metrics"] = collector_metrics(host, c, at)
         elif c["type"] != "probe":
             tpl["metrics"], tpl["facts"] = {}, {}
         out.append(tpl)

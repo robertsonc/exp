@@ -137,7 +137,7 @@ def _dec_cursor(cursor: str | None) -> int:
 class CollectorApp:
     """All collector state + behaviour; HTTP handlers are thin wrappers."""
 
-    def __init__(self, *, ingest_tokens: dict[str, str], dashboard_tokens: dict[str, str],
+    def __init__(self, *, ingest_tokens: dict[str, Any], dashboard_tokens: dict[str, Any],
                  site: str = "hall-b", probe_sites: dict[str, str] | None = None,
                  probe_labels: dict[str, str] | None = None, retention_days: int = 7,
                  now_fn: Callable[[], float] = time.time, keepalive_s: float = 15.0,
@@ -566,7 +566,7 @@ class Handler(fc.BaseHandler):
     app: CollectorApp  # type: ignore[assignment]
 
     # --- auth ---------------------------------------------------------------------------------
-    def _auth(self, tokens: dict[str, str]) -> str:
+    def _auth(self, tokens: dict[str, Any]) -> str:
         ident = fc.match_token(fc.bearer_token(self.header("Authorization")), tokens)
         if ident is None:
             raise ApiError(401, "invalid_token", "missing or invalid token", {"WWW-Authenticate": "Bearer"})
@@ -1053,11 +1053,15 @@ class FakeCollector(fc.FakeServer):
             self.app.cond.notify_all()
 
 
-def _load_hash_map(path: str) -> dict[str, str]:
+def _load_hash_map(path: str) -> dict[str, Any]:
     doc = exp_config.load_json(path)
-    if not isinstance(doc, dict) or not all(isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v)
-                                            for v in doc.values()):
-        raise SystemExit(f"{path}: expected a JSON object of {{id: sha256-hex}}")
+    def ok(v: Any) -> bool:
+        if isinstance(v, str):
+            return re.fullmatch(r"[0-9a-f]{64}", v) is not None
+        return isinstance(v, list) and 1 <= len(v) <= 2 and all(ok(x) and isinstance(x, str) for x in v)
+
+    if not isinstance(doc, dict) or not all(ok(v) for v in doc.values()):
+        raise SystemExit(f"{path}: expected a JSON object of {{id: sha256-hex | [current, previous]}}")
     return doc
 
 

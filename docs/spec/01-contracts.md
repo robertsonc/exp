@@ -145,12 +145,23 @@ only `ok` or `fail`.
 | `GET records` | `probe`, `test?`, `outcome?`, `from`, `to`, `limit?`, `cursor?` | `{items:[Measurement], next_cursor}` |
 | `GET incidents` | `probe?`, `site?`, `from?`, `to?`, `open?` | `{items:[Incident]}` |
 | `POST incidents/{id}/ack` | body `{note?}` | `204` (operator role, audited) |
-| `GET summary` | `probe`, `minutes` (≤ 1440) | details tables: `{clients:[…], dhcp:[…], dns:[…], apps:[…], throughput:[…], servers:[…]}` |
-| `GET query_range` | `query`, `start`, `end`, `step` | MetricsQL proxied to VM. Guards: only `exp_*` metric names; query ≤ 2 KiB; range ≤ 30 d; step ≥ 10 s; ≤ 500 series in the result. |
+| `GET summary` | `probe`, `minutes` (≤ 1440) | details tables: `{clients:[…], dhcp:[…], dns:[…], apps:[…], throughput:[…], servers:[…]}`; row shapes below |
+| `GET query_range` | `query`, `start`, `end`, `step` | MetricsQL proxied to VM. Guards: only `exp_*` metric names; query ≤ 2 KiB; range ≤ 30 d; step ≥ 10 s; ≤ 500 series in the result (`422 too_many_series`, also when VM refuses; `422 result_too_large` above 32 MiB; `400 step_too_small` also above 11,000 points per series). `start`/`end` are RFC 3339 `…Z` or epoch seconds. |
 | `GET stream` | `probes` (comma list) or `site` | SSE (below) |
 | `GET drills/{run_id}` | — | drill report: `{run_id, type, target, start, until, phases[], expectation, observed:{ttd_s, ttr_s, lines_impacted[]}, result:"pass\|fail\|aborted"}` (M5) |
 | `POST drills/{run_id}/abort` | — | `202` (operator role, audited) — LAN kill switch (M5) |
 | `GET drills/control` | — (auth: executor's ingest token) | `{"abort":["run_id",…]}` — polled every 2 s by executors during active runs (M5) |
+
+`POST incidents/{id}/ack` without an `X-Exp-User` header is `403 forbidden` (an unattributable acknowledgement
+would defeat the audit trail); the operator role itself is checked by the dashboard session.
+
+**Summary rows** (all keys always present, `null` when there is no data; consumers ignore unknown keys):
+- `clients[]`: `port, dhcp_runs, dhcp_ok_pct, dhcp_total_p50_ms, dhcp_total_p95_ms, dns_runs, dns_ok_pct, dns_p50_ms, dns_p95_ms, apps_runs, apdex, worst_app, worst_apdex, wifi_ssid, wifi_rssi_dbm, flags[], no_link_runs`
+- `dhcp[]`: `server, ports[], runs, ok_pct, offer_p50_ms, total_p50_ms, total_p95_ms, last_seen`
+- `dns[]`: `resolver, kind, runs, ports[], p50_ms, p95_ms, fail_pct`
+- `apps[]`: `app, apdex, runs, clients, p50_total_ms, p95_total_ms, ok_pct`
+- `throughput[]`: `port, provider, down_mbps, up_mbps, latency_idle_ms, latency_loaded_ms, bufferbloat_ms, outcome, ts` (latest run per port and provider in the window)
+- `servers[]`: `port, proto, requests, errors, p50_ms, sources[{client,count}], last_seen`
 
 **State**
 ```json
@@ -190,10 +201,14 @@ Beat value: `0` ok, `1` warn, `2` fail, `3` unknown/probe error.
  "start": "…", "end": null, "where": {"seg": "edge", "ip": "10.1.0.2"}, "facts": ["No answers from 1.1.1.1 since 15:13:42"],
  "folded_into": null, "acked_by": null, "link": "https://<dashboard>/probe/probe-a1?at=…"}
 ```
+`Incident.line` is a `line_key` **or `probe`**: the "probe silent" incident (no records for 90 s, 03 §6) is not about a
+network line. `State` and `Beats` keep `line_key` only; dashboards render `probe` as "Probe". `kind` is `down|back`
+(`again` after a re-failure) for it.
 
 **SSE** (`text/event-stream`): events `beat` `{probe, line, t, v}`, `state` (State-lite),
 `incident` (Incident). A `: keepalive` comment every 15 s. `retry: 3000`. A client may resume
-with `Last-Event-ID`; the server replays ≤ 5 min.
+with `Last-Event-ID`; the server replays ≤ 5 min. No initial state snapshot is sent on connect (clients read `GET states`
+first); event ids are `<boot>.<n>`, and an id from before a collector restart replays nothing.
 
 ## 6. Agent API (agent → manager)
 
@@ -203,7 +218,7 @@ Bearer expa_…` except for `enrol`. Rate-limited per IP and per agent.
 | Method & path | Request | Response |
 |---|---|---|
 | `POST enrol` | `{"token":"expe_…","facts":Facts}` | `201 {"agent_id":"h_…","agent_secret":"expa_…","poll_interval_s":30,"release_pubkey_pem":"…","manager_time":"…"}`; `401 invalid_token`, `410 token_used_or_expired`, `429` |
-| `GET desired` | header `If-None-Match: "<etag>"` | `200` **Desired state** + `ETag`, or `304` |
+| `GET desired` | header `If-None-Match: "<etag>"` | `200` **Desired state** + `ETag`, or `304`; `404 not_found` while no desired state has been compiled for the host yet (the agent retries on the next poll, no back-off) |
 | `GET releases/{version}/manifest` | — | the signed manifest JSON (bytes exactly as signed) |
 | `GET releases/{version}/manifest.sig` | — | base64 Ed25519 signature |
 | `GET artifacts/{artifact_id}` | — | artifact bytes (streamed from R2). `403` unless this artifact is referenced by this host's desired state. |
@@ -211,8 +226,14 @@ Bearer expa_…` except for `enrol`. Rate-limited per IP and per agent.
 | `POST rotate` | `{}` (only when desired state carries a `rotate_agent_secret` action) | `200 {"agent_secret":"expa_…","grace_s":600}` — the old secret stays valid for `grace_s` |
 | `POST decommissioned` | `{}` | `204` — the host's credentials are revoked |
 
-`install.sh` is served at `GET https://<manager>/install.sh` (public, static, no secrets). The
-enrol token is passed as an argument and sent only in the `POST enrol` body — never in a URL.
+`POST rotate` without a pending `rotate_agent_secret` action is `409 rotation_not_requested`.
+
+`install.sh` is served at `GET https://<manager>/install.sh` (public, no secrets; template served with three
+validated substitutions, see 06 §1). The one-time enrol token is given to `install.sh` as its positional argument
+(`curl -fsSL https://<manager>/install.sh | sudo bash -s -- expe_…`) and sent only in the `POST enrol` body — never in a
+URL, and the installed `exp-agent enrol` never receives it in argv (06 §8: `$EXP_ENROL_TOKEN` or stdin). The manager
+origin used for SSO and links is the `MANAGER_URL` var (set by `deploy.sh`) or, until known, the origin of the first
+authenticated admin request.
 
 ## 7. Desired state — `exp.desired/1`
 
@@ -309,8 +330,13 @@ that interval, never negative values.
 
 ### 8.1 Component health — `exp.health/1`
 
-Every component implements `exp-<c> health --json` (exit 0 = healthy; must answer in < 5 s; output
-≤ 64 KiB). The agent copies `status`, `detail`, `metrics`, and `facts` into the status report.
+Every component implements `exp-<c> health --json` (exit 0 = process healthy; must answer in < 5 s; output
+≤ 64 KiB). `status` carries severity: **`ok` and `degraded` exit 0, `fail` exits 1** (a component never exits 1 for
+`degraded`; `degraded` means "serving, but something it depends on or reports on is wrong", e.g. the probe with the
+collector unreachable while the spool accepts writes). The agent's reconcile health gate passes on `ok` or `degraded`
+and fails on `fail`, a timeout, or unparsable output with a non-zero exit; `status: fail` with exit 0 is a
+contradiction and counts as failing. Unknown `facts`/`metrics` keys are ignored by consumers (the probe adds
+`shipper_state`, `tls_pin_mismatch`, `auth_failed`, `dropped_total`). The agent copies `status`, `detail`, `metrics`, and `facts` into the status report.
 ```json
 {"schema": "exp.health/1", "status": "ok|degraded|fail", "detail": "", "version": "0.1.0",
  "uptime_s": 86000, "metrics": {}, "facts": {}}
@@ -367,6 +393,15 @@ JSON Schema in `shared/schemas/`. Components MUST refuse to start on an invalid 
               "start": "2026-11-18T21:00:00.000Z", "until": "2026-11-18T21:02:00.000Z", "abort": false}]
 }
 ```
+Optional keys the probe reads (all additive, absent = default): top-level `allow_shared` (bool, default `false`; **host
+mode only** — the single test interface may be `mgmt_iface`, and the control-path traceroute is disabled; ignored in
+`netns` mode, where a port on `mgmt_iface` is always refused); `tests.dhcp.thresholds.{offer_ms,total_ms}` (default
+1000/1500) and `tests.dhcp.allowed_servers[]` (an offer from another server sets `rogue_suspect`);
+`tests.dns.thresholds.rtt_ms` (250); `tests.trace.thresholds.rtt_ms` and `tests.ping.thresholds.rtt_ms` (250 each; `tests.trace`
+and `tests.ping` are objects or `null`); `tests.app.thresholds.{slow_factor,apdex_min}` (4 / 0.85) and
+`tests.app.targets[].{expect_status,expect_body}` (what a connectivity-check endpoint always returns; a mismatch is
+reported as a captive portal). Thresholds turn an otherwise `ok` result into `degraded` (03 outcome rules).
+
 `drills` is normally empty (M5; `10-drills-integrations.md`). `collector` is `null` until the
 collector has reported its address and TLS pin; the probe then measures and spools. **Path and
 iperf3 peers must be reachable from the test port's network:** event networks usually cannot reach
@@ -394,8 +429,16 @@ touched. `ports[].role` ∈ `client | target | wifi`.
   "ingest": {"max_body_mb": 4, "max_records": 1000}
 }
 ```
+`alerts.webhook_allow` (optional, array ≤ 16 of strings, each an IP address, a CIDR, or a host name matched exactly and
+case-insensitively): SR-15 refuses webhook destinations that resolve to private, loopback or link-local addresses
+unless allowlisted here. An entry permits only the matching addresses/host; `https` and "never follow redirects"
+stay mandatory regardless, and a destination whose resolved addresses are all public needs no entry.
+
 Creds: `ingest_tokens.json` (`{probe_id: sha256}`), `dashboard_tokens.json` (`{dashboard_id: sha256}`),
-`webhooks.json` (`[{id, format: slack|teams|json, url}]`). TLS key/cert are generated **locally** by
+`webhooks.json` (`[{id, format: slack|teams|json, url}]`). A token-file value is a sha256 hex string **or, only during
+a rotation overlap (05 §6: the previous token stays valid for 10 minutes), a JSON array
+`[current_sha256, previous_sha256]`**; collectors accept `str | list[str]` per key and ignore (logging once) any
+other shape. TLS key/cert are generated **locally** by
 the agent at `/var/lib/exp/collector/tls/` (§11) — never sent by the manager.
 
 ### 9.3 `exp.dashboard.config/1`
@@ -470,7 +513,7 @@ base64. Verified with:
 | `/etc/exp/<component>/config.json` | root `0644` | rendered config (no secrets) |
 | `/etc/exp/<component>/creds/` | root `0700`, files `0600` | credentials (LoadCredential source) |
 | `/var/lib/exp/agent/` | root `0700` | cached desired state, manifests, previous-version pointers |
-| `/var/lib/exp/<component>/` | root-owned dir; service-owned subdirs only | data (spool, SQLite, VM data, TLS) |
+| `/var/lib/exp/<component>/` | root-owned dir; service-owned subdirs only (exception: the collector, below) | data (spool, SQLite, VM data, TLS) |
 | `/run/exp/<component>/` | service | runtime (PIDs, sockets) |
 
 Service users: `exp-collector`, `exp-vm`, `exp-dashboard`, `exp-runner` (system, nologin). Probe and
@@ -493,6 +536,27 @@ chowns recursively or through a path a service user can write** (symlink-attack 
 
 Every unit with creds uses `LoadCredential=` and the agent guarantees each referenced file exists
 (possibly empty) — a missing credential file stops a unit from starting (EXM lesson).
+
+**Credential refresh = restart.** systemd copies a `LoadCredential=` file into `$CREDENTIALS_DIRECTORY` only when the
+unit (re)starts. Whenever a unit's credential files change, the agent therefore **restarts that unit** (token rotation
+would otherwise leave the OLD token valid); it never relies on reload or `SIGHUP` for credentials. `ExecReload=` may
+still serve config-only reloads a component implements. Components may additionally poll their credentials directory
+(collector: every ≤ 10 s; dashboard: every 5 s) so dev/test layouts and mirrors work without a restart.
+
+**Collector state layout.** `exp-collector.service` uses `StateDirectory=exp/collector`, so `/var/lib/exp/collector/`
+is owned by `exp-collector` (SQLite WAL needs `-wal`/`-shm` next to `records.db`, mode `0600`). Before the first start
+the agent (root, never following symlinks) prepares `tls/` (`exp-collector` `0700`, `key.pem` `0600`, `cert.pem` `0644`;
+the collector refuses a key readable by "other") and `vm/` (`exp-vm` `0700`; VM size/series come from VM's loopback
+HTTP API). **Launch wrappers:** `exp-victoriametrics.service` runs `exp-collector vm-exec --config … --state-dir …`
+and `exp-iperf3.service` runs `exp-collector iperf3-exec`; they validate the config and `execv` the vendored
+`victoria-metrics` / `iperf3` with an argv list (no shell, no env file, no word splitting), so config values are never
+interpolated into unit files. The flags are exactly those of 03 §1 (`exp-collector vm-args` prints them); `iperf3` binds
+the collector mgmt IP and the configured port (default 5201) and exits 0 when disabled. `vendor/victoria-metrics` is
+shipped sha256-pinned.
+
+**Dashboard runtime paths** come from the systemd environment (`STATE_DIRECTORY`, `RUNTIME_DIRECTORY`,
+`CREDENTIALS_DIRECTORY`; units use `StateDirectory=exp/dashboard`, `RuntimeDirectory=exp/dashboard`), not from
+`exp.dashboard.config/1`; its `health --json` talks to the service over `@RUN@/health.sock`.
 
 | Port | Proto | Who listens | Bind | Purpose |
 |---|---|---|---|---|

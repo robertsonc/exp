@@ -337,6 +337,21 @@ paths:
               $ref: '#/components/headers/ETag'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: 'No desired state has been compiled for this host yet (e.g. the host row exists but
+            compilation failed). Error code `not_found`. The agent treats it as "retry on the next poll" (no
+            back-off as for 503).'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                not_found:
+                  value:
+                    error:
+                      code: not_found
+                      message: not found
+                      details: {}
         '429': *id003
         '503':
           $ref: '#/components/responses/ServiceUnavailable'

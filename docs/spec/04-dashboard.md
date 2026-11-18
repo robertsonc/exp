@@ -21,6 +21,19 @@ Package: `dashboard/exp_dashboard/{config,server,auth,sessions,federate,sse,cli}
 and reports its fingerprint; the manager UI shows it so users can verify the browser warning.
 `provided` → cert/key from creds.
 
+**Runtime paths** are not in `exp.dashboard.config/1`: the service reads `STATE_DIRECTORY` (default
+`/var/lib/exp/dashboard`), `RUNTIME_DIRECTORY` (`/run/exp/dashboard`) and `CREDENTIALS_DIRECTORY`
+(`/etc/exp/dashboard/creds`) from the systemd environment; dev/test use `--state-dir/--creds-dir/--run-dir/--tls-cert/--tls-key`.
+`health --json` asks the running service over a unix socket `@RUN@/health.sock` (0600, `exp-dashboard`; root can connect),
+never a TCP port; with the service down it prints `status: fail` and exits 1. Per `01-contracts.md` §8.1, `degraded`
+(a collector unreachable while the dashboard itself serves) exits 0. HSTS is sent only when `tls.mode = provided`
+(HSTS on a self-signed certificate would remove the click-through the manager UI tells users to expect). The service also
+re-reads `CREDENTIALS_DIRECTORY` every 5 s so sessions are invalidated within the required 30 s; production still restarts
+the unit on credential rotation. A NOC token without a parsable timezone-aware `expires` is ignored (never
+non-expiring); NOC sessions are always `viewer`. The collector `stream` takes `probes` xor `site`; the dashboard subscribes
+per `collectors[]` entry with its `site`, so one entry covers exactly the site it serves. Incidents with `line = "probe"` are
+rendered as "Probe".
+
 ## 2. Authentication and sessions
 
 | Route | Purpose |

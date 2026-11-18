@@ -11,6 +11,10 @@
     "schema": "collector.config.schema.json",
     "expected": "valid"
   },
+  "configs/collector.webhook-allow.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "valid"
+  },
   "configs/dashboard.json": {
     "schema": "dashboard.config.schema.json",
     "expected": "valid"
@@ -28,6 +32,10 @@
     "expected": "valid"
   },
   "configs/probe.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/probe.test-options.json": {
     "schema": "probe.config.schema.json",
     "expected": "valid"
   },
@@ -111,6 +119,10 @@
     "schema": "incident.schema.json",
     "expected": "valid"
   },
+  "incidents/probe-silent.json": {
+    "schema": "incident.schema.json",
+    "expected": "valid"
+  },
   "invalid/beats/bad-line.json": {
     "schema": "beats.schema.json",
     "expected": "invalid"
@@ -143,6 +155,14 @@
     "schema": "collector.config.schema.json",
     "expected": "invalid"
   },
+  "invalid/configs/collector-webhook-allow-bad-entry.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-webhook-allow-too-many.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
   "invalid/configs/dashboard-bad-tls-mode.json": {
     "schema": "dashboard.config.schema.json",
     "expected": "invalid"
@@ -153,6 +173,14 @@
   },
   "invalid/configs/dashboard-missing-collectors.json": {
     "schema": "dashboard.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-allow-shared-not-bool.json": {
+    "schema": "probe.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/probe-apdex-min-over-1.json": {
+    "schema": "probe.config.schema.json",
     "expected": "invalid"
   },
   "invalid/configs/probe-bad-mode.json": {
@@ -260,6 +288,10 @@
     "expected": "invalid"
   },
   "invalid/incidents/bad-kind.json": {
+    "schema": "incident.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/incidents/bad-line.json": {
     "schema": "incident.schema.json",
     "expected": "invalid"
   },

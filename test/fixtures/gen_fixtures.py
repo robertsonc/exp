@@ -253,6 +253,20 @@ def gen_configs() -> None:
     dprov["tls"] = {"mode": "provided"}
     put("configs/dashboard.tls-provided.json", dprov, "dashboard.config.schema.json")
     put("configs/runner.json", runner_cfg(), "runner.config.schema.json")
+    # CR-wp2-webhook-allowlist: alerts.webhook_allow (IP, CIDR, host name; max 16)
+    cwa = collector_cfg()
+    cwa["alerts"]["webhook_allow"] = ["10.32.98.40", "10.40.0.0/16", "Chat.Corp.Example"]
+    put("configs/collector.webhook-allow.json", cwa, "collector.config.schema.json")
+    # CR-wp1-test-options / CR-wp1-allow-shared: optional per-test knobs, allow_shared (host mode)
+    pto = copy.deepcopy(host)
+    pto["allow_shared"] = True
+    pto["tests"].update({
+        "dhcp": {"interval_s": 300, "offer_collect_s": 3.0, "thresholds": {"offer_ms": 800, "total_ms": 1200}, "allowed_servers": ["10.1.0.1"]},
+        "dns": {"interval_s": 300, "names": ["www.google.com"], "thresholds": {"rtt_ms": 200}},
+        "app": {"interval_s": 300, "thresholds": {"slow_factor": 3, "apdex_min": 0.9},
+                "targets": [{"app": "captive-check", "url": "http://connectivitycheck.gstatic.com/generate_204", "apdex_t_ms": 500, "expect_status": 204, "expect_body": ""}]},
+        "trace": {"thresholds": {"rtt_ms": 300}}, "ping": {"thresholds": {"rtt_ms": 300}}})
+    put("configs/probe.test-options.json", pto, "probe.config.schema.json")
 
     def bad(name: str, base: dict, schema: str, mutate) -> None:
         d = copy.deepcopy(base)
@@ -260,6 +274,10 @@ def gen_configs() -> None:
         put("invalid/configs/%s.json" % name, d, schema, "invalid")
 
     P, C, D, R = probe_cfg(), collector_cfg(), dashboard_cfg(), runner_cfg()
+    bad("collector-webhook-allow-too-many", C, "collector.config.schema.json", lambda d: d["alerts"].update(webhook_allow=["10.0.0.%d" % i for i in range(17)]))
+    bad("collector-webhook-allow-bad-entry", C, "collector.config.schema.json", lambda d: d["alerts"].update(webhook_allow=["10.0.0.1; rm -rf /"]))
+    bad("probe-apdex-min-over-1", P, "probe.config.schema.json", lambda d: d["tests"]["app"].update(thresholds={"apdex_min": 2}))
+    bad("probe-allow-shared-not-bool", P, "probe.config.schema.json", lambda d: d.update(allow_shared="yes"))
     bad("probe-bad-mode", P, "probe.config.schema.json", lambda d: d.update(mode="bridge"))
     bad("probe-bad-port-role", P, "probe.config.schema.json", lambda d: d["ports"][0].update(role="monitor"))
     bad("probe-iface-traversal", P, "probe.config.schema.json", lambda d: d["ports"][0].update(iface="../../etc/passwd"))
@@ -511,7 +529,8 @@ def gen_state_etc() -> None:
     put("incidents/again.json", inc("again", "again", start="2026-11-18T15:20:00.000Z"), "incident.schema.json")
     put("incidents/flapping.json", inc("flap", "flapping", facts=["3 outages in 10 minutes"], where=None), "incident.schema.json")
     put("incidents/folded.json", inc("folded", "down", line="internet", folded_into=fid("inc", "down"), acked_by="op@example.invalid"), "incident.schema.json")
-    for name, mut in (("bad-kind", lambda d: d.update(kind="sideways")), ("bad-id-prefix", lambda d: d.update(id="incident-1")), ("bad-where-seg", lambda d: d.update(where={"seg": "nope"})),
+    put("incidents/probe-silent.json", inc("probe", "down", line="probe", where=None, facts=["No records from probe-a1 for 90 s"]), "incident.schema.json")
+    for name, mut in (("bad-line", lambda d: d.update(line="bogus")), ("bad-kind", lambda d: d.update(kind="sideways")), ("bad-id-prefix", lambda d: d.update(id="incident-1")), ("bad-where-seg", lambda d: d.update(where={"seg": "nope"})),
                       ("naive-start", lambda d: d.update(start="2026-11-18T15:13:42")), ("missing-start", lambda d: d.pop("start"))):
         d = inc("x", "down")
         mut(d)

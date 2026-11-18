@@ -399,36 +399,103 @@ components:
           type: array
           items:
             type: object
+            description: 'Row keys (all always present, null when there is no data): port, dhcp_runs, dhcp_ok_pct, dhcp_total_p50_ms, dhcp_total_p95_ms, dns_runs, dns_ok_pct, dns_p50_ms, dns_p95_ms, apps_runs, apdex, worst_app, worst_apdex, wifi_ssid, wifi_rssi_dbm, flags, no_link_runs.'
+            properties:
+              port: {}
+              dhcp_runs: {}
+              dhcp_ok_pct: {}
+              dhcp_total_p50_ms: {}
+              dhcp_total_p95_ms: {}
+              dns_runs: {}
+              dns_ok_pct: {}
+              dns_p50_ms: {}
+              dns_p95_ms: {}
+              apps_runs: {}
+              apdex: {}
+              worst_app: {}
+              worst_apdex: {}
+              wifi_ssid: {}
+              wifi_rssi_dbm: {}
+              flags: {}
+              no_link_runs: {}
             additionalProperties: true
           maxItems: 5000
         dhcp:
           type: array
           items:
             type: object
+            description: 'Row keys (all always present, null when there is no data): server, ports, runs, ok_pct, offer_p50_ms, total_p50_ms, total_p95_ms, last_seen.'
+            properties:
+              server: {}
+              ports: {}
+              runs: {}
+              ok_pct: {}
+              offer_p50_ms: {}
+              total_p50_ms: {}
+              total_p95_ms: {}
+              last_seen: {}
             additionalProperties: true
           maxItems: 5000
         dns:
           type: array
           items:
             type: object
+            description: 'Row keys (all always present, null when there is no data): resolver, kind, runs, ports, p50_ms, p95_ms, fail_pct.'
+            properties:
+              resolver: {}
+              kind: {}
+              runs: {}
+              ports: {}
+              p50_ms: {}
+              p95_ms: {}
+              fail_pct: {}
             additionalProperties: true
           maxItems: 5000
         apps:
           type: array
           items:
             type: object
+            description: 'Row keys (all always present, null when there is no data): app, apdex, runs, clients, p50_total_ms, p95_total_ms, ok_pct.'
+            properties:
+              app: {}
+              apdex: {}
+              runs: {}
+              clients: {}
+              p50_total_ms: {}
+              p95_total_ms: {}
+              ok_pct: {}
             additionalProperties: true
           maxItems: 5000
         throughput:
           type: array
           items:
             type: object
+            description: 'Row keys (all always present, null when there is no data): port, provider, down_mbps, up_mbps, latency_idle_ms, latency_loaded_ms, bufferbloat_ms, outcome, ts.'
+            properties:
+              port: {}
+              provider: {}
+              down_mbps: {}
+              up_mbps: {}
+              latency_idle_ms: {}
+              latency_loaded_ms: {}
+              bufferbloat_ms: {}
+              outcome: {}
+              ts: {}
             additionalProperties: true
           maxItems: 5000
         servers:
           type: array
           items:
             type: object
+            description: 'Row keys (all always present, null when there is no data): port, proto, requests, errors, p50_ms, sources, last_seen.'
+            properties:
+              port: {}
+              proto: {}
+              requests: {}
+              errors: {}
+              p50_ms: {}
+              sources: {}
+              last_seen: {}
             additionalProperties: true
           maxItems: 5000
       required:
@@ -917,7 +984,8 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The calling dashboard user lacks the operator role.
+          description: The calling dashboard user lacks the operator role, or the request carries no `X-Exp-User`
+            (an unattributable acknowledgement is refused).
           content:
             application/json:
               schema:
@@ -1010,7 +1078,8 @@ paths:
                 $ref: '#/components/schemas/QueryRangeResult'
         '400':
           description: 'Guards: only `exp_*` metric names; query at most 2 KiB; range at most 30 d; step
-            at least 10 s.'
+            at least 10 s and at most 11,000 points per series (`step_too_small`). `start`/`end` may also be
+            epoch seconds.'
           content:
             application/json:
               schema:
@@ -1043,7 +1112,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
-          description: More than 500 series in the result.
+          description: More than 500 series in the result (`too_many_series`, also when VictoriaMetrics
+            refuses with `-search.maxSeries=500`), or VictoriaMetrics' answer exceeds 32 MiB
+            (`result_too_large`).
           content:
             application/json:
               schema:
@@ -1054,6 +1125,12 @@ paths:
                     error:
                       code: too_many_series
                       message: too many series
+                      details: {}
+                result_too_large:
+                  value:
+                    error:
+                      code: result_too_large
+                      message: result too large
                       details: {}
         '429':
           $ref: '#/components/responses/TooManyRequests'

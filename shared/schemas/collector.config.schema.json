@@ -129,6 +129,17 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 86400
+        },
+        "webhook_allow": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^[A-Za-z0-9.:/-]+$"
+          },
+          "description": "Optional allowlist for webhook destinations that resolve to private/loopback/link-local addresses (SR-15). Each entry is an IP address, a CIDR or a host name (exact, case-insensitive). An entry permits only the matching addresses/host; https and no-redirects stay mandatory."
         }
       }
     },

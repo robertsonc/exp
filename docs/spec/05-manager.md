@@ -20,7 +20,10 @@ data plane: telemetry stays on-prem. Contracts: `01-contracts.md` §6–8, §10,
 
 Layout: `manager/worker/src/{index.ts, auth/, agent/, admin/, compile/, secrets/, releases/, audit/, cron/, db/}`,
 `manager/migrations/*.sql`, `manager/ui/`, `manager/wrangler.toml`, `manager/deploy.sh`.
-`install.sh` is authored by WP-6 (`agent/install/install.sh`) and bundled as a static asset at build time.
+`install.sh` is authored by WP-6 (`agent/install/install.sh`) and bundled as a static asset at build time; it is served
+as a validated template (06 §8). The optional var `MANAGER_URL` (set by `deploy.sh`) gives the manager's own https origin
+(`dashboard.config.auth.sso.manager_url`); without it the Worker records the origin of the first authenticated admin
+request in `settings.manager_url`, and dashboards are compiled without `auth.sso` (with a warning) until it is known.
 
 ## 2. Routes
 
@@ -142,7 +145,7 @@ change recompiles all its probes and dashboards.
   Mark used **atomically** (`UPDATE … SET used_at=? WHERE token_hash=? AND used_at IS NULL`; zero rows → 410)
   so concurrent reuse yields exactly one success. Create `agent_creds`, store facts, host →
   `enrolled`, audit, return the secret (once) and `RELEASE_PUBKEY_PEM`.
-- **desired:** auth (current or previous-within-grace secret, constant time) → if
+- **desired:** if no desired doc has been compiled for the host yet → `404 not_found` (the agent retries next poll). Auth (current or previous-within-grace secret, constant time) → if
   `If-None-Match` equals `"<host_id>:<version>"` → `304` (one indexed read; this is the hot path) →
   else decrypt creds into the doc and return it with `ETag`.
 - **artifacts:** only artifacts referenced in this host's current desired doc (`403` otherwise);
@@ -150,7 +153,11 @@ change recompiles all its probes and dashboards.
 - **status:** ≤ 256 KiB, validated against `exp.status/1`; stored in `status_latest`/`status_history`;
   host `last_seen`/versions updated; component facts merged; recompile if wiring facts changed;
   **roll-ups upserted** (§13) and **issue rules evaluated** for that host (§14).
-- **rotate**, **decommissioned:** as in the contract; both audited.
+- **rotate**, **decommissioned:** as in the contract (`409 rotation_not_requested` without a pending action); both audited.
+- **Status component facts:** `components[].facts.{tls_fingerprint_sha256,listen,url}` are validated strictly: one malformed value rejects the whole report with `400 invalid_request`, so the agent drops invalid facts first. Only those three wiring facts are copied into `components.facts_json`; other extras live in the bounded `status_latest.report_json`.
+- **Admin clarifications:** the enrol one-liner is `curl -fsSL https://<manager>/install.sh | sudo bash -s -- expe_…`; `GET fleet/hosts/{id}/metrics` serves `cpu_pct mem_pct disk_pct load1 net_rx_pps net_tx_pps net_rx_bps net_tx_bps net_errors net_drops disk_write_kbps` (`net_*` from the management interface, `max: null`) and every `t` is epoch seconds; component keys are the chartable keys of §13; `GET …/components` returns the last numeric health metrics in `facts.metrics` and `facts.process`; `PUT sites/{site}/alerts` replaces the whole webhook list (entries with `id` keep their URL when `url` is omitted); `POST releases/upload` is capped at 64 MiB (GitHub import: 250 MiB per artifact); `PATCH settings.owner` adds an owner (the configured owner and the caller cannot be demoted, 409); `Site.canary_state` maps to `pending|healthy_waiting|promoted|failed|null`; a platform-webhook resolve fires only for crit issues that were announced.
+- **Collector token files:** while a rotation overlap is active (10 minutes) the value is `[current_sha256, previous_sha256]` (`01-contracts.md` §9.2).
+- **Admin-UI intent** (WP-5, 11-manager-ui.md): the add-host wizard creates components with a minimal intent before the host enrols, and a probe with no ports yet compiles to "not started" (or is left out), never to an invalid `exp.probe.config/1`; the dashboard editor writes `config.collector_ids`, and the compiler fills `url`/`tls_fingerprint_sha256`; the NOC URL is `<dashboard url>/noc#t=<token>`; probe thresholds are the optional keys of `01-contracts.md` §9.1; `tls.mode = provided` certificates have no upload endpoint yet (M3).
 - Every agent request is rate limited per agent; repeated auth failures from one IP are throttled.
 
 ## 9. Releases and rollout

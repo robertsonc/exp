@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "incident.schema.json",
   "title": "exp incident",
-  "description": "Incident (01 section 5). Has no schema field. folded_into is set when this incident was folded under a parent cause. Strings in facts are probe-influenced: renderers must escape them.",
+  "description": "Incident (01 section 5). Has no schema field. folded_into is set when this incident was folded under a parent cause. Strings in facts are probe-influenced: renderers must escape them. line is a line_key or \"probe\" (the silent-probe incident, CR-wp2-incident-line-probe); State and Beats keep line_key.",
   "type": "object",
   "properties": {
     "id": {
@@ -15,7 +15,14 @@
       "$ref": "common.schema.json#/$defs/slug"
     },
     "line": {
-      "$ref": "common.schema.json#/$defs/line_key"
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/line_key"
+        },
+        {
+          "const": "probe"
+        }
+      ]
     },
     "kind": {
       "enum": [

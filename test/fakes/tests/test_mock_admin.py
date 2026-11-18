@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 import pytest
-from conftest import FAKES, check_openapi, check_response_headers, request
+from fakes_support import FAKES, check_openapi, check_response_headers, request
 from exp_common import ids as exp_ids
 
 from mock_admin import gen_admin_schemas, seed, server
@@ -228,7 +228,7 @@ def test_per_entity_get_responses_conform(adm):
 
 
 def test_every_status_report_is_a_valid_exp_status(adm):
-    from conftest import check_schema_file
+    from fakes_support import check_schema_file
     for h in A(adm, "GET", "/hosts?limit=1000").json()["items"]:
         if h["state"] != "pending":
             check_schema_file("status.schema.json", A(adm, "GET", f"/hosts/{h['host_id']}/status").json()["report"])
@@ -323,7 +323,7 @@ def test_metrics_series_shapes_48h_5min_and_30d_1h(adm):
         for key, pts in d["series"].items():
             assert len(pts) == n, (rng, key)
             ts = [p["t"] for p in pts]
-            assert ts == sorted(ts) and all(b - a == step * 1000 for a, b in zip(ts, ts[1:], strict=False))
+            assert ts == sorted(ts) and all(b - a == step for a, b in zip(ts, ts[1:], strict=False))
             assert all(p["max"] >= p["avg"] for p in pts)
     only = get_ok(adm, "/fleet/hosts/{id}/metrics", f"/fleet/hosts/{h['host_id']}/metrics?range=1h&keys=cpu_pct,disk_pct")
     assert set(only["series"]) == {"cpu_pct", "disk_pct"}
@@ -528,7 +528,7 @@ def test_ports_put_success_updates_usage_and_desired_version(adm):
     assert use["enp10s0f0"] == "none"
     again = A(adm, "GET", f"/hosts/{c['host_id']}/components").json()["items"][0]
     assert again["config"]["ports"] == ports and again["rendered_config"]["ports"] == ports
-    from conftest import check_schema_file
+    from fakes_support import check_schema_file
     check_schema_file("probe.config.schema.json", again["rendered_config"])
     assert audit_count(adm) > 0 and A(adm, "GET", "/audit?limit=1").json()["items"][0]["action"] == "component.ports"
 
@@ -1015,3 +1015,22 @@ def test_tls_mode(tmp_path):
         s.stop()
     with pytest.raises(ValueError):
         server.start(tls=True)
+
+
+def test_metric_t_is_epoch_seconds_and_collectors_report_the_full_health_metric_set(adm):
+    """CR-wp5-metric-t-units + CR-wp5-fleet-api-gaps item 1."""
+    h = host_by_name(adm, "hb-col-01")
+    d = A(adm, "GET", f"/fleet/hosts/{h['host_id']}/metrics?range=24h").json()
+    t = next(iter(d["series"].values()))[-1]["t"]
+    assert 1.5e9 < t < 1e11, t
+    full = {"ingest_records_per_s", "ingest_rejected_per_min", "ingest_duplicates_per_min", "ingest_bytes_per_s",
+            "probes_total", "probes_reporting", "vm_up", "vm_backlog_points", "vm_series", "vm_storage_gb",
+            "records_db_gb", "storage_free_gb", "days_to_full", "sse_clients", "open_incidents",
+            "webhook_failures_1h", "rules_eval_ms_p95"}
+    days = {}
+    for name in ("hb-col-01", "hc-col-01", "kn-col-01"):
+        rep = A(adm, "GET", f"/hosts/{host_by_name(adm, name)['host_id']}/status").json()["report"]
+        col = next(c for c in rep["components"] if c["type"] == "collector")
+        assert full <= set(col["metrics"]), name
+        days[name] = col["metrics"]["days_to_full"]
+    assert sorted(days.values())[0] < 2 <= sorted(days.values())[1] < 7 < sorted(days.values())[2]

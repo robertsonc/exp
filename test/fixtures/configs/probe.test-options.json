@@ -1,0 +1,88 @@
+{
+  "schema": "exp.probe.config/1",
+  "probe_id": "probe-vm1",
+  "site": "hall-b",
+  "collector": {
+    "url": "https://10.32.98.25:8443",
+    "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6",
+    "fallback": [
+      "https://10.32.98.26:8443"
+    ]
+  },
+  "mode": "host",
+  "mgmt_iface": "ens160",
+  "ports": [
+    {
+      "id": "c01",
+      "iface": "ens192",
+      "role": "client",
+      "vlan": 120
+    }
+  ],
+  "heartbeat": {
+    "interval_s": 10,
+    "gateway": true,
+    "dhcp": false,
+    "dns": true,
+    "ping": [
+      "1.1.1.1"
+    ],
+    "dns_names": [
+      "google.com"
+    ],
+    "alternate_resolver": "1.1.1.1"
+  },
+  "tests": {
+    "dns": {
+      "interval_s": 300,
+      "names": [
+        "www.google.com"
+      ],
+      "thresholds": {
+        "rtt_ms": 200
+      }
+    },
+    "dhcp": {
+      "interval_s": 300,
+      "offer_collect_s": 3.0,
+      "thresholds": {
+        "offer_ms": 800,
+        "total_ms": 1200
+      },
+      "allowed_servers": [
+        "10.1.0.1"
+      ]
+    },
+    "app": {
+      "interval_s": 300,
+      "thresholds": {
+        "slow_factor": 3,
+        "apdex_min": 0.9
+      },
+      "targets": [
+        {
+          "app": "captive-check",
+          "url": "http://connectivitycheck.gstatic.com/generate_204",
+          "apdex_t_ms": 500,
+          "expect_status": 204,
+          "expect_body": ""
+        }
+      ]
+    },
+    "trace": {
+      "thresholds": {
+        "rtt_ms": 300
+      }
+    },
+    "ping": {
+      "thresholds": {
+        "rtt_ms": 300
+      }
+    }
+  },
+  "spool": {
+    "max_mb": 100,
+    "max_days": 3
+  },
+  "allow_shared": true
+}

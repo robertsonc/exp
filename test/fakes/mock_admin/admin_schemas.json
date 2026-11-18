@@ -840,7 +840,7 @@
   "additionalProperties": true,
   "properties": {
    "command": {
-    "description": "The one-liner for the target host, e.g. `curl -fsSL https://<manager>/install.sh | sudo bash -s -- --token <token>`.",
+    "description": "The one-liner for the target host, e.g. `curl -fsSL https://<manager>/install.sh | sudo bash -s -- expe_...` (the token is the positional argument of install.sh and is never placed in a process's argv by the agent itself).",
     "maxLength": 2048,
     "type": "string"
    },
@@ -2213,7 +2213,7 @@
      "maxItems": 10000,
      "type": "array"
     },
-    "description": "Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour buckets.",
+    "description": "Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour buckets. Every `t` is epoch SECONDS. Host keys are `cpu_pct mem_pct disk_pct load1 net_rx_pps net_tx_pps net_rx_bps net_tx_bps net_errors net_drops disk_write_kbps` (`net_*` come from the management interface and carry a null max). Component keys are the chartable keys of 05-manager.md section 13.",
     "properties": {},
     "type": "object"
    },
