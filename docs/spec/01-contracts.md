@@ -249,7 +249,8 @@ Rules:
 - `creds` values are strings written verbatim to `/etc/exp/<type>/creds/<name>` (root, `0600`)
   and exposed to the service with systemd `LoadCredential=`. They never appear in `config`, in
   logs, or in status reports.
-- Component `type` ∈ `probe | collector | dashboard | runner`. Unknown types are ignored and reported.
+- Component `type` ∈ `probe | collector | dashboard | runner | speedtest` (`speedtest` from M6,
+  `12-speedtest-analytics.md` §7). Unknown types are ignored and reported.
 - `actions` types: `rotate_agent_secret`, `restart_component` (`{component_id}`), `collect_diagnostics`
   (sanitized; no creds). No action executes arbitrary commands.
 - `decommission: true` → remove all components, then call `POST decommissioned`, then remove the agent.
@@ -321,7 +322,8 @@ Required metric keys (rates per second or per minute as named; counters since st
 | probe | `measurements_per_min`, `by_test_per_min` (map test → n), `fail_per_min`, `error_per_min`, `spool_depth`, `spool_bytes`, `push_lag_s`, `clock_offset_ms`, `skipped_per_hour`, `ports` (array, below) | `collector_reachable` (bool), `collector_url`, `mode` |
 | collector | `ingest_records_per_s`, `ingest_rejected_per_min`, `ingest_duplicates_per_min`, `ingest_bytes_per_s`, `probes_total`, `probes_reporting`, `vm_up` (0/1), `vm_backlog_points`, `vm_series`, `vm_storage_gb`, `records_db_gb`, `storage_free_gb`, `days_to_full`, `sse_clients`, `open_incidents`, `webhook_failures_1h`, `rules_eval_ms_p95` | `tls_fingerprint_sha256`, `listen` |
 | dashboard | `sessions_active`, `requests_per_min`, `sse_clients`, `collectors_total`, `collectors_reachable`, `login_failures_1h` | `tls_fingerprint_sha256`, `url` |
-| runner | `drills_active`, `pullers` (array of `{source, last_ok, errors_1h}`) | `inventory` (discovered drill targets, bounded) |
+| runner | `drills_active`, `pullers` (array of `{source, last_ok, errors_1h}`); M6: `correlations_per_hour`, `evidence_lag_s_p95`, `syslog_lines_per_s`, `syslog_dropped_per_min` | `inventory` (discovered drill targets, bounded) |
+| speedtest (M6) | `tests_per_hour`, `active_tests`, `queue_depth`, `internet_leg_paused` (0/1), `local_leg_gbps_p95`, `rejected_per_hour` | `url`, `tls_fingerprint_sha256` |
 
 Probe `ports[]` item: `{"id","iface","role","link":"up|down","leased":true,"ip","gateway","rx_pps","tx_pps",
 "rx_bps","tx_bps","rx_errors","tx_errors","rx_drops","tx_drops","last":{"network":"ok","dhcp":"ok","dns":"fail"}}` —
@@ -541,3 +543,11 @@ All mutations write an audit event. Full request/response schemas are produced i
 Fleet endpoints return `ETag` and `Cache-Control: private, max-age=15`; the UI polls every 30 s.
 | audit | `GET audit?from&to&actor&resource` |
 | settings | `GET/PATCH settings` (org name, drills enabled, retention defaults, owner) |
+
+## 14. Speedtest contracts (M6)
+
+`exp.speedtest/1`, `exp.evidence/1`, the public speedtest API, collector `speedtests` endpoints,
+`exp.speedtest.config/1`, and the runner `correlation` config are defined in
+`12-speedtest-analytics.md` §7. WP-0 moves them into `shared/schemas/` and `shared/openapi/` at
+the start of M6 (same CR process). New ports: speedtest HTTPS 443 on the event network (its own
+host IP or a dedicated address); runner syslog receiver UDP/TCP 5514 and TLS 6514.

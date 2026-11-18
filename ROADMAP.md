@@ -11,3 +11,4 @@ is in [docs/spec/09-work-packages.md](docs/spec/09-work-packages.md).
 | **M3 — Multi-site, alerts, offline** | Federation across collectors, Slack/Teams/JSON webhooks, NOC tokens, manager/internet-down operation | pending |
 | **M4 — Measurement depth** | Path quality (MOS/PQI), throughput (Cloudflare + iperf3), target ports, Linux Wi-Fi probe | pending |
 | **M5 — Drills & correlation** | Local and EC Orchestrator drills with guardrails and reports; Mist/EC events on the timeline | pending |
+| **M6 — Speedtest analytics** | Branded user speedtest (local + internet legs), per-device correlation with Mist Wi-Fi, EC flows, security-policy logs, and probes; diagnosis; analytics views; privacy modes | pending |

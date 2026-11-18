@@ -33,7 +33,9 @@ milestones.
 | WP-6 | Agent + bootstrap | `agent/` (incl. `agent/install/install.sh`) | M2 |
 | WP-7 | Packaging, release, CI | `packaging/`, `.github/workflows/`, `test/package/` | M1 (tarballs), M2 (signing/release/CI) |
 | WP-8 | Integration & e2e (integrator) | `test/harness/`, `test/e2e/`, `test/load/` | every milestone gate |
-| WP-9 | Runner: drills & correlation | `runner/`, `test/fakes/orchestrator/` | M5 |
+| WP-9 | Runner: drills & correlation | `runner/`, `test/fakes/orchestrator/` | M5, M6 (correlation connectors, syslog receiver) |
+| WP-10 | Speedtest shape + page | `speedtest/`, `manager/worker/src/speedtest/` (internet-leg routes, by CR with WP-4) | M6 |
+| WP-11 | Speedtest analytics | collector `speedtests` storage/rules/API (in `collector/exp_collector/speedtest/`), dashboard views (`dashboard/static/speedtest/`), `test/fakes/mist/` | M6 |
 
 ## 3. Dependency graph and waves
 
@@ -49,7 +51,7 @@ milestones.
 
 - **Wave 0:** WP-0 alone. Gate: schemas, OpenAPI, `exp_common`, fakes, and fixtures reviewed and merged.
 - **Wave 1:** WP-1 … WP-7 in parallel (each implementing its M1/M2 scope against contracts and fakes), WP-8 building the harness.
-- **Gates:** M1 (WP-1/2/3/7 + harness), then M2 (adds WP-4/5/6/7), then M3, M4, M5 (adds WP-9), each run by WP-8 and signed off by the integrator.
+- **Gates:** M1 (WP-1/2/3/7 + harness), then M2 (adds WP-4/5/6/7), then M3, M4, M5 (adds WP-9), M6 (adds WP-10/11), each run by WP-8 and signed off by the integrator.
 
 ## 4. Work package details
 
@@ -119,7 +121,19 @@ DoD: each milestone's acceptance suite green in CI.
 ### WP-9 — Runner · size M (M5)
 Scope: `10-drills-integrations.md` (EC drills, correlation pullers, allowlist enforcement, revert
 intents) + `test/fakes/orchestrator/` built from the Orchestrator API documentation.
-DoD: `10-drills-integrations.md` §8; SR-12/15.
+DoD: `10-drills-integrations.md` §8; SR-12/15. M6: `12-speedtest-analytics.md` §5 connectors and
+syslog receiver, fakes built from vendor docs/recordings; A6.4–A6.6; SR-24.
+
+### WP-10 — Speedtest shape + page · size M (M6)
+Scope: `12-speedtest-analytics.md` §3–4, §7.3, §7.5 — server (sessions, tokens, local-leg endpoints
+with `sendfile`, validation, limits/queue/pause), the branded page, the internet-leg Worker routes
+(manager CR), agent unit + fleet-health metrics.
+DoD: A6.1–A6.3, A6.7; SR-21/22/23.
+
+### WP-11 — Speedtest analytics · size M (M6)
+Scope: `12-speedtest-analytics.md` §5.3, §6, §7.4, §8, §9 — collector storage, VM aggregates,
+diagnosis rules, query API, privacy jobs; dashboard views; manager settings pages (with WP-5 by CR).
+DoD: A6.4, A6.6, A6.8; SR-25.
 
 ## 5. Contract change requests
 

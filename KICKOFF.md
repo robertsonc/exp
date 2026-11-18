@@ -19,7 +19,8 @@ session how to proceed.
 2. **Fan out WP-1 … WP-7 in parallel**: one builder and one reviewer per WP, each confined to its
    owned paths, each building against the contracts and fakes, M1/M2 scope first.
 3. **WP-8 (integrator)** builds the container harness and runs the milestone gates M1 → M2 → M3 → M4,
-   then **WP-9** and the M5 scope across WPs, then the M5 gate.
+   then **WP-9** and the M5 scope across WPs, then the M5 gate; then **WP-10/11** (speedtest
+   analytics, `docs/spec/12-speedtest-analytics.md`) and the M6 gate.
 4. Contract changes only through change requests (`09-work-packages.md` §5).
 5. A milestone is done only when its acceptance suite (`SPEC.md` §9) passes in CI.
 
@@ -47,7 +48,7 @@ session how to proceed.
 > integrator. Execute WP-0 first and get it reviewed. Then run WP-1 through WP-7 in parallel, one
 > builder and one reviewer per work package, each restricted to its owned paths and building
 > against the frozen contracts and fakes, M1/M2 scope first. Then build the harness and run the
-> milestone gates (WP-8) in order M1 → M2 → M3 → M4, then WP-9 and the M5 gate. Port logic from
+> milestone gates (WP-8) in order M1 → M2 → M3 → M4, then WP-9 and the M5 gate, then WP-10/11 and the M6 gate. Port logic from
 > `reference/` where the component specs say so, citing sources, never importing it. Every
 > enforcement control needs a test that attempts the forbidden action. Do not deploy to Cloudflare,
 > push to remotes, or touch real networks. Report progress per milestone with the acceptance results.

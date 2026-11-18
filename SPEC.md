@@ -23,6 +23,7 @@ session can implement the system in parallel without the conversation that produ
 | `docs/spec/09-work-packages.md` | Parallel work breakdown, ownership, dependencies, definition of done |
 | `docs/spec/10-drills-integrations.md` | Resilience drills (chaos) and event correlation |
 | `docs/spec/11-manager-ui.md` | Manager UI: fleet health roll-up, issues, hosts, administration |
+| `docs/spec/12-speedtest-analytics.md` | Branded user speedtest with per-device correlation (Wi-Fi, flows, security logs, probes) — M6 |
 | `KICKOFF.md` | Ready-to-use kickoff instructions for the multi-agent build session |
 | `reference/` | Read-only prior art (EXM, netvitals, perf, chaos_monkey) to port from |
 
@@ -47,6 +48,8 @@ ISP › DNS › apps.
 - **NOC operator** — watches dashboards on wall screens and laptops during the event; acknowledges
   incidents; may run pre-approved drills.
 - **Event stakeholder** — read-only dashboard view (NOC link).
+- **Attendee / exhibitor** (M6) — runs the branded speedtest on the event network and gets a
+  plain-language diagnosis; never signs in.
 
 ## 2. Principles (non-negotiable)
 
@@ -88,6 +91,7 @@ ISP › DNS › apps.
 | **Incident** | A line's failure episode: down → (again/flapping) → back. |
 | **Desired state** | The per-host document the manager publishes and the agent converges to. |
 | **Drill** | A controlled, time-boxed, auto-reverting fault injected to validate detection/failover. |
+| **Speedtest** (M6) | A user-run, two-leg (local + internet) browser test, cataloged with an **evidence bundle** correlated for that device (`12-speedtest-analytics.md`). |
 
 ## 4. System architecture
 
@@ -136,6 +140,7 @@ ISP › DNS › apps.
 | D12 | **Platform versioning**: one semver for all components; agent N supports components N and N-1. | Simple compatibility story. |
 | D13 | **Drills are opt-in, allowlisted, time-boxed, auto-reverting, audited, and executed on-prem by a runner.** | Breaking a live network must be deliberate and bounded. |
 | D14 | **Fleet health is a roll-up, not real-time:** agents send host/process/component metrics in the status report every 60 s (30–300); the manager keeps latest values plus D1 roll-ups (5 min × 48 h, 1 h × 30 d) and evaluates fleet issues; the UI polls every 30 s. | One channel (no extra agents or exporters); D1 is ample to 500 hosts; Analytics Engine is the scale-out path. |
+| D15 | **User speedtest is an on-prem shape with two legs** (local LAN server + Cloudflare edge Worker); correlation with Wi-Fi, flow, security-log, and probe data runs asynchronously in the runner; results and evidence stay on-prem; anonymous by default. | The server must see the client's real LAN IP to join network data, and it must work with the internet down; two legs localize the fault. |
 
 ## 6. Component summaries
 
@@ -158,7 +163,10 @@ Full detail in `docs/spec/02–06`. Interfaces in `docs/spec/01-contracts.md`.
 - **Agent** (`exp-agent`): bootstrap via `install.sh`, enrol, poll desired state (ETag), verify
   and install signed artifacts, render configs and credentials, manage systemd units, health-check,
   roll back, report facts/status, self-update, decommission.
-- **Runner** (`exp-runner`, M5): drill execution and event-correlation pullers, on-prem.
+- **Runner** (`exp-runner`, M5): drill execution and event-correlation pullers, on-prem; in M6 also
+  the speedtest correlation connectors (Mist client, EC flows, syslog/SSE security logs).
+- **Speedtest** (`exp-speedtest`, M6): branded on-prem speedtest page and local-leg server; results
+  to its collector; diagnosis and analytics in collector/dashboard (`12-speedtest-analytics.md`).
 
 ## 7. Key flows
 
@@ -259,6 +267,12 @@ Each milestone is accepted only when its **end-to-end acceptance tests** (in `te
 - **A5.3** Kill switch aborts and restores within 5 s.
 - **A5.4** Mist and EC events appear as markers on the board timeline.
 
+### M6 — Speedtest analytics
+- **A6.1–A6.8** in `12-speedtest-analytics.md` §11: two-leg test from a zone QR code in ≤ 20 s;
+  local leg ≥ 2 Gb/s; abuse limits and token-checked Worker; drill-verified diagnoses (`wifi_signal`,
+  `wan_saturation`, `policy_block`, `network_wide`); identity resolution with fallback; anonymous-mode
+  deletion verified; works with the internet down; no per-user labels in VM.
+
 ## 10. Repository layout
 
 ```
@@ -270,7 +284,8 @@ exp/
   collector/                 exp-collector    (Python + VictoriaMetrics)
   dashboard/                 exp-dashboard    (Python server + static SPA)
   agent/                     exp-agent + install/install.sh (Python)
-  runner/                    exp-runner       (Python, M5)
+  runner/                    exp-runner       (Python, M5; correlation connectors M6)
+  speedtest/                 exp-speedtest    (Python server + static page, M6)
   manager/                   exp-manager: worker/ (TS), ui/ (TS SPA), migrations/, deploy.sh, wrangler.toml
   packaging/                 build + sign scripts, systemd unit templates, release keys (public)
   test/                      fixtures/, harness/ (container LAN), e2e/
@@ -298,3 +313,4 @@ incidents + correlated events; synthetic voice/video (WebRTC) tests.
 | Q4 | Wi-Fi probe hardware (USB adapter model)? | Any `nl80211` adapter supported by `iw`/`wpa_supplicant`. |
 | Q5 | Which EC Orchestrator / appliances are allowed drill targets? | None until allowlisted in the UI. |
 | Q6 | Brand name and casing in UI ("HPE exp", "EXP")? | "exp" in code, "HPE EXP" in UI titles. |
+| Q7 | Speedtest: domain/cert, security log sources, identity source, privacy sign-off, WLAN platforms? | See `12-speedtest-analytics.md` §13. |
