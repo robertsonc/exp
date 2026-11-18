@@ -198,6 +198,11 @@ class Systemctl:
         for u in units:
             self._do(["restart", u], timeout=120)
 
+    def reset_failed(self, units: list[str]) -> None:
+        """Forget the `failed` state of units whose files are gone (a non-zero exit leaves it)."""
+        if units:
+            self._do(["reset-failed", *units], check=False)
+
     def restart_no_block(self, unit: str) -> None:
         self._do(["--no-block", "restart", unit], timeout=30)
 

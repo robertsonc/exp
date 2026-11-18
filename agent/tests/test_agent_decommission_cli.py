@@ -79,6 +79,10 @@ def test_decommission_removes_everything_including_data_and_tells_the_manager(en
     assert netns and env.runner.calls.index(netns[0]) > env.runner.calls.index(
         ["systemctl", "stop", "exp-probe.service"]
     )
+    # A2.7 e2e finding: a removed unit that exited non-zero when stopped (iperf3 on SIGTERM) stayed in `systemctl --failed`
+    reset = [c for c in env.runner.calls if c[:2] == ["systemctl", "reset-failed"]]
+    assert reset and {"exp-probe.service", "exp-collector.service"} <= {u for c in reset for u in c[2:]}
+    assert not [u for c in reset for u in c[2:] if "@." in u]  # never the template names
 
 
 def test_decommission_through_the_loop_ends_the_run(env):

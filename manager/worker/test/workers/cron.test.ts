@@ -4,7 +4,7 @@ import { orphanedR2, retireActions, runDaily, runEveryFiveMinutes, runHourly, ru
 import { setClock, isoNow } from "../../src/util/time";
 import { type Harness, harness } from "../admin-harness";
 import { T0, at, report, useClock, feed } from "../fleet-helpers";
-import { env, fullScenario, getDesired, resetDb, seedSiteWithRelease } from "../helpers";
+import { env, fullScenario, getDesired, recompile, resetDb, seedSiteWithRelease } from "../helpers";
 import { createHost } from "../../src/admin/service";
 import { ADMIN_ACTOR } from "../helpers";
 import { prepareRotateSecret, getSecretByOwner } from "../../src/secrets/store";
@@ -38,14 +38,22 @@ describe("every 5 minutes", () => {
     useClock(T0);
     const sec = (await getSecretByOwner(env, sc.probeId, "ingest_token"))!;
     await env.DB.batch([await prepareRotateSecret(env, sec, newToken("expi"), true)]);
+    await recompile(env, { all: true });
     const hasPrev = async () => (await getSecretByOwner(env, sc.probeId, "ingest_token"))!.previous_ciphertext !== null;
     expect(await hasPrev()).toBe(true);
     await runEveryFiveMinutes(env, T0 + 5 * 60_000);
     expect(await hasPrev()).toBe(true); // 10-minute overlap not over
+    const hashesAtCollector = async () => {
+      const d = (await (await getDesired(sc.col.secret)).json()) as { components: Array<{ creds: Record<string, string> }> };
+      return JSON.parse(d.components[0]!.creds["ingest_tokens.json"]!) as Record<string, string | string[]>;
+    };
+    expect(Array.isArray((await hashesAtCollector())["probe-a1"])).toBe(true); // [current, previous] during the overlap
     await runEveryFiveMinutes(env, T0 + 11 * 60_000);
     expect(await hasPrev()).toBe(false);
     const row = (await getSecretByOwner(env, sc.probeId, "ingest_token"))!;
     expect(row.previous_hash).toBeNull();
+    // the cron itself republishes the collector's list: the old hash is gone without any other change
+    expect(typeof (await hashesAtCollector())["probe-a1"]).toBe("string");
 
     // status_history: rows older than 7 days go
     await env.DB.prepare("INSERT INTO status_history (org_id, host_id, received_at, report_json, created_at, updated_at) VALUES ('default', ?1, ?2, '{}', ?2, ?2)").bind(sc.col.host_id, new Date(T0 - 8 * 86400_000).toISOString()).run();

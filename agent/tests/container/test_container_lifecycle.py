@@ -164,7 +164,7 @@ def test_06_cli_enrol_replaces_credentials_and_restarts_the_agent(world, host, s
     token = world.app.issue_enrol_token(st.hid)
     old = agent_cfg(host)["agent_secret"]
     pid = main_pid(host, "exp-agent.service")
-    r = host.run(f"exp-agent enrol {token} --manager {world.url}")
+    r = host.run(f"printf %s {token} | exp-agent enrol --manager {world.url}")  # token via stdin, never argv (CR-wp6-enrol-token-not-argv)
     assert r.rc == 0, r
     assert "enrolled as " + st.hid in r.out and token not in r.text
     new = agent_cfg(host)["agent_secret"]

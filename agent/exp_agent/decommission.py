@@ -35,6 +35,9 @@ def remove_component(ctx: Context, c: str, rec: dict[str, Any] | None, purge: bo
         removed_any |= fs.remove(paths.unit(name))
     if removed_any:
         sc.daemon_reload()
+    # a unit that exited non-zero when stopped (iperf3 on SIGTERM) would linger as `not-found failed`
+    # in `systemctl --failed`
+    sc.reset_failed(sorted({*instances, *primary, *(u for u in unit_files if "@." not in u)}))
     fs.remove(paths.bin_link(c))
     fs.rmtree(paths.comp_opt(c))
     fs.rmtree(paths.agent_state / "previous" / c)

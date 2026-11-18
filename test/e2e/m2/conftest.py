@@ -11,6 +11,7 @@ What runs, all local:
 
 Opt out / configure with environment variables:
   EXP_E2E=0                   skip the suite
+  EXP_E2E_SLOT=<n>            run beside another session of this suite (distinct manager/Access names and JWKS address)
   EXP_E2E_ARTIFACTS=<dir>     keep logs/diagnostics there (default: a tmp dir)
   EXP_E2E_DIST=<dir> EXP_E2E_RELEASE_PUBKEY=<pem>   use an already built signed release instead of building one
                               (the upgrade / rollback tests then skip: they need the signing key to build more releases)
@@ -37,9 +38,11 @@ from expharness.access import AccessIssuer, JwksServer  # noqa: E402
 from expharness.manager import AdminClient, ManagerDev, clean_env  # noqa: E402
 from expharness.pki import make_pki, openssl  # noqa: E402
 
-MANAGER_NAME = "exp-manager.test"
-TEAM_DOMAIN = "access.exp-e2e.test"
-JWKS_BIND = "127.0.0.77"
+# EXP_E2E_SLOT=<n> lets several sessions of this suite run side by side (own names, own JWKS address, own wrangler dev)
+_SLOT = os.environ.get("EXP_E2E_SLOT", "")
+MANAGER_NAME = f"exp-manager{_SLOT}.test"
+TEAM_DOMAIN = f"access{_SLOT}.exp-e2e.test"
+JWKS_BIND = f"127.0.0.{77 + int(_SLOT or 0)}"
 AUD = "e2e-access-aud-0123456789abcdef"
 OWNER = "owner@e2e.test"
 

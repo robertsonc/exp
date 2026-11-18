@@ -69,9 +69,11 @@ def test_decommission_removes_everything(stack, dec):
     wait_for(gone, 240, 3, "the host to disappear from the admin API", h.diagnostics)
 
     # ---- the host: no exp unit left, no files, no agent
-    units = h.run("systemctl list-units 'exp-*' --all --no-pager --plain --no-legend | awk '{print $1}'").out.split()
+    # systemd may still remember a unit name a removed unit referenced (LOAD=not-found, inactive): that is no unit
+    listing = h.run("systemctl list-units 'exp-*' --all --no-pager --plain --no-legend").out.splitlines()
+    live = [ln for ln in listing if ln.split()[1] != "not-found" or ln.split()[2] != "inactive"]
     unit_files = h.run("systemctl list-unit-files 'exp-*' --no-pager --plain --no-legend | awk '{print $1}'").out.split()
-    assert units == [] and unit_files == [], (units, unit_files)
+    assert live == [] and unit_files == [], (live, unit_files)
     assert h.run("ls /etc/systemd/system | grep -c '^exp-'").out.strip() == "0"
     assert h.run("ls -A /opt/exp 2>/dev/null | wc -l").out.strip() == "0", h.run("find /opt/exp | head -20").out
     assert h.run("test ! -e /etc/exp/agent.json").rc == 0

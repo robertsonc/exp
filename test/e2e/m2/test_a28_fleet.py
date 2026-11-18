@@ -96,13 +96,7 @@ def test_host_metric_series_and_component_metrics(stack, fleet):
     assert m["host_id"] == fleet.a.host_id and m["range"] == "1h"
     for k in keys:
         pt = m["series"][k][-1]
-        assert (
-            isinstance(pt["t"], int)
-            and pt["avg"] is not None
-            and pt["max"] is None
-            or isinstance(pt["max"], (int, float))
-            or k.startswith("net_")
-        )
+        assert isinstance(pt["t"], int) and isinstance(pt["avg"], (int, float)), (k, pt)
     # component metrics: each of the three types reports its own figures
     want = {"collector": "probes_total", "probe": "measurements_per_min", "dashboard": "collectors_total"}
 
@@ -114,7 +108,6 @@ def test_host_metric_series_and_component_metrics(stack, fleet):
         return True
 
     wait_for(comp_ok, 4 * STATUS_INTERVAL_S, 5, "component metric series", fleet.a.host.diagnostics)
-    row_a = row(stack, fleet.a.host_id)
     wait_for(
         lambda: row(stack, fleet.a.host_id)["work"]["measurements_per_min"] is not None,
         3 * STATUS_INTERVAL_S,
@@ -125,7 +118,6 @@ def test_host_metric_series_and_component_metrics(stack, fleet):
     by = {c["type"]: c for c in comps}
     assert by["probe"]["facts"]["metrics"], by["probe"]
     assert by["collector"]["facts"]["metrics"], by["collector"]
-    assert row_a["open_issues"] == 0 or True
     top = stack.admin.get("/fleet/top?metric=cpu&limit=10")["items"]
     assert {t["host_id"] for t in top} >= {fleet.a.host_id, fleet.b.host_id}
 
@@ -191,6 +183,7 @@ def test_stopped_agent_goes_stale_then_offline_never_current(stack, fleet):
     b, hid = fleet.b.host, fleet.b.host_id
     before = row(stack, hid)
     assert before["state"] == "enrolled" and not before["stale"] and before["health"] == "ok"
+    online_before = stack.admin.get("/fleet/summary")["hosts_online"]
     assert b.run("systemctl stop exp-agent").rc == 0
     last = host_row(stack, hid)["last_seen"]
 
@@ -203,7 +196,7 @@ def test_stopped_agent_goes_stale_then_offline_never_current(stack, fleet):
     # never shown as current: it is not ranked, not counted online, its components are `unknown`
     assert hid not in {t["host_id"] for t in stack.admin.get("/fleet/top?metric=cpu&limit=100")["items"]}
     s = stack.admin.get("/fleet/summary")
-    assert s["hosts"]["stale"] >= 1
+    assert s["hosts_by_state"]["stale"] >= 1 and s["hosts_online"] == online_before - 1
     assert host_row(stack, hid)["state"] == "stale"
     # the units keep running on the host: "stale" says "no report", not "down"
     assert b.run("systemctl is-active exp-dashboard").out.strip() == "active"
@@ -217,7 +210,7 @@ def test_stopped_agent_goes_stale_then_offline_never_current(stack, fleet):
     assert [i["severity"] for i in off] == ["crit"], off
     assert issues_of(stack, hid, "host_stale") == []
     assert hid not in {t["host_id"] for t in stack.admin.get("/fleet/top?metric=mem&limit=100")["items"]}
-    assert stack.admin.get("/fleet/summary")["hosts"]["offline"] >= 1
+    assert stack.admin.get("/fleet/summary")["hosts_by_state"]["offline"] >= 1
     # the other host is untouched
     assert row(stack, fleet.a.host_id)["state"] == "enrolled"
     assert last  # (the report timestamp the agent last sent)

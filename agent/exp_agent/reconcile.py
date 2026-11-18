@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -68,6 +69,15 @@ class Plan:
     rendered: dict[str, str]  # unit file name -> text
     infos: dict[str, units.UnitInfo]
     instances: list[str]
+    unit_creds: dict[str, set[str]] = field(
+        default_factory=dict
+    )  # rendered unit name -> credential files it loads
+
+    def creds_of(self, unit: str) -> set[str]:
+        """Credential files `unit` loads (an instance uses its template unit's)."""
+        if unit in self.unit_creds:
+            return self.unit_creds[unit]
+        return self.unit_creds.get(re.sub(r"@[^.@]+\.", "@.", unit), set())
 
 
 def _config_bytes(config: dict[str, Any]) -> bytes:
@@ -223,14 +233,18 @@ class Reconciler:
         rendered = units.render_all(templates, values)
         infos = {n: units.inspect(n, t) for n, t in rendered.items()}
         referenced: set[str] = set()
-        for info in infos.values():
-            referenced |= set(units.referenced_credential_files(info, values["@CREDS@"]))
+        unit_creds: dict[str, set[str]] = {}
+        for n, info in infos.items():
+            unit_creds[n] = set(units.referenced_credential_files(info, values["@CREDS@"]))
+            referenced |= unit_creds[n]
         cred_map: dict[str, bytes] = {n: v.encode("utf-8") for n, v in comp.get("creds", {}).items()}
         for n in referenced:
             cred_map.setdefault(n, b"")
         config = comp["config"]
         instances = units.instance_units(c, config, set(rendered))
-        return Plan(c, version, config, _config_bytes(config), cred_map, rendered, infos, instances)
+        return Plan(
+            c, version, config, _config_bytes(config), cred_map, rendered, infos, instances, unit_creds
+        )
 
     def _primary(self, plan: Plan) -> list[str]:
         names = [n for n, i in plan.infos.items() if i.has_install and not units.is_template(n)]
@@ -365,6 +379,8 @@ class Reconciler:
         c = plan.c
         fs.mkdir(paths.etc, 0o755)
         fs.mkdir(paths.etc_dir(c), 0o755)
+        before = creds.snapshot(fs, c)
+        changed_creds = {n for n in set(before) | set(plan.creds) if before.get(n) != plan.creds.get(n)}
         creds.sync(fs, c, dict(plan.creds), referenced=set())
         if diff.config or force:
             fs.write(paths.config(c), plan.config_bytes, 0o644)
@@ -393,18 +409,29 @@ class Reconciler:
             + plan.instances
             + [u for u in new_primary if "netns" not in u]
         )
-        if force or diff.version or diff.units or diff.creds or tls_new or (diff.instances and not rec):
-            # a changed credential file always restarts: systemd re-reads LoadCredential= only at start
-            # (CR-wp2-cred-rotation-loadcredential), so reload/SIGHUP is never used for credentials
+        if force or diff.version or diff.units or tls_new or (diff.instances and not rec):
             sc.restart(everything)
-        elif diff.config:
-            # config-only change: a unit that declares ExecReload= gets a reload, the rest restart
-            reloadable = [u for u in new_primary if plan.infos[u].has_reload and u.endswith(".service")]
-            for u in reloadable:
-                sc.reload(u)
-            sc.restart([u for u in everything if u not in reloadable])
-        elif new_units:
-            sc.restart([u for u in everything if u in new_units])
+            return
+        # Otherwise restart only what must be. A changed credential file restarts the units that load
+        # it (systemd re-reads credentials only at start, CR-wp2-cred-rotation-loadcredential: never reload),
+        # so a probe token rotation does not tear down the test-port namespaces and DHCP leases. A config-only
+        # change reloads the units that declare ExecReload= and restarts the rest; new instances start.
+        to_restart: set[str] = {u for u in everything if u in new_units}
+        cred_units = {u for u in everything if plan.creds_of(u) & changed_creds}
+        if diff.creds:
+            # (no unit loads a changed file: cannot tell which one needs it, so restart everything)
+            to_restart |= cred_units or set(everything)
+        reloadable: list[str] = []
+        if diff.config:
+            reloadable = [
+                u
+                for u in new_primary
+                if plan.infos[u].has_reload and u.endswith(".service") and u not in to_restart
+            ]
+            to_restart |= {u for u in everything if u not in reloadable}
+        for u in reloadable:
+            sc.reload(u)
+        sc.restart([u for u in everything if u in to_restart])
 
     def _record(self, plan: Plan, comp: dict[str, Any]) -> None:
         self.ctx.state.data["components"][plan.c] = {

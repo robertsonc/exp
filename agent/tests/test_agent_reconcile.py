@@ -421,6 +421,27 @@ def test_creds_only_change_restarts_without_reload_support(env):
     assert ["systemctl", "restart", "exp-collector.service"] in env.runner.calls[n:]
 
 
+def test_probe_token_rotation_restarts_only_the_unit_that_loads_it(env):
+    """A2.6 e2e finding: a rotated ingest token used to restart the whole probe stack (namespaces, DHCP leases), a gap in the
+    heartbeat. Only exp-probe.service LoadCredential=s the token, so only it restarts; units that do not load a changed
+    credential, and the test-port plumbing, are left alone."""
+    env.standard_release(comps=("probe",), creds={"probe": ("ingest_token",)})
+    assert (
+        Reconciler(env.ctx)
+        .run(fetch(env, env.desired([env.comp("probe", creds={"ingest_token": "expi_1"})])))
+        .result
+        == "ok"
+    )
+    n = len(env.runner.calls)
+    out = Reconciler(env.ctx).run(
+        fetch(env, env.desired([env.comp("probe", creds={"ingest_token": "expi_2"})]))
+    )
+    assert out.result == "ok"
+    restarted = [c[2] for c in env.runner.calls[n:] if c[:2] == ["systemctl", "restart"]]
+    assert restarted == ["exp-probe.service"], restarted
+    assert (env.ctx.paths.creds_dir("probe") / "ingest_token").read_text() == "expi_2"
+
+
 def test_only_changed_components_restart(env):
     env.standard_release(comps=("collector", "dashboard"))
     assert (

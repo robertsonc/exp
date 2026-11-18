@@ -50,10 +50,13 @@ export async function runEveryFiveMinutes(env: Env, now: number = nowMs()): Prom
   const iso = isoAt(now);
   await job("enrol_tokens", () => env.DB.prepare("DELETE FROM enrol_tokens WHERE used_at IS NULL AND expires_at < ?1").bind(iso).run());
   await job("secrets_grace", async () => {
-    await dropExpiredPrevious(env, now);
+    const dropped = await dropExpiredPrevious(env, now);
     await env.DB.prepare(
       "UPDATE agent_creds SET previous_hash = NULL, previous_valid_until = NULL WHERE previous_valid_until IS NOT NULL AND previous_valid_until <= ?1",
     ).bind(iso).run();
+    // a collector's verifier list is [current, previous] only while the overlap lasts: publish the shrunk list, or the old
+    // token would stay valid at the collector until some unrelated change recompiled (found by the A2.6 e2e)
+    if (dropped > 0) await recompile(env, { all: true });
   });
   await job("staleness", () => evaluateStaleness(env, now));
   await job("canary", () => evaluateCanaries(env, now));

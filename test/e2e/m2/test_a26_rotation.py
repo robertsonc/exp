@@ -53,7 +53,7 @@ def beats(r: Rot, t0: float, t1: float) -> list[dict[str, Any]]:
 
 
 def epoch(ts: str) -> float:
-    return datetime.fromisoformat(ts).timestamp()
+    return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
 
 
 def max_gap(rows: list[dict[str, Any]], t0: float, t1: float) -> float:

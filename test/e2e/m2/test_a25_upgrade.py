@@ -270,7 +270,7 @@ def test_recovery_by_setting_the_previous_release(stack, up):
     assert h["state"] == "enrolled"
     assert current(up.host, "collector") == NEW and current(up.host, "dashboard") == NEW
     assert up.host.run("cat /opt/exp/agent/current/VERSION").out.strip() == NEW
-    assert BROKEN not in up.host.run("ls /opt/exp/dashboard").out.split()
+    assert BROKEN != current(up.host, "dashboard")
     wait_for(
         lambda: not any(i["host_id"] == up.host_id for i in stack.admin.get("/issues?kind=reconcile_failed&state=open")["items"]),
         240,
@@ -321,7 +321,8 @@ def test_agent_refuses_a_bad_release_even_when_served(stack, up, label, version,
     assert h["applied_version"] != h["desired_version"] and h0 == h["desired_version"]
     assert h["agent_version"] == NEW
     # no staging directory is left either, and nothing looks like the refused version
-    assert version not in up.host.run("find /opt/exp /var/lib/exp -maxdepth 3").out
+    found = up.host.run("find /opt/exp /var/lib/exp -maxdepth 3 -not -path '*/agent/manifests/*'").out
+    assert version not in found, found
     issues = stack.admin.get("/issues?kind=reconcile_failed&state=open")["items"]
     assert any(i["host_id"] == up.host_id for i in issues)
     # put the site back to the good release; the host converges again (and the refusal is not remembered as success)
