@@ -1,0 +1,172 @@
+/* exp design tokens - HPE design language (see reference/netvitals/DESIGN.md).
+   Cool charcoal ground, flat panels, HPE green only for OK state and primary actions.
+   No external fonts: system stacks only (on-prem dashboards work offline). */
+
+:root {
+  color-scheme: dark light;
+
+  /* Brand */
+  --exp-green: #01a982;
+  --exp-green-hi: #1ec9a0;
+  --exp-green-lo: #008567;
+
+  /* Light theme (default when the OS prefers light) */
+  --exp-bg: #f4f6f8;
+  --exp-bg-elev: #ffffff;
+  --exp-surface: #ffffff;
+  --exp-surface-2: #eef1f4;
+  --exp-stroke: #d3dae2;
+  --exp-text: #14202c;
+  --exp-text-dim: #4a5a6b;
+  --exp-text-faint: #6b7a8a;
+  --exp-accent: #008567;          /* green with >= 4.5:1 on light surfaces */
+  --exp-accent-hi: #01a982;
+  --exp-on-accent: #ffffff;
+
+  /* State colors (text/graphics on --exp-surface) */
+  --exp-ok: #00775c;
+  --exp-warn: #9a5b00;
+  --exp-fail: #c0272d;
+  --exp-unknown: #5b6b7c;
+  --exp-ok-bg: #dff5ee;
+  --exp-warn-bg: #fdf0d8;
+  --exp-fail-bg: #fbe3e3;
+  --exp-unknown-bg: #e8ecf0;
+
+  /* Line-specific accents (network/dhcp/dns/internet/apps/wifi); desaturated, no violet */
+  --exp-line-network: #2f7fb8;
+  --exp-line-dhcp: #b87a1f;
+  --exp-line-dns: #1a8f8f;
+  --exp-line-internet: #4f6bb0;
+  --exp-line-apps: #a8576b;
+  --exp-line-wifi: #5a8f2f;
+
+  /* Typography: system stacks */
+  --exp-font-ui: "Segoe UI Variable Text", "Segoe UI", "Helvetica Neue", system-ui, -apple-system, sans-serif;
+  --exp-font-mono: "Cascadia Mono", Consolas, "SF Mono", ui-monospace, monospace;
+
+  /* Compact sizes (manager UI, tables) */
+  --exp-text-xs: 0.75rem;
+  --exp-text-sm: 0.8125rem;
+  --exp-text-md: 0.9375rem;
+  --exp-text-lg: 1.125rem;
+  --exp-text-xl: 1.375rem;
+  /* Room-readable wall-screen sizes (dashboard) */
+  --exp-wall-label: clamp(1.25rem, 1.6vw, 2rem);
+  --exp-wall-body: clamp(1.5rem, 2vw, 2.5rem);
+  --exp-wall-title: clamp(2.25rem, 3.5vw, 4rem);
+  --exp-wall-meter: clamp(5rem, 12vw, 12rem);
+  --exp-weight-regular: 400;
+  --exp-weight-medium: 500;
+  --exp-weight-bold: 650;
+  --exp-leading-tight: 1.15;
+  --exp-leading-normal: 1.5;
+
+  /* Spacing (4px base) */
+  --exp-space-1: 4px;
+  --exp-space-2: 8px;
+  --exp-space-3: 12px;
+  --exp-space-4: 16px;
+  --exp-space-5: 24px;
+  --exp-space-6: 32px;
+  --exp-space-7: 48px;
+
+  /* Radii */
+  --exp-radius-sm: 6px;
+  --exp-radius-md: 10px;
+  --exp-radius-pill: 999px;
+
+  /* Shadows: flat panels, a single soft elevation only */
+  --exp-shadow-1: 0 1px 2px rgb(0 0 0 / 0.12);
+  --exp-shadow-2: 0 4px 16px rgb(0 0 0 / 0.18);
+
+  /* Focus ring */
+  --exp-focus-color: #0b6bcb;
+  --exp-focus-ring: 0 0 0 2px var(--exp-bg), 0 0 0 4px var(--exp-focus-color);
+
+  /* Motion */
+  --exp-ease: cubic-bezier(0.2, 0, 0, 1);
+  --exp-dur-fast: 120ms;
+  --exp-dur: 200ms;
+  --exp-dur-slow: 400ms;
+}
+
+/* Dark theme: OS preference unless forced light */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --exp-bg: #0d1218;
+    --exp-bg-elev: #141b24;
+    --exp-surface: #1a2330;
+    --exp-surface-2: #222c3a;
+    --exp-stroke: #2a3545;
+    --exp-text: #e8eef5;
+    --exp-text-dim: #8b9aab;
+    --exp-text-faint: #7a8a9c;
+    --exp-accent: #01a982;
+    --exp-accent-hi: #1ec9a0;
+    --exp-on-accent: #04130e;
+    --exp-ok: #1ec9a0;
+    --exp-warn: #e6a23c;
+    --exp-fail: #ff7373;
+    --exp-unknown: #8b9aab;
+    --exp-ok-bg: #0f2e27;
+    --exp-warn-bg: #33270f;
+    --exp-fail-bg: #3a1a1a;
+    --exp-unknown-bg: #222c3a;
+    --exp-line-network: #5aa5de;
+    --exp-line-dhcp: #e0a04a;
+    --exp-line-dns: #3cc0c0;
+    --exp-line-internet: #7f98d8;
+    --exp-line-apps: #d98499;
+    --exp-line-wifi: #86c457;
+    --exp-focus-color: #6cb6ff;
+    --exp-shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+    --exp-shadow-2: 0 4px 16px rgb(0 0 0 / 0.5);
+  }
+}
+
+/* Explicit dark override */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --exp-bg: #0d1218;
+  --exp-bg-elev: #141b24;
+  --exp-surface: #1a2330;
+  --exp-surface-2: #222c3a;
+  --exp-stroke: #2a3545;
+  --exp-text: #e8eef5;
+  --exp-text-dim: #8b9aab;
+  --exp-text-faint: #7a8a9c;
+  --exp-accent: #01a982;
+  --exp-accent-hi: #1ec9a0;
+  --exp-on-accent: #04130e;
+  --exp-ok: #1ec9a0;
+  --exp-warn: #e6a23c;
+  --exp-fail: #ff7373;
+  --exp-unknown: #8b9aab;
+  --exp-ok-bg: #0f2e27;
+  --exp-warn-bg: #33270f;
+  --exp-fail-bg: #3a1a1a;
+  --exp-unknown-bg: #222c3a;
+  --exp-line-network: #5aa5de;
+  --exp-line-dhcp: #e0a04a;
+  --exp-line-dns: #3cc0c0;
+  --exp-line-internet: #7f98d8;
+  --exp-line-apps: #d98499;
+  --exp-line-wifi: #86c457;
+  --exp-focus-color: #6cb6ff;
+  --exp-shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --exp-shadow-2: 0 4px 16px rgb(0 0 0 / 0.5);
+}
+
+/* Explicit light override (wins over the OS dark preference) */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --exp-dur-fast: 0ms;
+    --exp-dur: 0ms;
+    --exp-dur-slow: 0ms;
+  }
+}

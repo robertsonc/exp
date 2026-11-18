@@ -1,0 +1,4859 @@
+# exp OpenAPI contract (WP-0). Source of truth: docs/spec/01-contracts.md
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: exp admin API (manager UI to manager)
+  version: 1.0.0
+  description: '01-contracts.md section 13, 05-manager.md sections 3-5 and 8-14, 11-manager-ui.md. Base
+    path `/api/admin/v1` on `https://<manager>`. Behind Cloudflare Access AND the Worker verifies `Cf-Access-Jwt-Assertion`
+    on every request (RS256 against the team JWKS, `aud`, `iss`, `exp`/`nbf`); a missing or invalid JWT
+    is `401` regardless of anything else. The JWT `email` maps to an admin row: an authenticated but unknown
+    email is `403 unknown_admin`.
+
+
+    Roles (`owner` > `admin` > `operator` > `viewer`): each operation documents its minimum role in `x-exp-min-role`;
+    a lower role gets `403 insufficient_role`. Every mutation writes exactly one audit event (`x-exp-audited:
+    true`) without secret values.
+
+
+    Secrets: webhook URLs, integration credentials and similar are write-only; reads return `{"set":true,"updated_at":...}`.
+    Dashboard local-user passwords are hashed in the browser (`pbkdf2_sha256$600000$<salt_b64>$<hash_b64>`);
+    the API never sees plaintext passwords. Plaintext tokens (`expe_`, `expn_`) appear only in the response
+    that creates them.
+
+
+    Lists: `{items,next_cursor}`, `limit` <= 1000 default 100. Fleet endpoints return `ETag` and `Cache-Control:
+    private, max-age=15`; the UI polls every 30 s with `If-None-Match`.'
+  license:
+    name: Proprietary
+    identifier: LicenseRef-exp
+servers:
+- url: https://{manager}/api/admin/v1
+  description: Manager Worker (Access protected)
+  variables:
+    manager:
+      default: exp-control.harnessed.cloud
+tags:
+- name: me
+- name: sites
+- name: hosts
+- name: components
+- name: releases
+- name: secrets
+- name: dashboards
+- name: alerts
+- name: integrations
+- name: drills
+- name: status
+- name: fleet
+- name: issues
+- name: platform
+- name: audit
+- name: settings
+security:
+- accessJwt: []
+components:
+  securitySchemes:
+    ingestToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expi_<43 base64url chars>
+      description: Per-probe ingest token, prefix `expi_`.
+    dashboardToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expd_<43 base64url chars>
+      description: Per-dashboard dashboard-to-collector token, prefix `expd_`.
+    agentSecret:
+      type: http
+      scheme: bearer
+      bearerFormat: expa_<43 base64url chars>
+      description: Per-agent secret, prefix `expa_`.
+    accessJwt:
+      type: apiKey
+      in: header
+      name: Cf-Access-Jwt-Assertion
+      description: Cloudflare Access JWT. The Worker verifies RS256 signature (team JWKS), `aud`, `iss`,
+        `exp`/`nbf` on every admin request; missing or invalid -> 401. `Cf-Access-Authenticated-User-Email`
+        is never trusted alone.
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size. 1..1000, default 100.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from a previous `next_cursor`.
+      schema:
+        type: string
+        maxLength: 1024
+  headers:
+    ETag: &id015
+      description: Entity tag of the roll-up snapshot.
+      schema:
+        type: string
+        maxLength: 128
+    Cache-Control: &id016
+      description: Always `private, max-age=15`.
+      schema:
+        type: string
+        const: private, max-age=15
+  schemas:
+    Role:
+      enum:
+      - owner
+      - admin
+      - operator
+      - viewer
+      description: Admin role.
+    ComponentType:
+      enum:
+      - probe
+      - collector
+      - dashboard
+      - runner
+      - speedtest
+    Shape:
+      enum:
+      - probe
+      - collector
+      - dashboard
+      - runner
+      description: 'Host shape badge: P, C, D, R.'
+    HostState:
+      enum:
+      - pending
+      - enrolled
+      - stale
+      - offline
+      - decommissioning
+      - removed
+    Health:
+      enum:
+      - ok
+      - degraded
+      - fail
+      - unknown
+    Severity:
+      enum:
+      - warn
+      - crit
+    SecretState:
+      type: object
+      properties:
+        set:
+          type: boolean
+        updated_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - set
+      - updated_at
+      additionalProperties: true
+      description: Write-only secret marker. The value is never returned.
+    Timestamps:
+      type: object
+      properties:
+        created_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - created_at
+      - updated_at
+      additionalProperties: true
+    Me:
+      type: object
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        role:
+          $ref: '#/components/schemas/Role'
+      required:
+      - email
+      - role
+      additionalProperties: true
+    AlertsConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        board_url:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/https_url
+        timezone:
+          $ref: ../schemas/common.schema.json#/$defs/timezone
+        voice:
+          $ref: ../schemas/common.schema.json#/$defs/voice
+        hold_down_s:
+          type: integer
+          minimum: 0
+          maximum: 3600
+        hold_back_s:
+          type: integer
+          minimum: 0
+          maximum: 3600
+        reopen_s:
+          type: integer
+          minimum: 0
+          maximum: 86400
+        calm_s:
+          type: integer
+          minimum: 0
+          maximum: 86400
+      required:
+      - enabled
+      - voice
+      - hold_down_s
+      - hold_back_s
+      - reopen_s
+      - calm_s
+      additionalProperties: true
+      description: Site alert behaviour (no secrets).
+    WebhookRead:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 64
+          pattern: ^wh_[A-Za-z0-9_-]{1,60}$
+        format:
+          enum:
+          - slack
+          - teams
+          - json
+        url:
+          $ref: '#/components/schemas/SecretState'
+      required:
+      - id
+      - format
+      - url
+      additionalProperties: true
+      description: Webhook URL is a secret and is never returned.
+    WebhookWrite:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 64
+          pattern: ^wh_[A-Za-z0-9_-]{1,60}$
+          description: Omit on create (server assigns).
+        format:
+          enum:
+          - slack
+          - teams
+          - json
+        url:
+          allOf:
+          - $ref: ../schemas/common.schema.json#/$defs/https_url
+          description: Write-only. Omit to keep the stored value.
+      required:
+      - format
+      additionalProperties: false
+    Alerts:
+      type: object
+      properties:
+        config:
+          $ref: '#/components/schemas/AlertsConfig'
+        webhooks:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookRead'
+          maxItems: 20
+      required:
+      - config
+      - webhooks
+      additionalProperties: true
+    AlertsPut:
+      type: object
+      properties:
+        config:
+          $ref: '#/components/schemas/AlertsConfig'
+        webhooks:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookWrite'
+          maxItems: 20
+      required:
+      - config
+      - webhooks
+      additionalProperties: false
+    AlertTestResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              webhook_id:
+                type: string
+                maxLength: 64
+              ok:
+                type: boolean
+              http_status:
+                anyOf:
+                - type: 'null'
+                - type: integer
+                  minimum: 100
+                  maximum: 599
+              error:
+                anyOf:
+                - type: 'null'
+                - type: string
+                  maxLength: 256
+            required:
+            - webhook_id
+            - ok
+            additionalProperties: true
+          maxItems: 20
+      required:
+      - results
+      additionalProperties: true
+    Retention:
+      type: object
+      properties:
+        metrics_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        records_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+      required:
+      - metrics_days
+      - records_days
+      additionalProperties: true
+    Site:
+      type: object
+      properties:
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+        timezone:
+          $ref: ../schemas/common.schema.json#/$defs/timezone
+        edge_label:
+          type: string
+          maxLength: 32
+        release_version:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/semver
+        canary_host_id:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/h_id
+        canary_state:
+          anyOf:
+          - type: 'null'
+          - enum:
+            - pending
+            - healthy_waiting
+            - promoted
+            - failed
+        retention:
+          anyOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/Retention'
+        created_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - site
+      - name
+      - timezone
+      - edge_label
+      - release_version
+      - canary_host_id
+      - created_at
+      - updated_at
+      additionalProperties: true
+    SiteCreate:
+      type: object
+      properties:
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+        timezone:
+          $ref: ../schemas/common.schema.json#/$defs/timezone
+        edge_label:
+          type: string
+          maxLength: 32
+        retention:
+          $ref: '#/components/schemas/Retention'
+      required:
+      - site
+      - name
+      - timezone
+      additionalProperties: false
+    SitePatch:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+        timezone:
+          $ref: ../schemas/common.schema.json#/$defs/timezone
+        edge_label:
+          type: string
+          maxLength: 32
+        retention:
+          $ref: '#/components/schemas/Retention'
+      additionalProperties: false
+      minProperties: 1
+    SiteRelease:
+      type: object
+      properties:
+        version:
+          $ref: ../schemas/common.schema.json#/$defs/semver
+        canary_host_id:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/h_id
+      required:
+      - version
+      additionalProperties: false
+      description: Set the target release for a site. The canary host (if any) compiles first and is promoted
+        after 10 healthy minutes. Rollback = set a previous version.
+    HostFacts:
+      $ref: ../schemas/status.schema.json#/properties/facts
+    Host:
+      type: object
+      properties:
+        host_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        shapes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Shape'
+          maxItems: 4
+          uniqueItems: true
+        state:
+          $ref: '#/components/schemas/HostState'
+        mgmt_ip:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ipv4
+        facts:
+          anyOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/HostFacts'
+        last_seen:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        agent_version:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/semver
+        desired_version:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        applied_version:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        created_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - host_id
+      - name
+      - site
+      - shapes
+      - state
+      - last_seen
+      - agent_version
+      - desired_version
+      - applied_version
+      - created_at
+      - updated_at
+      additionalProperties: true
+    HostCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        shapes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Shape'
+          maxItems: 4
+          uniqueItems: true
+      required:
+      - name
+      - site
+      additionalProperties: false
+    HostPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      additionalProperties: false
+      minProperties: 1
+    EnrolToken:
+      type: object
+      properties:
+        token:
+          allOf:
+          - $ref: ../schemas/common.schema.json#/$defs/expe_token
+          description: Shown once; only sha256 is stored.
+        command:
+          type: string
+          maxLength: 2048
+          description: The one-liner for the target host, e.g. `curl -fsSL https://<manager>/install.sh
+            | sudo bash -s -- --token <token>`.
+        expires_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - token
+      - command
+      - expires_at
+      additionalProperties: true
+    HostCreated:
+      type: object
+      properties:
+        host:
+          $ref: '#/components/schemas/Host'
+        enrol:
+          $ref: '#/components/schemas/EnrolToken'
+      required:
+      - host
+      - enrol
+      additionalProperties: true
+    Component:
+      type: object
+      properties:
+        component_id:
+          $ref: ../schemas/common.schema.json#/$defs/cmp_id
+        host_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        type:
+          $ref: '#/components/schemas/ComponentType'
+        id:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        config:
+          type: object
+          additionalProperties: true
+          description: Admin intent (no secrets). The manager compiles it with wiring into the rendered
+            config.
+        rendered_config:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/probe.config.schema.json
+          - $ref: ../schemas/collector.config.schema.json
+          - $ref: ../schemas/dashboard.config.schema.json
+          - $ref: ../schemas/runner.config.schema.json
+          description: Read-only config as last compiled for the host (never contains creds).
+        enabled:
+          type: boolean
+        health:
+          $ref: '#/components/schemas/Health'
+        version:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/semver
+        facts:
+          type: object
+          additionalProperties: true
+          description: 'From status reports: TLS fingerprint, listen address, health facts.'
+        created_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - component_id
+      - host_id
+      - type
+      - id
+      - config
+      - enabled
+      - health
+      - created_at
+      - updated_at
+      additionalProperties: true
+    ComponentCreate:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/ComponentType'
+        id:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        config:
+          type: object
+          additionalProperties: true
+      required:
+      - type
+      - id
+      - config
+      additionalProperties: false
+    ComponentPatch:
+      type: object
+      properties:
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+      additionalProperties: false
+      minProperties: 1
+    PortsPut:
+      type: object
+      properties:
+        ports:
+          type: array
+          items:
+            $ref: ../schemas/probe.config.schema.json#/$defs/port
+          maxItems: 64
+          minItems: 1
+      required:
+      - ports
+      additionalProperties: false
+      description: 'Replaces the probe''s port assignments. The host''s management interface (default-route
+        / `in_use_by: mgmt`) is refused with `mgmt_interface_refused`; every `iface` must exist in the
+        host facts.'
+    Ports:
+      type: object
+      properties:
+        component_id:
+          $ref: ../schemas/common.schema.json#/$defs/cmp_id
+        ports:
+          type: array
+          items:
+            $ref: ../schemas/probe.config.schema.json#/$defs/port
+          maxItems: 64
+        desired_version:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+      required:
+      - component_id
+      - ports
+      additionalProperties: true
+    Artifact:
+      type: object
+      properties:
+        artifact_id:
+          $ref: ../schemas/common.schema.json#/$defs/art_id
+        name:
+          $ref: ../schemas/common.schema.json#/$defs/artifact_name
+        component:
+          enum:
+          - agent
+          - probe
+          - collector
+          - dashboard
+          - runner
+        arch:
+          enum:
+          - amd64
+          - arm64
+          - noarch
+        sha256:
+          $ref: ../schemas/common.schema.json#/$defs/sha256_hex
+        size:
+          type: integer
+          minimum: 0
+      required:
+      - artifact_id
+      - name
+      - component
+      - arch
+      - sha256
+      - size
+      additionalProperties: true
+    Release:
+      type: object
+      properties:
+        rel_id:
+          $ref: ../schemas/common.schema.json#/$defs/rel_id
+        version:
+          $ref: ../schemas/common.schema.json#/$defs/semver
+        source:
+          enum:
+          - github
+          - upload
+        verified_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        notes_url:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/https_url
+        min_agent_version:
+          $ref: ../schemas/common.schema.json#/$defs/semver
+        created:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Artifact'
+          maxItems: 64
+        sites:
+          type: array
+          items:
+            $ref: ../schemas/common.schema.json#/$defs/slug
+          maxItems: 1000
+          description: Sites currently targeting this release.
+      required:
+      - rel_id
+      - version
+      - source
+      - verified_at
+      - min_agent_version
+      - artifacts
+      additionalProperties: true
+    ReleaseImport:
+      type: object
+      properties:
+        version:
+          $ref: ../schemas/common.schema.json#/$defs/semver
+        source:
+          enum:
+          - github
+          - upload
+      required:
+      - version
+      - source
+      additionalProperties: false
+      description: Import from GitHub Releases of `RELEASES_REPO`. The Ed25519 signature is verified over
+        the exact manifest bytes and every artifact sha256 is checked; any mismatch records nothing (`signature_invalid`,
+        `artifact_hash_mismatch`).
+    ReleaseUpload:
+      type: object
+      properties:
+        manifest:
+          type: string
+          description: Binary manifest JSON file.
+        signature:
+          type: string
+          description: Binary or base64 detached Ed25519 signature file.
+        artifacts:
+          type: array
+          items:
+            type: string
+            description: Binary artifact tarball.
+          maxItems: 64
+          minItems: 1
+      required:
+      - manifest
+      - signature
+      - artifacts
+      additionalProperties: false
+    RotateResult:
+      type: object
+      properties:
+        component_id:
+          $ref: ../schemas/common.schema.json#/$defs/cmp_id
+        kinds:
+          type: array
+          items:
+            type: string
+            maxLength: 32
+          maxItems: 8
+        previous_valid_until:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        desired_version:
+          type: integer
+          minimum: 0
+      required:
+      - component_id
+      - kinds
+      - previous_valid_until
+      - desired_version
+      additionalProperties: true
+      description: New plaintext tokens are delivered to consumers through desired state only, never in
+        this response. The previous value stays valid for 10 minutes.
+    Accepted:
+      type: object
+      properties:
+        host_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        action_id:
+          $ref: ../schemas/common.schema.json#/$defs/act_id
+        desired_version:
+          type: integer
+          minimum: 0
+      required:
+      - host_id
+      - desired_version
+      additionalProperties: true
+    DashboardUser:
+      type: object
+      properties:
+        usr_id:
+          $ref: ../schemas/common.schema.json#/$defs/usr_id
+        username:
+          type: string
+          maxLength: 64
+          pattern: ^[A-Za-z0-9._-]{1,64}$
+        role:
+          enum:
+          - viewer
+          - operator
+          - admin
+        created_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - usr_id
+      - username
+      - role
+      - created_at
+      additionalProperties: true
+      description: The password hash is never returned.
+    DashboardUserCreate:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 64
+          pattern: ^[A-Za-z0-9._-]{1,64}$
+        role:
+          enum:
+          - viewer
+          - operator
+          - admin
+        hash:
+          type: string
+          maxLength: 512
+          pattern: ^pbkdf2_sha256\$600000\$[A-Za-z0-9+/=_-]+\$[A-Za-z0-9+/=_-]+$
+          description: Computed in the browser (WebCrypto). Plaintext passwords never reach the manager.
+      required:
+      - username
+      - role
+      - hash
+      additionalProperties: false
+    NocToken:
+      type: object
+      properties:
+        noc_id:
+          $ref: ../schemas/common.schema.json#/$defs/noc_id
+        label:
+          type: string
+          maxLength: 128
+        role:
+          enum:
+          - viewer
+        expires_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        revoked_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        created_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - noc_id
+      - label
+      - role
+      - expires_at
+      - revoked_at
+      - created_at
+      additionalProperties: true
+    NocTokenCreate:
+      type: object
+      properties:
+        label:
+          type: string
+          maxLength: 128
+          minLength: 1
+        expires_in_h:
+          type: integer
+          minimum: 1
+          maximum: 8760
+      required:
+      - label
+      additionalProperties: false
+    NocTokenCreated:
+      type: object
+      properties:
+        noc:
+          $ref: '#/components/schemas/NocToken'
+        token:
+          allOf:
+          - $ref: ../schemas/common.schema.json#/$defs/expn_token
+          description: Shown once; only sha256 is stored.
+        url:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/https_url
+      required:
+      - noc
+      - token
+      additionalProperties: true
+    IntegrationKind:
+      enum:
+      - ec
+      - mist
+    Integration:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/IntegrationKind'
+        config:
+          type: object
+          additionalProperties: true
+          description: Non-secret settings (URL / api_base, optional CA bundle name).
+        credentials:
+          $ref: '#/components/schemas/SecretState'
+        allowlist:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          maxItems: 500
+          description: Drill target allowlist (owner-managed), e.g. `{nePk, interfaces[], vrrp_groups[]}`.
+        updated_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - kind
+      - config
+      - credentials
+      - allowlist
+      additionalProperties: true
+    IntegrationPut:
+      type: object
+      properties:
+        config:
+          type: object
+          additionalProperties: true
+        credentials:
+          type: object
+          properties:
+            api_key:
+              type: string
+              maxLength: 512
+            token:
+              type: string
+              maxLength: 512
+          additionalProperties: false
+          description: Write-only. Omit to keep the stored secret.
+        allowlist:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          maxItems: 500
+      required:
+      - config
+      additionalProperties: false
+    IntegrationTestResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        detail:
+          type: string
+          maxLength: 512
+        inventory_count:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+      required:
+      - ok
+      - detail
+      additionalProperties: true
+    DrillExpectation:
+      type: object
+      properties:
+        line:
+          $ref: ../schemas/common.schema.json#/$defs/line_key
+        state:
+          enum:
+          - ok
+          - warn
+          - fail
+        where:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/seg
+        within_s:
+          type: integer
+          minimum: 1
+          maximum: 900
+        max_fail_s:
+          type: integer
+          minimum: 0
+          maximum: 900
+      additionalProperties: true
+      description: What should happen (e.g. DNS fails within 30 s with where=dns_path).
+    DrillSchedule:
+      type: object
+      properties:
+        mode:
+          enum:
+          - once
+          - recurring
+        start_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        every_s:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 60
+            maximum: 604800
+      required:
+      - mode
+      additionalProperties: true
+    DrillCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+        type:
+          type: string
+          maxLength: 64
+          pattern: ^[a-z0-9_]+(\.[a-z0-9_]+)+$
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        params:
+          type: object
+          additionalProperties: true
+          maxProperties: 32
+        duration_s:
+          type: integer
+          minimum: 1
+          maximum: 900
+          default: 120
+          description: Hard cap 900 s.
+        expectation:
+          $ref: '#/components/schemas/DrillExpectation'
+        schedule:
+          $ref: '#/components/schemas/DrillSchedule'
+      required:
+      - name
+      - type
+      - site
+      - params
+      additionalProperties: false
+    Drill:
+      type: object
+      properties:
+        drl_id:
+          $ref: ../schemas/common.schema.json#/$defs/drl_id
+        name:
+          type: string
+          maxLength: 128
+        type:
+          type: string
+          maxLength: 64
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        params:
+          type: object
+          additionalProperties: true
+        duration_s:
+          type: integer
+          minimum: 1
+          maximum: 900
+        expectation:
+          $ref: '#/components/schemas/DrillExpectation'
+        schedule:
+          $ref: '#/components/schemas/DrillSchedule'
+        state:
+          enum:
+          - pending_approval
+          - approved
+          - scheduled
+          - active
+          - done
+          - aborted
+          - failed
+        created_by:
+          type: string
+          maxLength: 254
+        approved_by:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 254
+        last_run_id:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/run_id
+        created_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - drl_id
+      - name
+      - type
+      - site
+      - params
+      - duration_s
+      - state
+      - created_by
+      - approved_by
+      - created_at
+      - updated_at
+      additionalProperties: true
+    DrillDryRun:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        checks:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                maxLength: 64
+              ok:
+                type: boolean
+              detail:
+                type: string
+                maxLength: 256
+            required:
+            - name
+            - ok
+            additionalProperties: true
+          maxItems: 32
+      required:
+      - ok
+      - checks
+      additionalProperties: true
+      description: Read-only validation of target, allowlist, permissions and API reachability. Nothing
+        is created.
+    DrillStart:
+      type: object
+      properties:
+        start_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      additionalProperties: false
+      description: Optional scheduled start, at least 2 minutes ahead. Omit to start now.
+    DrillRun:
+      type: object
+      properties:
+        run_id:
+          $ref: ../schemas/common.schema.json#/$defs/run_id
+        drl_id:
+          $ref: ../schemas/common.schema.json#/$defs/drl_id
+        state:
+          enum:
+          - scheduled
+          - preflight
+          - active
+          - reverting
+          - done
+          - aborted
+          - failed
+        start:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        until:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        abort_requested:
+          type: boolean
+        reason:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 512
+        report:
+          anyOf:
+          - type: 'null'
+          - type: object
+            additionalProperties: true
+          description: Collector drill report (`GET /api/v1/drills/{run_id}`) once available.
+      required:
+      - run_id
+      - drl_id
+      - state
+      - start
+      - until
+      - abort_requested
+      additionalProperties: true
+    AbortAllResult:
+      type: object
+      properties:
+        aborted_runs:
+          type: array
+          items:
+            $ref: ../schemas/common.schema.json#/$defs/run_id
+          maxItems: 1000
+      required:
+      - aborted_runs
+      additionalProperties: true
+    AbortAll:
+      type: object
+      properties:
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      additionalProperties: false
+      description: 'Optional: limit to one site. Default: every active run.'
+    HostStatus:
+      type: object
+      properties:
+        host_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        state:
+          $ref: '#/components/schemas/HostState'
+        received_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        desired_version:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        applied_version:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        report:
+          $ref: ../schemas/status.schema.json
+      required:
+      - host_id
+      - state
+      - received_at
+      - report
+      additionalProperties: true
+    HealthCounts:
+      type: object
+      properties:
+        ok:
+          type: integer
+          minimum: 0
+        degraded:
+          type: integer
+          minimum: 0
+        fail:
+          type: integer
+          minimum: 0
+        unknown:
+          type: integer
+          minimum: 0
+      additionalProperties: true
+      description: Counts by health.
+    HostStateCounts:
+      type: object
+      properties:
+        pending:
+          type: integer
+          minimum: 0
+        enrolled:
+          type: integer
+          minimum: 0
+        stale:
+          type: integer
+          minimum: 0
+        offline:
+          type: integer
+          minimum: 0
+        decommissioning:
+          type: integer
+          minimum: 0
+      additionalProperties: true
+      description: Counts by host state.
+    Overview:
+      type: object
+      properties:
+        as_of:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        sites:
+          type: array
+          items:
+            type: object
+            properties:
+              site:
+                $ref: ../schemas/common.schema.json#/$defs/slug
+              name:
+                type: string
+                maxLength: 128
+              release_version:
+                anyOf:
+                - type: 'null'
+                - $ref: ../schemas/common.schema.json#/$defs/semver
+              hosts_total:
+                type: integer
+                minimum: 0
+              hosts_by_state:
+                $ref: '#/components/schemas/HostStateCounts'
+              components_by_health:
+                $ref: '#/components/schemas/HealthCounts'
+            required:
+            - site
+            - name
+            - hosts_total
+            - hosts_by_state
+            - components_by_health
+            additionalProperties: true
+          maxItems: 1000
+        hosts:
+          type: array
+          items:
+            type: object
+            properties:
+              host_id:
+                $ref: ../schemas/common.schema.json#/$defs/h_id
+              name:
+                type: string
+                maxLength: 128
+              site:
+                $ref: ../schemas/common.schema.json#/$defs/slug
+              state:
+                $ref: '#/components/schemas/HostState'
+              health:
+                $ref: '#/components/schemas/Health'
+              agent_version:
+                anyOf:
+                - type: 'null'
+                - $ref: ../schemas/common.schema.json#/$defs/semver
+              desired_version:
+                anyOf:
+                - type: 'null'
+                - type: integer
+                  minimum: 0
+              applied_version:
+                anyOf:
+                - type: 'null'
+                - type: integer
+                  minimum: 0
+              components:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    component_id:
+                      $ref: ../schemas/common.schema.json#/$defs/cmp_id
+                    type:
+                      $ref: '#/components/schemas/ComponentType'
+                    id:
+                      $ref: ../schemas/common.schema.json#/$defs/slug
+                    health:
+                      $ref: '#/components/schemas/Health'
+                    version:
+                      anyOf:
+                      - type: 'null'
+                      - $ref: ../schemas/common.schema.json#/$defs/semver
+                  required:
+                  - component_id
+                  - type
+                  - id
+                  - health
+                  additionalProperties: true
+                maxItems: 64
+            required:
+            - host_id
+            - name
+            - site
+            - state
+            - health
+            - components
+            additionalProperties: true
+          maxItems: 5000
+        versions:
+          type: object
+          properties: {}
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Map of release version to number of hosts running it.
+      required:
+      - as_of
+      - sites
+      - hosts
+      - versions
+      additionalProperties: true
+    FleetSummary:
+      type: object
+      properties:
+        as_of:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        hosts_by_state:
+          $ref: '#/components/schemas/HostStateCounts'
+        hosts_total:
+          type: integer
+          minimum: 0
+        hosts_online:
+          type: integer
+          minimum: 0
+        components_by_type_health:
+          type: object
+          properties: {}
+          additionalProperties:
+            $ref: '#/components/schemas/HealthCounts'
+          description: Map component type -> counts by health.
+        measurements_per_min:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        ingest_records_per_s:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        open_issues:
+          type: object
+          properties:
+            warn:
+              type: integer
+              minimum: 0
+            crit:
+              type: integer
+              minimum: 0
+          required:
+          - warn
+          - crit
+          additionalProperties: true
+        version_drift_hosts:
+          type: integer
+          minimum: 0
+        open_experience_incidents:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+      required:
+      - as_of
+      - hosts_by_state
+      - components_by_type_health
+      - open_issues
+      - version_drift_hosts
+      additionalProperties: true
+    FleetSite:
+      type: object
+      properties:
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        name:
+          type: string
+          maxLength: 128
+        hosts:
+          type: integer
+          minimum: 0
+        health_bar:
+          type: object
+          properties:
+            ok:
+              type: integer
+              minimum: 0
+            warn:
+              type: integer
+              minimum: 0
+            fail:
+              type: integer
+              minimum: 0
+            offline:
+              type: integer
+              minimum: 0
+          required:
+          - ok
+          - warn
+          - fail
+          - offline
+          additionalProperties: true
+        probes_reporting:
+          type: integer
+          minimum: 0
+        probes_total:
+          type: integer
+          minimum: 0
+        ingest_records_per_s:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        worst_issue:
+          anyOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/Issue'
+        release_version:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/semver
+        canary_state:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 32
+      required:
+      - site
+      - name
+      - hosts
+      - health_bar
+      additionalProperties: true
+    FleetHostRow:
+      type: object
+      properties:
+        host_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        name:
+          type: string
+          maxLength: 128
+        mgmt_ip:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ipv4
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        shapes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Shape'
+          maxItems: 4
+        state:
+          $ref: '#/components/schemas/HostState'
+        stale:
+          type: boolean
+        health:
+          $ref: '#/components/schemas/Health'
+        open_issues:
+          type: integer
+          minimum: 0
+        cpu_pct:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+            maximum: 100
+        mem_pct:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+            maximum: 100
+        disk_pct_max:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+            maximum: 100
+        uptime_s:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        net:
+          anyOf:
+          - type: 'null'
+          - type: object
+            properties:
+              rx_pps:
+                anyOf:
+                - type: 'null'
+                - type: number
+                  minimum: 0
+              tx_pps:
+                anyOf:
+                - type: 'null'
+                - type: number
+                  minimum: 0
+              rx_bps:
+                anyOf:
+                - type: 'null'
+                - type: number
+                  minimum: 0
+              tx_bps:
+                anyOf:
+                - type: 'null'
+                - type: number
+                  minimum: 0
+            additionalProperties: true
+        work:
+          type: object
+          properties:
+            measurements_per_min:
+              anyOf:
+              - type: 'null'
+              - type: number
+                minimum: 0
+            ingest_records_per_s:
+              anyOf:
+              - type: 'null'
+              - type: number
+                minimum: 0
+            sessions_active:
+              anyOf:
+              - type: 'null'
+              - type: integer
+                minimum: 0
+            drills_active:
+              anyOf:
+              - type: 'null'
+              - type: integer
+                minimum: 0
+          additionalProperties: true
+          description: Per-shape work figure.
+        cpu_spark:
+          type: array
+          items:
+            anyOf:
+            - type: 'null'
+            - type: number
+          maxItems: 120
+          description: Last hour, 5-minute buckets; null = gap.
+        net_spark:
+          type: array
+          items:
+            anyOf:
+            - type: 'null'
+            - type: number
+          maxItems: 120
+        agent_version:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/semver
+        desired_version:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        applied_version:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        last_seen:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - host_id
+      - name
+      - site
+      - shapes
+      - state
+      - stale
+      - health
+      - open_issues
+      - last_seen
+      additionalProperties: true
+    FleetHostsPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetHostRow'
+        next_cursor:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 1024
+            description: Opaque cursor; null when there are no more pages.
+      required:
+      - items
+      - next_cursor
+      description: List envelope (01-contracts.md section 1).
+    MetricPoint:
+      type: object
+      properties:
+        t:
+          type: integer
+          minimum: 0
+          description: Bucket start, epoch seconds (UTC).
+        avg:
+          anyOf:
+          - type: 'null'
+          - type: number
+        max:
+          anyOf:
+          - type: 'null'
+          - type: number
+      required:
+      - t
+      - avg
+      - max
+      additionalProperties: true
+      description: avg = sum/samples. Buckets with no samples are absent (drawn as gaps).
+    MetricSeries:
+      type: object
+      properties:
+        range: &id018
+          enum:
+          - 1h
+          - 6h
+          - 24h
+          - 7d
+          - 30d
+        step_s:
+          enum:
+          - 300
+          - 3600
+        as_of:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        series:
+          type: object
+          properties: {}
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/MetricPoint'
+            maxItems: 10000
+          description: Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour
+            buckets.
+      required:
+      - range
+      - step_s
+      - as_of
+      - series
+      additionalProperties: true
+    HostMetrics:
+      allOf:
+      - $ref: '#/components/schemas/MetricSeries'
+      - type: object
+        properties:
+          host_id:
+            $ref: ../schemas/common.schema.json#/$defs/h_id
+        required:
+        - host_id
+        additionalProperties: true
+    ComponentMetrics:
+      allOf:
+      - $ref: '#/components/schemas/MetricSeries'
+      - type: object
+        properties:
+          component_id:
+            $ref: ../schemas/common.schema.json#/$defs/cmp_id
+        required:
+        - component_id
+        additionalProperties: true
+    FleetTop:
+      type: object
+      properties:
+        metric:
+          enum:
+          - cpu
+          - mem
+          - disk
+          - net
+        as_of:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              host_id:
+                $ref: ../schemas/common.schema.json#/$defs/h_id
+              name:
+                type: string
+                maxLength: 128
+              site:
+                $ref: ../schemas/common.schema.json#/$defs/slug
+              value:
+                type: number
+              unit:
+                enum:
+                - pct
+                - pps
+              value_out:
+                anyOf:
+                - type: 'null'
+                - type: number
+              spark:
+                type: array
+                items:
+                  anyOf:
+                  - type: 'null'
+                  - type: number
+                maxItems: 300
+            required:
+            - host_id
+            - name
+            - site
+            - value
+            - unit
+            additionalProperties: true
+          maxItems: 1000
+      required:
+      - metric
+      - as_of
+      - items
+      additionalProperties: true
+    IssueKind:
+      enum:
+      - host_stale
+      - host_offline
+      - disk_high
+      - storage_runway
+      - mem_low
+      - cpu_high
+      - clock
+      - component_unhealthy
+      - crash_loop
+      - reconcile_failed
+      - version_drift
+      - probe_ports
+      - probe_push_lag
+      - probe_spool
+      - probe_collector
+      - collector_rejects
+      - collector_vm
+      - collector_probes
+      - dashboard_collectors
+      - iface_errors
+    Issue:
+      type: object
+      properties:
+        issue_id: &id001
+          type: string
+          pattern: ^iss_[0-9A-HJKMNP-TV-Z]{26}$
+          description: 'Issue id: `iss_` + ULID.'
+        kind:
+          $ref: '#/components/schemas/IssueKind'
+        severity:
+          $ref: '#/components/schemas/Severity'
+        host_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        component_id:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/cmp_id
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        opened_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        resolved_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        last_value:
+          anyOf:
+          - type: 'null'
+          - type: number
+        detail:
+          type: string
+          maxLength: 512
+        snoozed_until:
+          anyOf:
+          - type: 'null'
+          - anyOf:
+            - $ref: ../schemas/common.schema.json#/$defs/ts
+            - enum:
+              - resolved
+      required:
+      - issue_id
+      - kind
+      - severity
+      - host_id
+      - site
+      - opened_at
+      - resolved_at
+      - detail
+      additionalProperties: true
+    SnoozeRequest:
+      type: object
+      properties:
+        for:
+          enum:
+          - 1h
+          - 24h
+          - resolved
+      required:
+      - for
+      additionalProperties: false
+    Snooze:
+      type: object
+      properties:
+        issue_id: *id001
+        kind:
+          $ref: '#/components/schemas/IssueKind'
+        host_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        until:
+          anyOf:
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+          - enum:
+            - resolved
+        created_by:
+          type: string
+          maxLength: 254
+      required:
+      - issue_id
+      - kind
+      - host_id
+      - until
+      additionalProperties: true
+    FleetThresholds:
+      type: object
+      properties:
+        disk_high:
+          type: object
+          properties:
+            warn_pct:
+              type: number
+              minimum: 0
+              maximum: 100
+              default: 85
+            crit_pct:
+              type: number
+              minimum: 0
+              maximum: 100
+              default: 95
+          additionalProperties: true
+        storage_runway:
+          type: object
+          properties:
+            warn_days:
+              type: number
+              minimum: 0
+              default: 7
+            crit_days:
+              type: number
+              minimum: 0
+              default: 2
+          additionalProperties: true
+        mem_low:
+          type: object
+          properties:
+            available_pct:
+              type: number
+              minimum: 0
+              maximum: 100
+              default: 10
+            for_min:
+              type: integer
+              minimum: 1
+              maximum: 1440
+              default: 10
+          additionalProperties: true
+        cpu_high:
+          type: object
+          properties:
+            pct:
+              type: number
+              minimum: 0
+              maximum: 100
+              default: 90
+            avg_min:
+              type: integer
+              minimum: 1
+              maximum: 1440
+              default: 15
+          additionalProperties: true
+        probe_push_lag:
+          type: object
+          properties:
+            warn_s:
+              type: number
+              minimum: 0
+              default: 120
+            crit_s:
+              type: number
+              minimum: 0
+              default: 600
+          additionalProperties: true
+        probe_spool:
+          type: object
+          properties:
+            pct:
+              type: number
+              minimum: 0
+              maximum: 100
+              default: 50
+          additionalProperties: true
+        crash_loop:
+          type: object
+          properties:
+            restarts:
+              type: integer
+              minimum: 1
+              default: 3
+            window_min:
+              type: integer
+              minimum: 1
+              default: 15
+          additionalProperties: true
+        version_drift:
+          type: object
+          properties:
+            minutes:
+              type: integer
+              minimum: 1
+              default: 10
+          additionalProperties: true
+        clock:
+          type: object
+          properties:
+            offset_ms:
+              type: number
+              minimum: 0
+              default: 1000
+          additionalProperties: true
+        iface_errors:
+          type: object
+          properties:
+            pct:
+              type: number
+              minimum: 0
+              default: 0.1
+            window_min:
+              type: integer
+              minimum: 1
+              default: 15
+          additionalProperties: true
+      additionalProperties: false
+      description: Defaults from 05-manager.md section 14; any key may be omitted to keep its default.
+    PlatformWebhook:
+      type: object
+      properties:
+        format:
+          enum:
+          - slack
+          - teams
+          - json
+        url:
+          $ref: '#/components/schemas/SecretState'
+      required:
+      - format
+      - url
+      additionalProperties: true
+      description: Fires on `crit` open and on resolve. The URL is a secret and is never returned.
+    PlatformWebhookPut:
+      type: object
+      properties:
+        format:
+          enum:
+          - slack
+          - teams
+          - json
+        url:
+          $ref: ../schemas/common.schema.json#/$defs/https_url
+      required:
+      - format
+      additionalProperties: false
+      description: '`url` is write-only; omit to keep the stored value.'
+    WebhookTestResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        http_status:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 100
+            maximum: 599
+        error:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 256
+      required:
+      - ok
+      additionalProperties: true
+    AuditEvent:
+      type: object
+      properties:
+        evt_id:
+          $ref: ../schemas/common.schema.json#/$defs/evt_id
+        ts:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        actor:
+          type: string
+          maxLength: 254
+          description: Admin email, `agent:h_...`, or `system`.
+        action:
+          type: string
+          maxLength: 64
+        resource:
+          type: string
+          maxLength: 256
+        details:
+          type: object
+          additionalProperties: true
+          description: Never contains secret values.
+        ip:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+      required:
+      - evt_id
+      - ts
+      - actor
+      - action
+      - resource
+      additionalProperties: true
+    AdminEntry:
+      type: object
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        role:
+          $ref: '#/components/schemas/Role'
+        disabled:
+          type: boolean
+        last_seen:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - email
+      - role
+      additionalProperties: true
+    Settings:
+      type: object
+      properties:
+        org_name:
+          type: string
+          maxLength: 128
+        drills_enabled:
+          type: boolean
+        drills_two_person:
+          type: boolean
+        default_retention:
+          $ref: '#/components/schemas/Retention'
+        release_channel:
+          type: string
+          maxLength: 32
+        owner:
+          type: string
+          maxLength: 254
+          description: Owner email.
+        admins:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminEntry'
+          maxItems: 200
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - org_name
+      - drills_enabled
+      - drills_two_person
+      - default_retention
+      - owner
+      - admins
+      additionalProperties: true
+    SettingsPatch:
+      type: object
+      properties:
+        org_name:
+          type: string
+          maxLength: 128
+          minLength: 1
+        drills_enabled:
+          type: boolean
+        drills_two_person:
+          type: boolean
+        default_retention:
+          $ref: '#/components/schemas/Retention'
+        release_channel:
+          type: string
+          maxLength: 32
+        owner:
+          type: string
+          maxLength: 254
+        admins:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminEntry'
+          maxItems: 200
+          description: Upserts (invite by email + role, or disable). Owner only.
+      additionalProperties: false
+      minProperties: 1
+    SsoForm:
+      type: string
+      description: Self-contained HTML document with an auto-submitting form that POSTs `token` (the SSO
+        handoff JWT) to `https://<dashboard>/auth/sso`. The token is never placed in a URL.
+    Error:
+      $ref: ../schemas/common.schema.json#/$defs/error_envelope
+  responses:
+    Unauthorized:
+      description: Missing or invalid `Cf-Access-Jwt-Assertion` (signature, `aud`, `iss`, `exp`/`nbf`,
+        or Access configuration absent). Fail closed.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            unauthenticated:
+              value:
+                error:
+                  code: unauthenticated
+                  message: unauthenticated
+                  details: {}
+    Forbidden:
+      description: Authenticated but the email is not an admin (`unknown_admin`), is disabled, or the
+        role is below `x-exp-min-role` (`insufficient_role`).
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            insufficient_role:
+              value:
+                error:
+                  code: insufficient_role
+                  message: insufficient role
+                  details: {}
+            unknown_admin:
+              value:
+                error:
+                  code: unknown_admin
+                  message: unknown admin
+                  details: {}
+    NotFound:
+      description: 'Not found. Error codes: `not_found`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            not_found:
+              value:
+                error:
+                  code: not_found
+                  message: not found
+                  details: {}
+    BadRequest:
+      description: Malformed JSON or failed validation (`details.errors` lists paths).
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            invalid_request:
+              value:
+                error:
+                  code: invalid_request
+                  message: invalid request
+                  details: {}
+    TooManyRequests:
+      description: '`RL_ADMIN` limit (600/min per identity).'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            rate_limited:
+              value:
+                error:
+                  code: rate_limited
+                  message: rate limited
+                  details: {}
+      headers:
+        Retry-After: &id002
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 3600
+    ServiceUnavailable:
+      description: 'Service unavailable. Error codes: `unavailable`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            unavailable:
+              value:
+                error:
+                  code: unavailable
+                  message: unavailable
+                  details: {}
+      headers:
+        Retry-After: *id002
+    Conflict:
+      description: 'Conflict. Error codes: `conflict`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            conflict:
+              value:
+                error:
+                  code: conflict
+                  message: conflict
+                  details: {}
+paths:
+  /me:
+    get:
+      operationId: getMe
+      summary: Current admin identity
+      tags:
+      - me
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites:
+    get:
+      operationId: listSites
+      summary: List sites
+      tags:
+      - sites
+      parameters: &id011
+      - &id006
+        $ref: '#/components/parameters/Limit'
+      - &id007
+        $ref: '#/components/parameters/Cursor'
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Site'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '400': &id003
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createSite
+      summary: Create a site
+      tags:
+      - sites
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteCreate'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Site'
+        '400': *id003
+        '409':
+          description: Slug already in use.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                site_exists:
+                  value:
+                    error:
+                      code: site_exists
+                      message: site exists
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}:
+    get:
+      operationId: getSite
+      summary: Get a site
+      tags:
+      - sites
+      parameters:
+      - &id004
+        name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Site'
+        '404': &id005
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    patch:
+      operationId: updateSite
+      summary: Update a site
+      tags:
+      - sites
+      parameters:
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SitePatch'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Site'
+        '400': *id003
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: deleteSite
+      summary: Delete an empty site
+      tags:
+      - sites
+      parameters:
+      - *id004
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '204':
+          description: Deleted.
+        '404': *id005
+        '409':
+          description: Hosts still belong to the site.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                site_not_empty:
+                  value:
+                    error:
+                      code: site_not_empty
+                      message: site not empty
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /hosts:
+    get:
+      operationId: listHosts
+      summary: List hosts
+      tags:
+      - hosts
+      parameters:
+      - name: site
+        in: query
+        required: false
+        description: Filter by site.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: state
+        in: query
+        required: false
+        description: Filter by state.
+        schema:
+          $ref: '#/components/schemas/HostState'
+      - *id006
+      - *id007
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Host'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '400': *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createHost
+      summary: Create a host and its first enrol token
+      tags:
+      - hosts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HostCreate'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: Host created in state `pending`. The enrol command is returned once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostCreated'
+          headers: &id009
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '400': *id003
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /hosts/{id}:
+    get:
+      operationId: getHost
+      summary: Get a host
+      tags:
+      - hosts
+      parameters:
+      - &id008
+        name: id
+        in: path
+        required: true
+        description: Host id (`h_...`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Host'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    patch:
+      operationId: updateHost
+      summary: Rename or move a host
+      tags:
+      - hosts
+      parameters:
+      - *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HostPatch'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Host'
+        '400': *id003
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: deleteHost
+      summary: Delete a pending or removed host
+      tags:
+      - hosts
+      parameters:
+      - *id008
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '204':
+          description: Deleted.
+        '404': *id005
+        '409':
+          description: Host is enrolled; decommission it first.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                host_not_removable:
+                  value:
+                    error:
+                      code: host_not_removable
+                      message: host not removable
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /hosts/{id}/enrol-token:
+    post:
+      operationId: createEnrolToken
+      summary: Issue a new enrol token (1 h)
+      tags:
+      - hosts
+      parameters:
+      - *id008
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: New token; earlier unused tokens are invalidated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrolToken'
+          headers: *id009
+        '404': *id005
+        '409':
+          description: Token reissue is for pending hosts; use rotate-agent for enrolled ones.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                host_already_enrolled:
+                  value:
+                    error:
+                      code: host_already_enrolled
+                      message: host already enrolled
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /hosts/{id}/decommission:
+    post:
+      operationId: decommissionHost
+      summary: Start decommissioning a host
+      tags:
+      - hosts
+      parameters:
+      - *id008
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '202':
+          description: 'Desired state now carries `decommission: true`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Host'
+        '404': *id005
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /hosts/{id}/components:
+    get:
+      operationId: listHostComponents
+      summary: List a host's components
+      tags:
+      - components
+      parameters:
+      - *id008
+      - *id006
+      - *id007
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Component'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createComponent
+      summary: Add a component to a host
+      tags:
+      - components
+      parameters:
+      - *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComponentCreate'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Component'
+        '400': *id003
+        '404': *id005
+        '409':
+          description: Slug already used by a component of this type.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                component_slug_exists:
+                  value:
+                    error:
+                      code: component_slug_exists
+                      message: component slug exists
+                      details: {}
+        '422':
+          description: '`config` failed the component type''s schema or a guard.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_config:
+                  value:
+                    error:
+                      code: invalid_config
+                      message: invalid config
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /components/{component_id}:
+    patch:
+      operationId: updateComponent
+      summary: Update a component's config or enabled flag
+      tags:
+      - components
+      parameters:
+      - &id010
+        name: component_id
+        in: path
+        required: true
+        description: Component id (`cmp_...`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/cmp_id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComponentPatch'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Component'
+        '400': *id003
+        '404': *id005
+        '422':
+          description: 'Unprocessable. Error codes: `invalid_config`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_config:
+                  value:
+                    error:
+                      code: invalid_config
+                      message: invalid config
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: deleteComponent
+      summary: Remove a component
+      tags:
+      - components
+      parameters:
+      - *id010
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '204':
+          description: Deleted.
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /components/{component_id}/restart:
+    post:
+      operationId: restartComponent
+      summary: Queue a restart_component action
+      tags:
+      - components
+      parameters:
+      - *id010
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '202':
+          description: Action queued in desired state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /components/{component_id}/ports:
+    put:
+      operationId: putProbePorts
+      summary: Assign probe test interfaces
+      tags:
+      - components
+      parameters:
+      - *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortsPut'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ports'
+        '400': *id003
+        '404': *id005
+        '422':
+          description: The management interface is refused; interfaces must exist in host facts; roles/addresses
+            must validate.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                mgmt_interface_refused:
+                  value:
+                    error:
+                      code: mgmt_interface_refused
+                      message: mgmt interface refused
+                      details: {}
+                unknown_interface:
+                  value:
+                    error:
+                      code: unknown_interface
+                      message: unknown interface
+                      details: {}
+                invalid_ports:
+                  value:
+                    error:
+                      code: invalid_ports
+                      message: invalid ports
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /releases:
+    get:
+      operationId: listReleases
+      summary: List imported releases
+      tags:
+      - releases
+      parameters: *id011
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Release'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '400': *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /releases/import:
+    post:
+      operationId: importRelease
+      summary: Import a signed release from GitHub
+      tags:
+      - releases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseImport'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Release'
+        '400': *id003
+        '404':
+          description: No such release in `RELEASES_REPO`.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                release_not_found:
+                  value:
+                    error:
+                      code: release_not_found
+                      message: release not found
+                      details: {}
+        '409':
+          description: 'Conflict. Error codes: `release_exists`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                release_exists:
+                  value:
+                    error:
+                      code: release_exists
+                      message: release exists
+                      details: {}
+        '422':
+          description: 'Verification failed: nothing was recorded.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                signature_invalid:
+                  value:
+                    error:
+                      code: signature_invalid
+                      message: signature invalid
+                      details: {}
+                artifact_hash_mismatch:
+                  value:
+                    error:
+                      code: artifact_hash_mismatch
+                      message: artifact hash mismatch
+                      details: {}
+                manifest_invalid:
+                  value:
+                    error:
+                      code: manifest_invalid
+                      message: manifest invalid
+                      details: {}
+        '502':
+          description: GitHub unreachable or returned an error.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                upstream_error:
+                  value:
+                    error:
+                      code: upstream_error
+                      message: upstream error
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /releases/upload:
+    post:
+      operationId: uploadRelease
+      summary: Upload and verify a signed release
+      tags:
+      - releases
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReleaseUpload'
+            encoding:
+              manifest:
+                contentType: application/json
+              signature:
+                contentType: text/plain, application/octet-stream
+              artifacts:
+                contentType: application/gzip
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Release'
+        '400': *id003
+        '409':
+          description: 'Conflict. Error codes: `release_exists`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                release_exists:
+                  value:
+                    error:
+                      code: release_exists
+                      message: release exists
+                      details: {}
+        '413':
+          description: 'Payload too large. Error codes: `payload_too_large`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                payload_too_large:
+                  value:
+                    error:
+                      code: payload_too_large
+                      message: payload too large
+                      details: {}
+        '415':
+          description: Not multipart/form-data.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                unsupported_media_type:
+                  value:
+                    error:
+                      code: unsupported_media_type
+                      message: unsupported media type
+                      details: {}
+        '422':
+          description: 'Verification failed: nothing was recorded.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                signature_invalid:
+                  value:
+                    error:
+                      code: signature_invalid
+                      message: signature invalid
+                      details: {}
+                artifact_hash_mismatch:
+                  value:
+                    error:
+                      code: artifact_hash_mismatch
+                      message: artifact hash mismatch
+                      details: {}
+                manifest_invalid:
+                  value:
+                    error:
+                      code: manifest_invalid
+                      message: manifest invalid
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/release:
+    patch:
+      operationId: setSiteRelease
+      summary: Set a site's target release (rollout, rollback)
+      tags:
+      - releases
+      parameters:
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteRelease'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Site'
+        '400': *id003
+        '404': *id005
+        '409':
+          description: A canary rollout is already in progress, or the previous canary failed.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                rollout_in_progress:
+                  value:
+                    error:
+                      code: rollout_in_progress
+                      message: rollout in progress
+                      details: {}
+                canary_failed:
+                  value:
+                    error:
+                      code: canary_failed
+                      message: canary failed
+                      details: {}
+        '422':
+          description: Version not imported, or hosts' agents are older than `min_agent_version`.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                release_not_imported:
+                  value:
+                    error:
+                      code: release_not_imported
+                      message: release not imported
+                      details: {}
+                min_agent_version:
+                  value:
+                    error:
+                      code: min_agent_version
+                      message: min agent version
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /components/{component_id}/rotate:
+    post:
+      operationId: rotateComponentSecrets
+      summary: Rotate a component's ingest/API tokens
+      tags:
+      - secrets
+      parameters:
+      - *id010
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotateResult'
+        '404': *id005
+        '409':
+          description: The previous rotation grace period has not elapsed.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                rotation_in_progress:
+                  value:
+                    error:
+                      code: rotation_in_progress
+                      message: rotation in progress
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /hosts/{id}/rotate-agent:
+    post:
+      operationId: rotateAgentSecretAdmin
+      summary: Request agent secret rotation
+      tags:
+      - secrets
+      parameters:
+      - *id008
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '202':
+          description: A `rotate_agent_secret` action is queued; the agent completes it via `POST /api/agent/v1/rotate`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '404': *id005
+        '409':
+          description: 'Conflict. Error codes: `host_not_enrolled`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                host_not_enrolled:
+                  value:
+                    error:
+                      code: host_not_enrolled
+                      message: host not enrolled
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /dashboards/{dashboard_id}/users:
+    get:
+      operationId: listDashboardUsers
+      summary: List dashboard local users
+      tags:
+      - dashboards
+      parameters:
+      - &id012
+        name: dashboard_id
+        in: path
+        required: true
+        description: Dashboard component slug (`dashboard_id`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - *id006
+      - *id007
+      x-exp-min-role: admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DashboardUser'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createDashboardUser
+      summary: Create a dashboard local user
+      tags:
+      - dashboards
+      parameters:
+      - *id012
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardUserCreate'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardUser'
+        '400': *id003
+        '404': *id005
+        '409':
+          description: 'Conflict. Error codes: `user_exists`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                user_exists:
+                  value:
+                    error:
+                      code: user_exists
+                      message: user exists
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /dashboards/{dashboard_id}/users/{usr}:
+    delete:
+      operationId: deleteDashboardUser
+      summary: Delete a dashboard local user
+      tags:
+      - dashboards
+      parameters:
+      - *id012
+      - name: usr
+        in: path
+        required: true
+        description: Dashboard user id (`usr_...`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/usr_id
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '204':
+          description: Deleted.
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /dashboards/{dashboard_id}/noc-tokens:
+    get:
+      operationId: listNocTokens
+      summary: List NOC tokens
+      tags:
+      - dashboards
+      parameters:
+      - *id012
+      - *id006
+      - *id007
+      x-exp-min-role: admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NocToken'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createNocToken
+      summary: Create a NOC token (shown once)
+      tags:
+      - dashboards
+      parameters:
+      - *id012
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NocTokenCreate'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: The plaintext token appears only here.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NocTokenCreated'
+          headers: *id009
+        '400': *id003
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /dashboards/{dashboard_id}/noc-tokens/{noc}:
+    delete:
+      operationId: revokeNocToken
+      summary: Revoke a NOC token
+      tags:
+      - dashboards
+      parameters:
+      - *id012
+      - name: noc
+        in: path
+        required: true
+        description: NOC token id (`noc_...`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/noc_id
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '204':
+          description: Revoked.
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /dashboards/{dashboard_id}/sso:
+    post:
+      operationId: dashboardSso
+      summary: Open the dashboard via SSO handoff
+      description: Every role may open a dashboard. The `role` claim is the caller's role mapped to `viewer|operator|admin`
+        (owner maps to admin).
+      tags:
+      - dashboards
+      parameters:
+      - *id012
+      x-exp-min-role: viewer
+      x-exp-audited: true
+      responses:
+        '200':
+          description: 'Auto-submitting HTML form that POSTs the HS256 handoff JWT to the dashboard. Claims:
+            iss `exp-manager:<org>`, aud `<dashboard_id>`, sub, name, role, iat, exp = iat + 120, jti.'
+          headers: *id009
+          content:
+            text/html:
+              schema:
+                $ref: '#/components/schemas/SsoForm'
+        '404': *id005
+        '409':
+          description: The dashboard has not reported its URL/secret yet.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                dashboard_not_ready:
+                  value:
+                    error:
+                      code: dashboard_not_ready
+                      message: dashboard not ready
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/alerts:
+    get:
+      operationId: getSiteAlerts
+      summary: Get a site's alert settings
+      tags:
+      - alerts
+      parameters:
+      - *id004
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alerts'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: putSiteAlerts
+      summary: Replace a site's alert settings
+      tags:
+      - alerts
+      parameters:
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertsPut'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alerts'
+        '400': *id003
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/alerts/test:
+    post:
+      operationId: testSiteAlerts
+      summary: Send a test message to the site's webhooks
+      tags:
+      - alerts
+      parameters:
+      - *id004
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertTestResult'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /integrations/{kind}:
+    get:
+      operationId: getIntegration
+      summary: Get an integration (credentials write-only)
+      tags:
+      - integrations
+      parameters:
+      - &id013
+        name: kind
+        in: path
+        required: true
+        description: 'Integration kind: `ec` (EdgeConnect Orchestrator) or `mist`.'
+        schema:
+          $ref: '#/components/schemas/IntegrationKind'
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: putIntegration
+      summary: Set an integration's config, credentials and drill allowlist
+      tags:
+      - integrations
+      parameters:
+      - *id013
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegrationPut'
+      x-exp-min-role: owner
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+        '400': *id003
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /integrations/{kind}/test:
+    post:
+      operationId: testIntegration
+      summary: Read-only connectivity and credential test
+      tags:
+      - integrations
+      parameters:
+      - *id013
+      x-exp-min-role: owner
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationTestResult'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /drills:
+    get:
+      operationId: listDrills
+      summary: List drills
+      tags:
+      - drills
+      parameters:
+      - name: site
+        in: query
+        required: false
+        description: Filter by site.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: state
+        in: query
+        required: false
+        description: Filter by drill state.
+        schema:
+          type: string
+          maxLength: 32
+      - *id006
+      - *id007
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Drill'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '400': *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createDrill
+      summary: Create a drill (or dry-run it)
+      tags:
+      - drills
+      parameters:
+      - name: dry_run
+        in: query
+        required: false
+        description: Validate targets, permissions and API reachability with read-only calls.
+        schema:
+          type: boolean
+          default: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DrillCreate'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '201':
+          description: Drill created, awaiting approval.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Drill'
+        '200':
+          description: Dry run result (`dry_run=true`); nothing created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrillDryRun'
+        '400': *id003
+        '403':
+          description: Drills are disabled for the org (owner enables), or role too low.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                drills_disabled:
+                  value:
+                    error:
+                      code: drills_disabled
+                      message: drills disabled
+                      details: {}
+                insufficient_role:
+                  value:
+                    error:
+                      code: insufficient_role
+                      message: insufficient role
+                      details: {}
+                unknown_admin:
+                  value:
+                    error:
+                      code: unknown_admin
+                      message: unknown admin
+                      details: {}
+        '409':
+          description: At most one external drill per site and one local drill per port.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                external_drill_active:
+                  value:
+                    error:
+                      code: external_drill_active
+                      message: external drill active
+                      details: {}
+        '422':
+          description: Target outside the owner-managed allowlist; duration over the 900 s cap; or invalid
+            type/params.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                target_not_allowlisted:
+                  value:
+                    error:
+                      code: target_not_allowlisted
+                      message: target not allowlisted
+                      details: {}
+                duration_exceeds_cap:
+                  value:
+                    error:
+                      code: duration_exceeds_cap
+                      message: duration exceeds cap
+                      details: {}
+                invalid_drill:
+                  value:
+                    error:
+                      code: invalid_drill
+                      message: invalid drill
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /drills/{id}/approve:
+    post:
+      operationId: approveDrill
+      summary: Approve a drill
+      tags:
+      - drills
+      parameters:
+      - &id014
+        name: id
+        in: path
+        required: true
+        description: Drill id (`drl_...`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/drl_id
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Drill'
+        '404': *id005
+        '409':
+          description: With `drills_two_person` the approver must differ from the creator.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                second_approver_required:
+                  value:
+                    error:
+                      code: second_approver_required
+                      message: second approver required
+                      details: {}
+                invalid_state:
+                  value:
+                    error:
+                      code: invalid_state
+                      message: invalid state
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /drills/{id}/start:
+    post:
+      operationId: startDrill
+      summary: Start an approved drill
+      tags:
+      - drills
+      parameters:
+      - *id014
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DrillStart'
+      x-exp-min-role: operator
+      x-exp-audited: true
+      responses:
+        '202':
+          description: Run created (`scheduled` or `preflight`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrillRun'
+        '400': *id003
+        '404': *id005
+        '409':
+          description: Drill is not approved, or another drill is active.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                not_approved:
+                  value:
+                    error:
+                      code: not_approved
+                      message: not approved
+                      details: {}
+                external_drill_active:
+                  value:
+                    error:
+                      code: external_drill_active
+                      message: external drill active
+                      details: {}
+                invalid_state:
+                  value:
+                    error:
+                      code: invalid_state
+                      message: invalid state
+                      details: {}
+        '422':
+          description: Scheduled start must be at least 2 minutes ahead.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                start_too_soon:
+                  value:
+                    error:
+                      code: start_too_soon
+                      message: start too soon
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /drills/abort-all:
+    post:
+      operationId: abortAllDrills
+      summary: 'Kill switch: abort every active drill run'
+      tags:
+      - drills
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbortAll'
+      x-exp-min-role: operator
+      x-exp-audited: true
+      responses:
+        '202':
+          description: 'Desired state `abort: true` is compiled; executors revert within 5 s.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AbortAllResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /drills/{id}/runs/{run}:
+    get:
+      operationId: getDrillRun
+      summary: Get a drill run
+      tags:
+      - drills
+      parameters:
+      - *id014
+      - name: run
+        in: path
+        required: true
+        description: Run id (`run_...`).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/run_id
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrillRun'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /overview:
+    get:
+      operationId: getOverview
+      summary: Sites, hosts, component health and versions
+      tags:
+      - status
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Overview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /hosts/{id}/status:
+    get:
+      operationId: getHostStatus
+      summary: Latest status report for a host
+      tags:
+      - status
+      parameters:
+      - *id008
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostStatus'
+        '404':
+          description: Unknown host, or it has not reported yet (`no_status`).
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                not_found:
+                  value:
+                    error:
+                      code: not_found
+                      message: not found
+                      details: {}
+                no_status:
+                  value:
+                    error:
+                      code: no_status
+                      message: no status
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /fleet/summary:
+    get:
+      operationId: getFleetSummary
+      summary: Fleet KPIs
+      description: Hosts by state, components by type x health, measurements/min, ingest/s, open issues
+        by severity, version drift, open experience incidents.
+      tags:
+      - fleet
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: ETag from a previous response.
+        schema:
+          type: string
+          maxLength: 160
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: Snapshot (cacheable 15 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetSummary'
+          headers: &id017
+            ETag: *id015
+            Cache-Control: *id016
+        '304':
+          description: Not modified (`If-None-Match` matched `ETag`).
+          headers: *id017
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /fleet/sites:
+    get:
+      operationId: listFleetSites
+      summary: Per-site roll-up
+      tags:
+      - fleet
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: ETag from a previous response.
+        schema:
+          type: string
+          maxLength: 160
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: Snapshot (cacheable 15 s).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FleetSite'
+                    maxItems: 1000
+                  as_of:
+                    $ref: ../schemas/common.schema.json#/$defs/ts
+                required:
+                - items
+                - as_of
+                additionalProperties: true
+          headers: *id017
+        '304':
+          description: Not modified (`If-None-Match` matched `ETag`).
+          headers: *id017
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /fleet/hosts:
+    get:
+      operationId: listFleetHosts
+      summary: Fleet host table (latest metrics)
+      tags:
+      - fleet
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: ETag from a previous response.
+        schema:
+          type: string
+          maxLength: 160
+      - name: site
+        in: query
+        required: false
+        description: Filter by site.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: type
+        in: query
+        required: false
+        description: Hosts running a component of this type.
+        schema:
+          $ref: '#/components/schemas/ComponentType'
+      - name: health
+        in: query
+        required: false
+        description: Worst component health.
+        schema:
+          $ref: '#/components/schemas/Health'
+      - name: state
+        in: query
+        required: false
+        description: Host state.
+        schema:
+          $ref: '#/components/schemas/HostState'
+      - name: version
+        in: query
+        required: false
+        description: Applied agent/release version.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/semver
+      - name: q
+        in: query
+        required: false
+        description: Free-text search over name, IP, id.
+        schema:
+          type: string
+          maxLength: 128
+      - name: sort
+        in: query
+        required: false
+        description: Sort column; prefix `-` for descending.
+        schema:
+          type: string
+          maxLength: 32
+          pattern: ^-?(name|site|health|cpu|mem|disk|uptime|net|work|version|last_seen)$
+      - *id006
+      - *id007
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: Snapshot (cacheable 15 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetHostsPage'
+          headers: *id017
+        '304':
+          description: Not modified (`If-None-Match` matched `ETag`).
+          headers: *id017
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /fleet/hosts/{id}/metrics:
+    get:
+      operationId: getFleetHostMetrics
+      summary: Host metric series (roll-ups)
+      tags:
+      - fleet
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: ETag from a previous response.
+        schema:
+          type: string
+          maxLength: 160
+      - *id008
+      - name: range
+        in: query
+        required: true
+        description: Time range.
+        schema: *id018
+      - name: keys
+        in: query
+        required: false
+        description: 'Comma-separated metric keys: cpu, load1, mem, disk, rx_pps, tx_pps, rx_bps, tx_bps,
+          errors, drops.'
+        schema:
+          type: string
+          maxLength: 512
+          pattern: ^[a-z0-9_]+(,[a-z0-9_]+)*$
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: Snapshot (cacheable 15 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostMetrics'
+          headers: *id017
+        '304':
+          description: Not modified (`If-None-Match` matched `ETag`).
+          headers: *id017
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /fleet/components/{component_id}/metrics:
+    get:
+      operationId: getFleetComponentMetrics
+      summary: Component metric series (roll-ups)
+      tags:
+      - fleet
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: ETag from a previous response.
+        schema:
+          type: string
+          maxLength: 160
+      - *id010
+      - name: range
+        in: query
+        required: true
+        description: Time range.
+        schema: *id018
+      - name: keys
+        in: query
+        required: false
+        description: Comma-separated chartable keys for the component type (05-manager.md section 13).
+        schema:
+          type: string
+          maxLength: 512
+          pattern: ^[a-z0-9_]+(,[a-z0-9_]+)*$
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: Snapshot (cacheable 15 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComponentMetrics'
+          headers: *id017
+        '304':
+          description: Not modified (`If-None-Match` matched `ETag`).
+          headers: *id017
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /fleet/top:
+    get:
+      operationId: getFleetTop
+      summary: Top hosts by a resource
+      tags:
+      - fleet
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: ETag from a previous response.
+        schema:
+          type: string
+          maxLength: 160
+      - name: metric
+        in: query
+        required: true
+        description: Resource.
+        schema:
+          enum:
+          - cpu
+          - mem
+          - disk
+          - net
+      - name: limit
+        in: query
+        required: false
+        description: Number of rows.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 10
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: Snapshot (cacheable 15 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetTop'
+          headers: *id017
+        '304':
+          description: Not modified (`If-None-Match` matched `ETag`).
+          headers: *id017
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /issues:
+    get:
+      operationId: listIssues
+      summary: List fleet issues
+      tags:
+      - issues
+      parameters:
+      - name: severity
+        in: query
+        required: false
+        description: Filter by severity.
+        schema:
+          $ref: '#/components/schemas/Severity'
+      - name: site
+        in: query
+        required: false
+        description: Filter by site.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: kind
+        in: query
+        required: false
+        description: Filter by issue kind.
+        schema:
+          $ref: '#/components/schemas/IssueKind'
+      - name: state
+        in: query
+        required: false
+        description: Default `open`. `resolved` returns recent resolved issues (retained 30 d).
+        schema:
+          enum:
+          - open
+          - resolved
+      - *id006
+      - *id007
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Issue'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '400': *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /issues/{id}/snooze:
+    post:
+      operationId: snoozeIssue
+      summary: Snooze an issue kind for a host
+      description: Hides the issue kind for that host from the UI and the platform webhook (still recorded).
+        Audited.
+      tags:
+      - issues
+      parameters:
+      - &id019
+        name: id
+        in: path
+        required: true
+        description: Issue id (`iss_...`).
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnoozeRequest'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snooze'
+        '400': *id003
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: unsnoozeIssue
+      summary: Remove a snooze
+      tags:
+      - issues
+      parameters:
+      - *id019
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '204':
+          description: Snooze removed.
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /settings/fleet-thresholds:
+    get:
+      operationId: getFleetThresholds
+      summary: Get fleet issue thresholds
+      tags:
+      - platform
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetThresholds'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: putFleetThresholds
+      summary: Replace fleet issue thresholds
+      tags:
+      - platform
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FleetThresholds'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetThresholds'
+        '400': *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /settings/platform-webhook:
+    get:
+      operationId: getPlatformWebhook
+      summary: Get the platform webhook (URL write-only)
+      tags:
+      - platform
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformWebhook'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: putPlatformWebhook
+      summary: Set the platform webhook
+      tags:
+      - platform
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformWebhookPut'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformWebhook'
+        '400': *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /settings/platform-webhook/test:
+    post:
+      operationId: testPlatformWebhook
+      summary: Send a test platform webhook
+      tags:
+      - platform
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookTestResult'
+        '409':
+          description: 'Conflict. Error codes: `webhook_not_set`.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                webhook_not_set:
+                  value:
+                    error:
+                      code: webhook_not_set
+                      message: webhook not set
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /audit:
+    get:
+      operationId: listAudit
+      summary: Query the audit log
+      tags:
+      - audit
+      parameters:
+      - name: from
+        in: query
+        required: false
+        description: Events at or after.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: to
+        in: query
+        required: false
+        description: Events before.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: actor
+        in: query
+        required: false
+        description: Exact actor.
+        schema:
+          type: string
+          maxLength: 254
+      - name: resource
+        in: query
+        required: false
+        description: Resource prefix.
+        schema:
+          type: string
+          maxLength: 256
+      - *id006
+      - *id007
+      x-exp-min-role: admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEvent'
+                  next_cursor:
+                    anyOf:
+                    - type: 'null'
+                    - type: string
+                      maxLength: 1024
+                      description: Opaque cursor; null when there are no more pages.
+                required:
+                - items
+                - next_cursor
+                description: List envelope (01-contracts.md section 1).
+        '400': *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /settings:
+    get:
+      operationId: getSettings
+      summary: Get org settings
+      tags:
+      - settings
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    patch:
+      operationId: updateSettings
+      summary: Update org settings
+      tags:
+      - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsPatch'
+      x-exp-min-role: owner
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '400': *id003
+        '409':
+          description: 'Refused: would leave the org without an owner.'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                last_owner:
+                  value:
+                    error:
+                      code: last_owner
+                      message: last owner
+                      details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'

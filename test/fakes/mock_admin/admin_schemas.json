@@ -1,0 +1,3209 @@
+{
+ "AbortAll": {
+  "additionalProperties": false,
+  "description": "Optional: limit to one site. Default: every active run.",
+  "properties": {
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   }
+  },
+  "type": "object"
+ },
+ "AbortAllResult": {
+  "additionalProperties": true,
+  "properties": {
+   "aborted_runs": {
+    "items": {
+     "$ref": "common.schema.json#/$defs/run_id"
+    },
+    "maxItems": 1000,
+    "type": "array"
+   }
+  },
+  "required": [
+   "aborted_runs"
+  ],
+  "type": "object"
+ },
+ "Accepted": {
+  "additionalProperties": true,
+  "properties": {
+   "action_id": {
+    "$ref": "common.schema.json#/$defs/act_id"
+   },
+   "desired_version": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   }
+  },
+  "required": [
+   "host_id",
+   "desired_version"
+  ],
+  "type": "object"
+ },
+ "AdminEntry": {
+  "additionalProperties": true,
+  "properties": {
+   "disabled": {
+    "type": "boolean"
+   },
+   "email": {
+    "maxLength": 254,
+    "type": "string"
+   },
+   "last_seen": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   },
+   "role": {
+    "$ref": "#/$defs/Role"
+   }
+  },
+  "required": [
+   "email",
+   "role"
+  ],
+  "type": "object"
+ },
+ "AlertTestResult": {
+  "additionalProperties": true,
+  "properties": {
+   "results": {
+    "items": {
+     "additionalProperties": true,
+     "properties": {
+      "error": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "maxLength": 256,
+         "type": "string"
+        }
+       ]
+      },
+      "http_status": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "maximum": 599,
+         "minimum": 100,
+         "type": "integer"
+        }
+       ]
+      },
+      "ok": {
+       "type": "boolean"
+      },
+      "webhook_id": {
+       "maxLength": 64,
+       "type": "string"
+      }
+     },
+     "required": [
+      "webhook_id",
+      "ok"
+     ],
+     "type": "object"
+    },
+    "maxItems": 20,
+    "type": "array"
+   }
+  },
+  "required": [
+   "results"
+  ],
+  "type": "object"
+ },
+ "Alerts": {
+  "additionalProperties": true,
+  "properties": {
+   "config": {
+    "$ref": "#/$defs/AlertsConfig"
+   },
+   "webhooks": {
+    "items": {
+     "$ref": "#/$defs/WebhookRead"
+    },
+    "maxItems": 20,
+    "type": "array"
+   }
+  },
+  "required": [
+   "config",
+   "webhooks"
+  ],
+  "type": "object"
+ },
+ "AlertsConfig": {
+  "additionalProperties": true,
+  "description": "Site alert behaviour (no secrets).",
+  "properties": {
+   "board_url": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/https_url"
+     }
+    ]
+   },
+   "calm_s": {
+    "maximum": 86400,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "enabled": {
+    "type": "boolean"
+   },
+   "hold_back_s": {
+    "maximum": 3600,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "hold_down_s": {
+    "maximum": 3600,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "reopen_s": {
+    "maximum": 86400,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "timezone": {
+    "$ref": "common.schema.json#/$defs/timezone"
+   },
+   "voice": {
+    "$ref": "common.schema.json#/$defs/voice"
+   }
+  },
+  "required": [
+   "enabled",
+   "voice",
+   "hold_down_s",
+   "hold_back_s",
+   "reopen_s",
+   "calm_s"
+  ],
+  "type": "object"
+ },
+ "AlertsPut": {
+  "additionalProperties": false,
+  "properties": {
+   "config": {
+    "$ref": "#/$defs/AlertsConfig"
+   },
+   "webhooks": {
+    "items": {
+     "$ref": "#/$defs/WebhookWrite"
+    },
+    "maxItems": 20,
+    "type": "array"
+   }
+  },
+  "required": [
+   "config",
+   "webhooks"
+  ],
+  "type": "object"
+ },
+ "Artifact": {
+  "additionalProperties": true,
+  "properties": {
+   "arch": {
+    "enum": [
+     "amd64",
+     "arm64",
+     "noarch"
+    ]
+   },
+   "artifact_id": {
+    "$ref": "common.schema.json#/$defs/art_id"
+   },
+   "component": {
+    "enum": [
+     "agent",
+     "probe",
+     "collector",
+     "dashboard",
+     "runner"
+    ]
+   },
+   "name": {
+    "$ref": "common.schema.json#/$defs/artifact_name"
+   },
+   "sha256": {
+    "$ref": "common.schema.json#/$defs/sha256_hex"
+   },
+   "size": {
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "artifact_id",
+   "name",
+   "component",
+   "arch",
+   "sha256",
+   "size"
+  ],
+  "type": "object"
+ },
+ "AuditEvent": {
+  "additionalProperties": true,
+  "properties": {
+   "action": {
+    "maxLength": 64,
+    "type": "string"
+   },
+   "actor": {
+    "description": "Admin email, `agent:h_...`, or `system`.",
+    "maxLength": 254,
+    "type": "string"
+   },
+   "details": {
+    "additionalProperties": true,
+    "description": "Never contains secret values.",
+    "type": "object"
+   },
+   "evt_id": {
+    "$ref": "common.schema.json#/$defs/evt_id"
+   },
+   "ip": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maxLength": 64,
+      "type": "string"
+     }
+    ]
+   },
+   "resource": {
+    "maxLength": 256,
+    "type": "string"
+   },
+   "ts": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "evt_id",
+   "ts",
+   "actor",
+   "action",
+   "resource"
+  ],
+  "type": "object"
+ },
+ "Component": {
+  "additionalProperties": true,
+  "properties": {
+   "component_id": {
+    "$ref": "common.schema.json#/$defs/cmp_id"
+   },
+   "config": {
+    "additionalProperties": true,
+    "description": "Admin intent (no secrets). The manager compiles it with wiring into the rendered config.",
+    "type": "object"
+   },
+   "created_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "enabled": {
+    "type": "boolean"
+   },
+   "facts": {
+    "additionalProperties": true,
+    "description": "From status reports: TLS fingerprint, listen address, health facts.",
+    "type": "object"
+   },
+   "health": {
+    "$ref": "#/$defs/Health"
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   },
+   "id": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "rendered_config": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "probe.config.schema.json"
+     },
+     {
+      "$ref": "collector.config.schema.json"
+     },
+     {
+      "$ref": "dashboard.config.schema.json"
+     },
+     {
+      "$ref": "runner.config.schema.json"
+     }
+    ],
+    "description": "Read-only config as last compiled for the host (never contains creds)."
+   },
+   "type": {
+    "$ref": "#/$defs/ComponentType"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/semver"
+     }
+    ]
+   }
+  },
+  "required": [
+   "component_id",
+   "host_id",
+   "type",
+   "id",
+   "config",
+   "enabled",
+   "health",
+   "created_at",
+   "updated_at"
+  ],
+  "type": "object"
+ },
+ "ComponentCreate": {
+  "additionalProperties": false,
+  "properties": {
+   "config": {
+    "additionalProperties": true,
+    "type": "object"
+   },
+   "id": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "type": {
+    "$ref": "#/$defs/ComponentType"
+   }
+  },
+  "required": [
+   "type",
+   "id",
+   "config"
+  ],
+  "type": "object"
+ },
+ "ComponentMetrics": {
+  "allOf": [
+   {
+    "$ref": "#/$defs/MetricSeries"
+   },
+   {
+    "additionalProperties": true,
+    "properties": {
+     "component_id": {
+      "$ref": "common.schema.json#/$defs/cmp_id"
+     }
+    },
+    "required": [
+     "component_id"
+    ],
+    "type": "object"
+   }
+  ]
+ },
+ "ComponentPatch": {
+  "additionalProperties": false,
+  "minProperties": 1,
+  "properties": {
+   "config": {
+    "additionalProperties": true,
+    "type": "object"
+   },
+   "enabled": {
+    "type": "boolean"
+   }
+  },
+  "type": "object"
+ },
+ "ComponentType": {
+  "enum": [
+   "probe",
+   "collector",
+   "dashboard",
+   "runner",
+   "speedtest"
+  ]
+ },
+ "DashboardUser": {
+  "additionalProperties": true,
+  "description": "The password hash is never returned.",
+  "properties": {
+   "created_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "role": {
+    "enum": [
+     "viewer",
+     "operator",
+     "admin"
+    ]
+   },
+   "username": {
+    "maxLength": 64,
+    "pattern": "^[A-Za-z0-9._-]{1,64}$",
+    "type": "string"
+   },
+   "usr_id": {
+    "$ref": "common.schema.json#/$defs/usr_id"
+   }
+  },
+  "required": [
+   "usr_id",
+   "username",
+   "role",
+   "created_at"
+  ],
+  "type": "object"
+ },
+ "DashboardUserCreate": {
+  "additionalProperties": false,
+  "properties": {
+   "hash": {
+    "description": "Computed in the browser (WebCrypto). Plaintext passwords never reach the manager.",
+    "maxLength": 512,
+    "pattern": "^pbkdf2_sha256\\$600000\\$[A-Za-z0-9+/=_-]+\\$[A-Za-z0-9+/=_-]+$",
+    "type": "string"
+   },
+   "role": {
+    "enum": [
+     "viewer",
+     "operator",
+     "admin"
+    ]
+   },
+   "username": {
+    "maxLength": 64,
+    "pattern": "^[A-Za-z0-9._-]{1,64}$",
+    "type": "string"
+   }
+  },
+  "required": [
+   "username",
+   "role",
+   "hash"
+  ],
+  "type": "object"
+ },
+ "Drill": {
+  "additionalProperties": true,
+  "properties": {
+   "approved_by": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maxLength": 254,
+      "type": "string"
+     }
+    ]
+   },
+   "created_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "created_by": {
+    "maxLength": 254,
+    "type": "string"
+   },
+   "drl_id": {
+    "$ref": "common.schema.json#/$defs/drl_id"
+   },
+   "duration_s": {
+    "maximum": 900,
+    "minimum": 1,
+    "type": "integer"
+   },
+   "expectation": {
+    "$ref": "#/$defs/DrillExpectation"
+   },
+   "last_run_id": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/run_id"
+     }
+    ]
+   },
+   "name": {
+    "maxLength": 128,
+    "type": "string"
+   },
+   "params": {
+    "additionalProperties": true,
+    "type": "object"
+   },
+   "schedule": {
+    "$ref": "#/$defs/DrillSchedule"
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "state": {
+    "enum": [
+     "pending_approval",
+     "approved",
+     "scheduled",
+     "active",
+     "done",
+     "aborted",
+     "failed"
+    ]
+   },
+   "type": {
+    "maxLength": 64,
+    "type": "string"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "drl_id",
+   "name",
+   "type",
+   "site",
+   "params",
+   "duration_s",
+   "state",
+   "created_by",
+   "approved_by",
+   "created_at",
+   "updated_at"
+  ],
+  "type": "object"
+ },
+ "DrillCreate": {
+  "additionalProperties": false,
+  "properties": {
+   "duration_s": {
+    "default": 120,
+    "description": "Hard cap 900 s.",
+    "maximum": 900,
+    "minimum": 1,
+    "type": "integer"
+   },
+   "expectation": {
+    "$ref": "#/$defs/DrillExpectation"
+   },
+   "name": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   },
+   "params": {
+    "additionalProperties": true,
+    "maxProperties": 32,
+    "type": "object"
+   },
+   "schedule": {
+    "$ref": "#/$defs/DrillSchedule"
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "type": {
+    "maxLength": 64,
+    "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$",
+    "type": "string"
+   }
+  },
+  "required": [
+   "name",
+   "type",
+   "site",
+   "params"
+  ],
+  "type": "object"
+ },
+ "DrillDryRun": {
+  "additionalProperties": true,
+  "description": "Read-only validation of target, allowlist, permissions and API reachability. Nothing is created.",
+  "properties": {
+   "checks": {
+    "items": {
+     "additionalProperties": true,
+     "properties": {
+      "detail": {
+       "maxLength": 256,
+       "type": "string"
+      },
+      "name": {
+       "maxLength": 64,
+       "type": "string"
+      },
+      "ok": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "name",
+      "ok"
+     ],
+     "type": "object"
+    },
+    "maxItems": 32,
+    "type": "array"
+   },
+   "ok": {
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "ok",
+   "checks"
+  ],
+  "type": "object"
+ },
+ "DrillExpectation": {
+  "additionalProperties": true,
+  "description": "What should happen (e.g. DNS fails within 30 s with where=dns_path).",
+  "properties": {
+   "line": {
+    "$ref": "common.schema.json#/$defs/line_key"
+   },
+   "max_fail_s": {
+    "maximum": 900,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "state": {
+    "enum": [
+     "ok",
+     "warn",
+     "fail"
+    ]
+   },
+   "where": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/seg"
+     }
+    ]
+   },
+   "within_s": {
+    "maximum": 900,
+    "minimum": 1,
+    "type": "integer"
+   }
+  },
+  "type": "object"
+ },
+ "DrillRun": {
+  "additionalProperties": true,
+  "properties": {
+   "abort_requested": {
+    "type": "boolean"
+   },
+   "drl_id": {
+    "$ref": "common.schema.json#/$defs/drl_id"
+   },
+   "reason": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maxLength": 512,
+      "type": "string"
+     }
+    ]
+   },
+   "report": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "additionalProperties": true,
+      "type": "object"
+     }
+    ],
+    "description": "Collector drill report (`GET /api/v1/drills/{run_id}`) once available."
+   },
+   "run_id": {
+    "$ref": "common.schema.json#/$defs/run_id"
+   },
+   "start": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "state": {
+    "enum": [
+     "scheduled",
+     "preflight",
+     "active",
+     "reverting",
+     "done",
+     "aborted",
+     "failed"
+    ]
+   },
+   "until": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "run_id",
+   "drl_id",
+   "state",
+   "start",
+   "until",
+   "abort_requested"
+  ],
+  "type": "object"
+ },
+ "DrillSchedule": {
+  "additionalProperties": true,
+  "properties": {
+   "every_s": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maximum": 604800,
+      "minimum": 60,
+      "type": "integer"
+     }
+    ]
+   },
+   "mode": {
+    "enum": [
+     "once",
+     "recurring"
+    ]
+   },
+   "start_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   }
+  },
+  "required": [
+   "mode"
+  ],
+  "type": "object"
+ },
+ "DrillStart": {
+  "additionalProperties": false,
+  "description": "Optional scheduled start, at least 2 minutes ahead. Omit to start now.",
+  "properties": {
+   "start_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "type": "object"
+ },
+ "EnrolToken": {
+  "additionalProperties": true,
+  "properties": {
+   "command": {
+    "description": "The one-liner for the target host, e.g. `curl -fsSL https://<manager>/install.sh | sudo bash -s -- --token <token>`.",
+    "maxLength": 2048,
+    "type": "string"
+   },
+   "expires_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "token": {
+    "allOf": [
+     {
+      "$ref": "common.schema.json#/$defs/expe_token"
+     }
+    ],
+    "description": "Shown once; only sha256 is stored."
+   }
+  },
+  "required": [
+   "token",
+   "command",
+   "expires_at"
+  ],
+  "type": "object"
+ },
+ "Error": {
+  "$ref": "common.schema.json#/$defs/error_envelope"
+ },
+ "FleetHostRow": {
+  "additionalProperties": true,
+  "properties": {
+   "agent_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/semver"
+     }
+    ]
+   },
+   "applied_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "cpu_pct": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     }
+    ]
+   },
+   "cpu_spark": {
+    "description": "Last hour, 5-minute buckets; null = gap.",
+    "items": {
+     "anyOf": [
+      {
+       "type": "null"
+      },
+      {
+       "type": "number"
+      }
+     ]
+    },
+    "maxItems": 120,
+    "type": "array"
+   },
+   "desired_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "disk_pct_max": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     }
+    ]
+   },
+   "health": {
+    "$ref": "#/$defs/Health"
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   },
+   "last_seen": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   },
+   "mem_pct": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     }
+    ]
+   },
+   "mgmt_ip": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ipv4"
+     }
+    ]
+   },
+   "name": {
+    "maxLength": 128,
+    "type": "string"
+   },
+   "net": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "additionalProperties": true,
+      "properties": {
+       "rx_bps": {
+        "anyOf": [
+         {
+          "type": "null"
+         },
+         {
+          "minimum": 0,
+          "type": "number"
+         }
+        ]
+       },
+       "rx_pps": {
+        "anyOf": [
+         {
+          "type": "null"
+         },
+         {
+          "minimum": 0,
+          "type": "number"
+         }
+        ]
+       },
+       "tx_bps": {
+        "anyOf": [
+         {
+          "type": "null"
+         },
+         {
+          "minimum": 0,
+          "type": "number"
+         }
+        ]
+       },
+       "tx_pps": {
+        "anyOf": [
+         {
+          "type": "null"
+         },
+         {
+          "minimum": 0,
+          "type": "number"
+         }
+        ]
+       }
+      },
+      "type": "object"
+     }
+    ]
+   },
+   "net_spark": {
+    "items": {
+     "anyOf": [
+      {
+       "type": "null"
+      },
+      {
+       "type": "number"
+      }
+     ]
+    },
+    "maxItems": 120,
+    "type": "array"
+   },
+   "open_issues": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "shapes": {
+    "items": {
+     "$ref": "#/$defs/Shape"
+    },
+    "maxItems": 4,
+    "type": "array"
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "stale": {
+    "type": "boolean"
+   },
+   "state": {
+    "$ref": "#/$defs/HostState"
+   },
+   "uptime_s": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "work": {
+    "additionalProperties": true,
+    "description": "Per-shape work figure.",
+    "properties": {
+     "drills_active": {
+      "anyOf": [
+       {
+        "type": "null"
+       },
+       {
+        "minimum": 0,
+        "type": "integer"
+       }
+      ]
+     },
+     "ingest_records_per_s": {
+      "anyOf": [
+       {
+        "type": "null"
+       },
+       {
+        "minimum": 0,
+        "type": "number"
+       }
+      ]
+     },
+     "measurements_per_min": {
+      "anyOf": [
+       {
+        "type": "null"
+       },
+       {
+        "minimum": 0,
+        "type": "number"
+       }
+      ]
+     },
+     "sessions_active": {
+      "anyOf": [
+       {
+        "type": "null"
+       },
+       {
+        "minimum": 0,
+        "type": "integer"
+       }
+      ]
+     }
+    },
+    "type": "object"
+   }
+  },
+  "required": [
+   "host_id",
+   "name",
+   "site",
+   "shapes",
+   "state",
+   "stale",
+   "health",
+   "open_issues",
+   "last_seen"
+  ],
+  "type": "object"
+ },
+ "FleetHostsPage": {
+  "description": "List envelope (01-contracts.md section 1).",
+  "properties": {
+   "items": {
+    "items": {
+     "$ref": "#/$defs/FleetHostRow"
+    },
+    "type": "array"
+   },
+   "next_cursor": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "description": "Opaque cursor; null when there are no more pages.",
+      "maxLength": 1024,
+      "type": "string"
+     }
+    ]
+   }
+  },
+  "required": [
+   "items",
+   "next_cursor"
+  ],
+  "type": "object"
+ },
+ "FleetSite": {
+  "additionalProperties": true,
+  "properties": {
+   "canary_state": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maxLength": 32,
+      "type": "string"
+     }
+    ]
+   },
+   "health_bar": {
+    "additionalProperties": true,
+    "properties": {
+     "fail": {
+      "minimum": 0,
+      "type": "integer"
+     },
+     "offline": {
+      "minimum": 0,
+      "type": "integer"
+     },
+     "ok": {
+      "minimum": 0,
+      "type": "integer"
+     },
+     "warn": {
+      "minimum": 0,
+      "type": "integer"
+     }
+    },
+    "required": [
+     "ok",
+     "warn",
+     "fail",
+     "offline"
+    ],
+    "type": "object"
+   },
+   "hosts": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "ingest_records_per_s": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "number"
+     }
+    ]
+   },
+   "name": {
+    "maxLength": 128,
+    "type": "string"
+   },
+   "probes_reporting": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "probes_total": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "release_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/semver"
+     }
+    ]
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "worst_issue": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "#/$defs/Issue"
+     }
+    ]
+   }
+  },
+  "required": [
+   "site",
+   "name",
+   "hosts",
+   "health_bar"
+  ],
+  "type": "object"
+ },
+ "FleetSummary": {
+  "additionalProperties": true,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "components_by_type_health": {
+    "additionalProperties": {
+     "$ref": "#/$defs/HealthCounts"
+    },
+    "description": "Map component type -> counts by health.",
+    "properties": {},
+    "type": "object"
+   },
+   "hosts_by_state": {
+    "$ref": "#/$defs/HostStateCounts"
+   },
+   "hosts_online": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "hosts_total": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "ingest_records_per_s": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "number"
+     }
+    ]
+   },
+   "measurements_per_min": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "number"
+     }
+    ]
+   },
+   "open_experience_incidents": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "open_issues": {
+    "additionalProperties": true,
+    "properties": {
+     "crit": {
+      "minimum": 0,
+      "type": "integer"
+     },
+     "warn": {
+      "minimum": 0,
+      "type": "integer"
+     }
+    },
+    "required": [
+     "warn",
+     "crit"
+    ],
+    "type": "object"
+   },
+   "version_drift_hosts": {
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "as_of",
+   "hosts_by_state",
+   "components_by_type_health",
+   "open_issues",
+   "version_drift_hosts"
+  ],
+  "type": "object"
+ },
+ "FleetThresholds": {
+  "additionalProperties": false,
+  "description": "Defaults from 05-manager.md section 14; any key may be omitted to keep its default.",
+  "properties": {
+   "clock": {
+    "additionalProperties": true,
+    "properties": {
+     "offset_ms": {
+      "default": 1000,
+      "minimum": 0,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "cpu_high": {
+    "additionalProperties": true,
+    "properties": {
+     "avg_min": {
+      "default": 15,
+      "maximum": 1440,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "pct": {
+      "default": 90,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "crash_loop": {
+    "additionalProperties": true,
+    "properties": {
+     "restarts": {
+      "default": 3,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "window_min": {
+      "default": 15,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "disk_high": {
+    "additionalProperties": true,
+    "properties": {
+     "crit_pct": {
+      "default": 95,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     },
+     "warn_pct": {
+      "default": 85,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "iface_errors": {
+    "additionalProperties": true,
+    "properties": {
+     "pct": {
+      "default": 0.1,
+      "minimum": 0,
+      "type": "number"
+     },
+     "window_min": {
+      "default": 15,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "mem_low": {
+    "additionalProperties": true,
+    "properties": {
+     "available_pct": {
+      "default": 10,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     },
+     "for_min": {
+      "default": 10,
+      "maximum": 1440,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "probe_push_lag": {
+    "additionalProperties": true,
+    "properties": {
+     "crit_s": {
+      "default": 600,
+      "minimum": 0,
+      "type": "number"
+     },
+     "warn_s": {
+      "default": 120,
+      "minimum": 0,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "probe_spool": {
+    "additionalProperties": true,
+    "properties": {
+     "pct": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "storage_runway": {
+    "additionalProperties": true,
+    "properties": {
+     "crit_days": {
+      "default": 2,
+      "minimum": 0,
+      "type": "number"
+     },
+     "warn_days": {
+      "default": 7,
+      "minimum": 0,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "version_drift": {
+    "additionalProperties": true,
+    "properties": {
+     "minutes": {
+      "default": 10,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "type": "object"
+ },
+ "FleetTop": {
+  "additionalProperties": true,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "items": {
+    "items": {
+     "additionalProperties": true,
+     "properties": {
+      "host_id": {
+       "$ref": "common.schema.json#/$defs/h_id"
+      },
+      "name": {
+       "maxLength": 128,
+       "type": "string"
+      },
+      "site": {
+       "$ref": "common.schema.json#/$defs/slug"
+      },
+      "spark": {
+       "items": {
+        "anyOf": [
+         {
+          "type": "null"
+         },
+         {
+          "type": "number"
+         }
+        ]
+       },
+       "maxItems": 300,
+       "type": "array"
+      },
+      "unit": {
+       "enum": [
+        "pct",
+        "pps"
+       ]
+      },
+      "value": {
+       "type": "number"
+      },
+      "value_out": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "type": "number"
+        }
+       ]
+      }
+     },
+     "required": [
+      "host_id",
+      "name",
+      "site",
+      "value",
+      "unit"
+     ],
+     "type": "object"
+    },
+    "maxItems": 1000,
+    "type": "array"
+   },
+   "metric": {
+    "enum": [
+     "cpu",
+     "mem",
+     "disk",
+     "net"
+    ]
+   }
+  },
+  "required": [
+   "metric",
+   "as_of",
+   "items"
+  ],
+  "type": "object"
+ },
+ "Health": {
+  "enum": [
+   "ok",
+   "degraded",
+   "fail",
+   "unknown"
+  ]
+ },
+ "HealthCounts": {
+  "additionalProperties": true,
+  "description": "Counts by health.",
+  "properties": {
+   "degraded": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "fail": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "ok": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "unknown": {
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "type": "object"
+ },
+ "Host": {
+  "additionalProperties": true,
+  "properties": {
+   "agent_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/semver"
+     }
+    ]
+   },
+   "applied_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "created_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "desired_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "facts": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "#/$defs/HostFacts"
+     }
+    ]
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   },
+   "last_seen": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   },
+   "mgmt_ip": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ipv4"
+     }
+    ]
+   },
+   "name": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   },
+   "shapes": {
+    "items": {
+     "$ref": "#/$defs/Shape"
+    },
+    "maxItems": 4,
+    "type": "array",
+    "uniqueItems": true
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "state": {
+    "$ref": "#/$defs/HostState"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "host_id",
+   "name",
+   "site",
+   "shapes",
+   "state",
+   "last_seen",
+   "agent_version",
+   "desired_version",
+   "applied_version",
+   "created_at",
+   "updated_at"
+  ],
+  "type": "object"
+ },
+ "HostCreate": {
+  "additionalProperties": false,
+  "properties": {
+   "name": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   },
+   "shapes": {
+    "items": {
+     "$ref": "#/$defs/Shape"
+    },
+    "maxItems": 4,
+    "type": "array",
+    "uniqueItems": true
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   }
+  },
+  "required": [
+   "name",
+   "site"
+  ],
+  "type": "object"
+ },
+ "HostCreated": {
+  "additionalProperties": true,
+  "properties": {
+   "enrol": {
+    "$ref": "#/$defs/EnrolToken"
+   },
+   "host": {
+    "$ref": "#/$defs/Host"
+   }
+  },
+  "required": [
+   "host",
+   "enrol"
+  ],
+  "type": "object"
+ },
+ "HostFacts": {
+  "$ref": "status.schema.json#/properties/facts"
+ },
+ "HostMetrics": {
+  "allOf": [
+   {
+    "$ref": "#/$defs/MetricSeries"
+   },
+   {
+    "additionalProperties": true,
+    "properties": {
+     "host_id": {
+      "$ref": "common.schema.json#/$defs/h_id"
+     }
+    },
+    "required": [
+     "host_id"
+    ],
+    "type": "object"
+   }
+  ]
+ },
+ "HostPatch": {
+  "additionalProperties": false,
+  "minProperties": 1,
+  "properties": {
+   "name": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   }
+  },
+  "type": "object"
+ },
+ "HostState": {
+  "enum": [
+   "pending",
+   "enrolled",
+   "stale",
+   "offline",
+   "decommissioning",
+   "removed"
+  ]
+ },
+ "HostStateCounts": {
+  "additionalProperties": true,
+  "description": "Counts by host state.",
+  "properties": {
+   "decommissioning": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "enrolled": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "offline": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "pending": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "stale": {
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "type": "object"
+ },
+ "HostStatus": {
+  "additionalProperties": true,
+  "properties": {
+   "applied_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "desired_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   },
+   "received_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "report": {
+    "$ref": "status.schema.json"
+   },
+   "state": {
+    "$ref": "#/$defs/HostState"
+   }
+  },
+  "required": [
+   "host_id",
+   "state",
+   "received_at",
+   "report"
+  ],
+  "type": "object"
+ },
+ "Integration": {
+  "additionalProperties": true,
+  "properties": {
+   "allowlist": {
+    "description": "Drill target allowlist (owner-managed), e.g. `{nePk, interfaces[], vrrp_groups[]}`.",
+    "items": {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    "maxItems": 500,
+    "type": "array"
+   },
+   "config": {
+    "additionalProperties": true,
+    "description": "Non-secret settings (URL / api_base, optional CA bundle name).",
+    "type": "object"
+   },
+   "credentials": {
+    "$ref": "#/$defs/SecretState"
+   },
+   "kind": {
+    "$ref": "#/$defs/IntegrationKind"
+   },
+   "updated_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   }
+  },
+  "required": [
+   "kind",
+   "config",
+   "credentials",
+   "allowlist"
+  ],
+  "type": "object"
+ },
+ "IntegrationKind": {
+  "enum": [
+   "ec",
+   "mist"
+  ]
+ },
+ "IntegrationPut": {
+  "additionalProperties": false,
+  "properties": {
+   "allowlist": {
+    "items": {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    "maxItems": 500,
+    "type": "array"
+   },
+   "config": {
+    "additionalProperties": true,
+    "type": "object"
+   },
+   "credentials": {
+    "additionalProperties": false,
+    "description": "Write-only. Omit to keep the stored secret.",
+    "properties": {
+     "api_key": {
+      "maxLength": 512,
+      "type": "string"
+     },
+     "token": {
+      "maxLength": 512,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "required": [
+   "config"
+  ],
+  "type": "object"
+ },
+ "IntegrationTestResult": {
+  "additionalProperties": true,
+  "properties": {
+   "detail": {
+    "maxLength": 512,
+    "type": "string"
+   },
+   "inventory_count": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "ok": {
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "ok",
+   "detail"
+  ],
+  "type": "object"
+ },
+ "Issue": {
+  "additionalProperties": true,
+  "properties": {
+   "component_id": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/cmp_id"
+     }
+    ]
+   },
+   "detail": {
+    "maxLength": 512,
+    "type": "string"
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   },
+   "issue_id": {
+    "description": "Issue id: `iss_` + ULID.",
+    "pattern": "^iss_[0-9A-HJKMNP-TV-Z]{26}$",
+    "type": "string"
+   },
+   "kind": {
+    "$ref": "#/$defs/IssueKind"
+   },
+   "last_value": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "type": "number"
+     }
+    ]
+   },
+   "opened_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "resolved_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   },
+   "severity": {
+    "$ref": "#/$defs/Severity"
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "snoozed_until": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "anyOf": [
+       {
+        "$ref": "common.schema.json#/$defs/ts"
+       },
+       {
+        "enum": [
+         "resolved"
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "required": [
+   "issue_id",
+   "kind",
+   "severity",
+   "host_id",
+   "site",
+   "opened_at",
+   "resolved_at",
+   "detail"
+  ],
+  "type": "object"
+ },
+ "IssueKind": {
+  "enum": [
+   "host_stale",
+   "host_offline",
+   "disk_high",
+   "storage_runway",
+   "mem_low",
+   "cpu_high",
+   "clock",
+   "component_unhealthy",
+   "crash_loop",
+   "reconcile_failed",
+   "version_drift",
+   "probe_ports",
+   "probe_push_lag",
+   "probe_spool",
+   "probe_collector",
+   "collector_rejects",
+   "collector_vm",
+   "collector_probes",
+   "dashboard_collectors",
+   "iface_errors"
+  ]
+ },
+ "Me": {
+  "additionalProperties": true,
+  "properties": {
+   "email": {
+    "maxLength": 254,
+    "type": "string"
+   },
+   "role": {
+    "$ref": "#/$defs/Role"
+   }
+  },
+  "required": [
+   "email",
+   "role"
+  ],
+  "type": "object"
+ },
+ "MetricPoint": {
+  "additionalProperties": true,
+  "description": "avg = sum/samples. Buckets with no samples are absent (drawn as gaps).",
+  "properties": {
+   "avg": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "type": "number"
+     }
+    ]
+   },
+   "max": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "type": "number"
+     }
+    ]
+   },
+   "t": {
+    "description": "Bucket start, epoch seconds (UTC).",
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "t",
+   "avg",
+   "max"
+  ],
+  "type": "object"
+ },
+ "MetricSeries": {
+  "additionalProperties": true,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "range": {
+    "enum": [
+     "1h",
+     "6h",
+     "24h",
+     "7d",
+     "30d"
+    ]
+   },
+   "series": {
+    "additionalProperties": {
+     "items": {
+      "$ref": "#/$defs/MetricPoint"
+     },
+     "maxItems": 10000,
+     "type": "array"
+    },
+    "description": "Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour buckets.",
+    "properties": {},
+    "type": "object"
+   },
+   "step_s": {
+    "enum": [
+     300,
+     3600
+    ]
+   }
+  },
+  "required": [
+   "range",
+   "step_s",
+   "as_of",
+   "series"
+  ],
+  "type": "object"
+ },
+ "NocToken": {
+  "additionalProperties": true,
+  "properties": {
+   "created_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "expires_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   },
+   "label": {
+    "maxLength": 128,
+    "type": "string"
+   },
+   "noc_id": {
+    "$ref": "common.schema.json#/$defs/noc_id"
+   },
+   "revoked_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   },
+   "role": {
+    "enum": [
+     "viewer"
+    ]
+   }
+  },
+  "required": [
+   "noc_id",
+   "label",
+   "role",
+   "expires_at",
+   "revoked_at",
+   "created_at"
+  ],
+  "type": "object"
+ },
+ "NocTokenCreate": {
+  "additionalProperties": false,
+  "properties": {
+   "expires_in_h": {
+    "maximum": 8760,
+    "minimum": 1,
+    "type": "integer"
+   },
+   "label": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   }
+  },
+  "required": [
+   "label"
+  ],
+  "type": "object"
+ },
+ "NocTokenCreated": {
+  "additionalProperties": true,
+  "properties": {
+   "noc": {
+    "$ref": "#/$defs/NocToken"
+   },
+   "token": {
+    "allOf": [
+     {
+      "$ref": "common.schema.json#/$defs/expn_token"
+     }
+    ],
+    "description": "Shown once; only sha256 is stored."
+   },
+   "url": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/https_url"
+     }
+    ]
+   }
+  },
+  "required": [
+   "noc",
+   "token"
+  ],
+  "type": "object"
+ },
+ "Overview": {
+  "additionalProperties": true,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "hosts": {
+    "items": {
+     "additionalProperties": true,
+     "properties": {
+      "agent_version": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "$ref": "common.schema.json#/$defs/semver"
+        }
+       ]
+      },
+      "applied_version": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "minimum": 0,
+         "type": "integer"
+        }
+       ]
+      },
+      "components": {
+       "items": {
+        "additionalProperties": true,
+        "properties": {
+         "component_id": {
+          "$ref": "common.schema.json#/$defs/cmp_id"
+         },
+         "health": {
+          "$ref": "#/$defs/Health"
+         },
+         "id": {
+          "$ref": "common.schema.json#/$defs/slug"
+         },
+         "type": {
+          "$ref": "#/$defs/ComponentType"
+         },
+         "version": {
+          "anyOf": [
+           {
+            "type": "null"
+           },
+           {
+            "$ref": "common.schema.json#/$defs/semver"
+           }
+          ]
+         }
+        },
+        "required": [
+         "component_id",
+         "type",
+         "id",
+         "health"
+        ],
+        "type": "object"
+       },
+       "maxItems": 64,
+       "type": "array"
+      },
+      "desired_version": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "minimum": 0,
+         "type": "integer"
+        }
+       ]
+      },
+      "health": {
+       "$ref": "#/$defs/Health"
+      },
+      "host_id": {
+       "$ref": "common.schema.json#/$defs/h_id"
+      },
+      "name": {
+       "maxLength": 128,
+       "type": "string"
+      },
+      "site": {
+       "$ref": "common.schema.json#/$defs/slug"
+      },
+      "state": {
+       "$ref": "#/$defs/HostState"
+      }
+     },
+     "required": [
+      "host_id",
+      "name",
+      "site",
+      "state",
+      "health",
+      "components"
+     ],
+     "type": "object"
+    },
+    "maxItems": 5000,
+    "type": "array"
+   },
+   "sites": {
+    "items": {
+     "additionalProperties": true,
+     "properties": {
+      "components_by_health": {
+       "$ref": "#/$defs/HealthCounts"
+      },
+      "hosts_by_state": {
+       "$ref": "#/$defs/HostStateCounts"
+      },
+      "hosts_total": {
+       "minimum": 0,
+       "type": "integer"
+      },
+      "name": {
+       "maxLength": 128,
+       "type": "string"
+      },
+      "release_version": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "$ref": "common.schema.json#/$defs/semver"
+        }
+       ]
+      },
+      "site": {
+       "$ref": "common.schema.json#/$defs/slug"
+      }
+     },
+     "required": [
+      "site",
+      "name",
+      "hosts_total",
+      "hosts_by_state",
+      "components_by_health"
+     ],
+     "type": "object"
+    },
+    "maxItems": 1000,
+    "type": "array"
+   },
+   "versions": {
+    "additionalProperties": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "description": "Map of release version to number of hosts running it.",
+    "properties": {},
+    "type": "object"
+   }
+  },
+  "required": [
+   "as_of",
+   "sites",
+   "hosts",
+   "versions"
+  ],
+  "type": "object"
+ },
+ "PlatformWebhook": {
+  "additionalProperties": true,
+  "description": "Fires on `crit` open and on resolve. The URL is a secret and is never returned.",
+  "properties": {
+   "format": {
+    "enum": [
+     "slack",
+     "teams",
+     "json"
+    ]
+   },
+   "url": {
+    "$ref": "#/$defs/SecretState"
+   }
+  },
+  "required": [
+   "format",
+   "url"
+  ],
+  "type": "object"
+ },
+ "PlatformWebhookPut": {
+  "additionalProperties": false,
+  "description": "`url` is write-only; omit to keep the stored value.",
+  "properties": {
+   "format": {
+    "enum": [
+     "slack",
+     "teams",
+     "json"
+    ]
+   },
+   "url": {
+    "$ref": "common.schema.json#/$defs/https_url"
+   }
+  },
+  "required": [
+   "format"
+  ],
+  "type": "object"
+ },
+ "Ports": {
+  "additionalProperties": true,
+  "properties": {
+   "component_id": {
+    "$ref": "common.schema.json#/$defs/cmp_id"
+   },
+   "desired_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "ports": {
+    "items": {
+     "$ref": "probe.config.schema.json#/$defs/port"
+    },
+    "maxItems": 64,
+    "type": "array"
+   }
+  },
+  "required": [
+   "component_id",
+   "ports"
+  ],
+  "type": "object"
+ },
+ "PortsPut": {
+  "additionalProperties": false,
+  "description": "Replaces the probe's port assignments. The host's management interface (default-route / `in_use_by: mgmt`) is refused with `mgmt_interface_refused`; every `iface` must exist in the host facts.",
+  "properties": {
+   "ports": {
+    "items": {
+     "$ref": "probe.config.schema.json#/$defs/port"
+    },
+    "maxItems": 64,
+    "minItems": 1,
+    "type": "array"
+   }
+  },
+  "required": [
+   "ports"
+  ],
+  "type": "object"
+ },
+ "Release": {
+  "additionalProperties": true,
+  "properties": {
+   "artifacts": {
+    "items": {
+     "$ref": "#/$defs/Artifact"
+    },
+    "maxItems": 64,
+    "type": "array"
+   },
+   "created": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "min_agent_version": {
+    "$ref": "common.schema.json#/$defs/semver"
+   },
+   "notes_url": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/https_url"
+     }
+    ]
+   },
+   "rel_id": {
+    "$ref": "common.schema.json#/$defs/rel_id"
+   },
+   "sites": {
+    "description": "Sites currently targeting this release.",
+    "items": {
+     "$ref": "common.schema.json#/$defs/slug"
+    },
+    "maxItems": 1000,
+    "type": "array"
+   },
+   "source": {
+    "enum": [
+     "github",
+     "upload"
+    ]
+   },
+   "verified_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "version": {
+    "$ref": "common.schema.json#/$defs/semver"
+   }
+  },
+  "required": [
+   "rel_id",
+   "version",
+   "source",
+   "verified_at",
+   "min_agent_version",
+   "artifacts"
+  ],
+  "type": "object"
+ },
+ "ReleaseImport": {
+  "additionalProperties": false,
+  "description": "Import from GitHub Releases of `RELEASES_REPO`. The Ed25519 signature is verified over the exact manifest bytes and every artifact sha256 is checked; any mismatch records nothing (`signature_invalid`, `artifact_hash_mismatch`).",
+  "properties": {
+   "source": {
+    "enum": [
+     "github",
+     "upload"
+    ]
+   },
+   "version": {
+    "$ref": "common.schema.json#/$defs/semver"
+   }
+  },
+  "required": [
+   "version",
+   "source"
+  ],
+  "type": "object"
+ },
+ "ReleaseUpload": {
+  "additionalProperties": false,
+  "properties": {
+   "artifacts": {
+    "items": {
+     "description": "Binary artifact tarball.",
+     "type": "string"
+    },
+    "maxItems": 64,
+    "minItems": 1,
+    "type": "array"
+   },
+   "manifest": {
+    "description": "Binary manifest JSON file.",
+    "type": "string"
+   },
+   "signature": {
+    "description": "Binary or base64 detached Ed25519 signature file.",
+    "type": "string"
+   }
+  },
+  "required": [
+   "manifest",
+   "signature",
+   "artifacts"
+  ],
+  "type": "object"
+ },
+ "Retention": {
+  "additionalProperties": true,
+  "properties": {
+   "metrics_days": {
+    "maximum": 365,
+    "minimum": 1,
+    "type": "integer"
+   },
+   "records_days": {
+    "maximum": 365,
+    "minimum": 1,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "metrics_days",
+   "records_days"
+  ],
+  "type": "object"
+ },
+ "Role": {
+  "description": "Admin role.",
+  "enum": [
+   "owner",
+   "admin",
+   "operator",
+   "viewer"
+  ]
+ },
+ "RotateResult": {
+  "additionalProperties": true,
+  "description": "New plaintext tokens are delivered to consumers through desired state only, never in this response. The previous value stays valid for 10 minutes.",
+  "properties": {
+   "component_id": {
+    "$ref": "common.schema.json#/$defs/cmp_id"
+   },
+   "desired_version": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "kinds": {
+    "items": {
+     "maxLength": 32,
+     "type": "string"
+    },
+    "maxItems": 8,
+    "type": "array"
+   },
+   "previous_valid_until": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "component_id",
+   "kinds",
+   "previous_valid_until",
+   "desired_version"
+  ],
+  "type": "object"
+ },
+ "SecretState": {
+  "additionalProperties": true,
+  "description": "Write-only secret marker. The value is never returned.",
+  "properties": {
+   "set": {
+    "type": "boolean"
+   },
+   "updated_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   }
+  },
+  "required": [
+   "set",
+   "updated_at"
+  ],
+  "type": "object"
+ },
+ "Settings": {
+  "additionalProperties": true,
+  "properties": {
+   "admins": {
+    "items": {
+     "$ref": "#/$defs/AdminEntry"
+    },
+    "maxItems": 200,
+    "type": "array"
+   },
+   "default_retention": {
+    "$ref": "#/$defs/Retention"
+   },
+   "drills_enabled": {
+    "type": "boolean"
+   },
+   "drills_two_person": {
+    "type": "boolean"
+   },
+   "org_name": {
+    "maxLength": 128,
+    "type": "string"
+   },
+   "owner": {
+    "description": "Owner email.",
+    "maxLength": 254,
+    "type": "string"
+   },
+   "release_channel": {
+    "maxLength": 32,
+    "type": "string"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "org_name",
+   "drills_enabled",
+   "drills_two_person",
+   "default_retention",
+   "owner",
+   "admins"
+  ],
+  "type": "object"
+ },
+ "SettingsPatch": {
+  "additionalProperties": false,
+  "minProperties": 1,
+  "properties": {
+   "admins": {
+    "description": "Upserts (invite by email + role, or disable). Owner only.",
+    "items": {
+     "$ref": "#/$defs/AdminEntry"
+    },
+    "maxItems": 200,
+    "type": "array"
+   },
+   "default_retention": {
+    "$ref": "#/$defs/Retention"
+   },
+   "drills_enabled": {
+    "type": "boolean"
+   },
+   "drills_two_person": {
+    "type": "boolean"
+   },
+   "org_name": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   },
+   "owner": {
+    "maxLength": 254,
+    "type": "string"
+   },
+   "release_channel": {
+    "maxLength": 32,
+    "type": "string"
+   }
+  },
+  "type": "object"
+ },
+ "Severity": {
+  "enum": [
+   "warn",
+   "crit"
+  ]
+ },
+ "Shape": {
+  "description": "Host shape badge: P, C, D, R.",
+  "enum": [
+   "probe",
+   "collector",
+   "dashboard",
+   "runner"
+  ]
+ },
+ "Site": {
+  "additionalProperties": true,
+  "properties": {
+   "canary_host_id": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/h_id"
+     }
+    ]
+   },
+   "canary_state": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "enum": [
+       "pending",
+       "healthy_waiting",
+       "promoted",
+       "failed"
+      ]
+     }
+    ]
+   },
+   "created_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "edge_label": {
+    "maxLength": 32,
+    "type": "string"
+   },
+   "name": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   },
+   "release_version": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/semver"
+     }
+    ]
+   },
+   "retention": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "#/$defs/Retention"
+     }
+    ]
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "timezone": {
+    "$ref": "common.schema.json#/$defs/timezone"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "site",
+   "name",
+   "timezone",
+   "edge_label",
+   "release_version",
+   "canary_host_id",
+   "created_at",
+   "updated_at"
+  ],
+  "type": "object"
+ },
+ "SiteCreate": {
+  "additionalProperties": false,
+  "properties": {
+   "edge_label": {
+    "maxLength": 32,
+    "type": "string"
+   },
+   "name": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   },
+   "retention": {
+    "$ref": "#/$defs/Retention"
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "timezone": {
+    "$ref": "common.schema.json#/$defs/timezone"
+   }
+  },
+  "required": [
+   "site",
+   "name",
+   "timezone"
+  ],
+  "type": "object"
+ },
+ "SitePatch": {
+  "additionalProperties": false,
+  "minProperties": 1,
+  "properties": {
+   "edge_label": {
+    "maxLength": 32,
+    "type": "string"
+   },
+   "name": {
+    "maxLength": 128,
+    "minLength": 1,
+    "type": "string"
+   },
+   "retention": {
+    "$ref": "#/$defs/Retention"
+   },
+   "timezone": {
+    "$ref": "common.schema.json#/$defs/timezone"
+   }
+  },
+  "type": "object"
+ },
+ "SiteRelease": {
+  "additionalProperties": false,
+  "description": "Set the target release for a site. The canary host (if any) compiles first and is promoted after 10 healthy minutes. Rollback = set a previous version.",
+  "properties": {
+   "canary_host_id": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/h_id"
+     }
+    ]
+   },
+   "version": {
+    "$ref": "common.schema.json#/$defs/semver"
+   }
+  },
+  "required": [
+   "version"
+  ],
+  "type": "object"
+ },
+ "Snooze": {
+  "additionalProperties": true,
+  "properties": {
+   "created_by": {
+    "maxLength": 254,
+    "type": "string"
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   },
+   "issue_id": {
+    "description": "Issue id: `iss_` + ULID.",
+    "pattern": "^iss_[0-9A-HJKMNP-TV-Z]{26}$",
+    "type": "string"
+   },
+   "kind": {
+    "$ref": "#/$defs/IssueKind"
+   },
+   "until": {
+    "anyOf": [
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     },
+     {
+      "enum": [
+       "resolved"
+      ]
+     }
+    ]
+   }
+  },
+  "required": [
+   "issue_id",
+   "kind",
+   "host_id",
+   "until"
+  ],
+  "type": "object"
+ },
+ "SnoozeRequest": {
+  "additionalProperties": false,
+  "properties": {
+   "for": {
+    "enum": [
+     "1h",
+     "24h",
+     "resolved"
+    ]
+   }
+  },
+  "required": [
+   "for"
+  ],
+  "type": "object"
+ },
+ "SsoForm": {
+  "description": "Self-contained HTML document with an auto-submitting form that POSTs `token` (the SSO handoff JWT) to `https://<dashboard>/auth/sso`. The token is never placed in a URL.",
+  "type": "string"
+ },
+ "Timestamps": {
+  "additionalProperties": true,
+  "properties": {
+   "created_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "created_at",
+   "updated_at"
+  ],
+  "type": "object"
+ },
+ "WebhookRead": {
+  "additionalProperties": true,
+  "description": "Webhook URL is a secret and is never returned.",
+  "properties": {
+   "format": {
+    "enum": [
+     "slack",
+     "teams",
+     "json"
+    ]
+   },
+   "id": {
+    "maxLength": 64,
+    "pattern": "^wh_[A-Za-z0-9_-]{1,60}$",
+    "type": "string"
+   },
+   "url": {
+    "$ref": "#/$defs/SecretState"
+   }
+  },
+  "required": [
+   "id",
+   "format",
+   "url"
+  ],
+  "type": "object"
+ },
+ "WebhookTestResult": {
+  "additionalProperties": true,
+  "properties": {
+   "error": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maxLength": 256,
+      "type": "string"
+     }
+    ]
+   },
+   "http_status": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maximum": 599,
+      "minimum": 100,
+      "type": "integer"
+     }
+    ]
+   },
+   "ok": {
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "ok"
+  ],
+  "type": "object"
+ },
+ "WebhookWrite": {
+  "additionalProperties": false,
+  "properties": {
+   "format": {
+    "enum": [
+     "slack",
+     "teams",
+     "json"
+    ]
+   },
+   "id": {
+    "description": "Omit on create (server assigns).",
+    "maxLength": 64,
+    "pattern": "^wh_[A-Za-z0-9_-]{1,60}$",
+    "type": "string"
+   },
+   "url": {
+    "allOf": [
+     {
+      "$ref": "common.schema.json#/$defs/https_url"
+     }
+    ],
+    "description": "Write-only. Omit to keep the stored value."
+   }
+  },
+  "required": [
+   "format"
+  ],
+  "type": "object"
+ }
+}

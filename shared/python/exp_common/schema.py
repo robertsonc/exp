@@ -34,6 +34,8 @@ MAX_LABELS = 20            # cardinality/DoS guard
 MAX_METRICS = 50
 MAX_LABEL_LEN = 128
 MAX_TARGET_LEN = 256
+MAX_ERROR_LEN = 512
+_TS_Z = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z\Z")
 
 # `detail`: bounded high-cardinality record data that never becomes a series label (01-contracts 2).
 DETAIL_MAX_BYTES = 8 * 1024        # serialized (compact JSON, UTF-8)
@@ -172,8 +174,16 @@ class Measurement:
         for fname in ("metrics", "labels"):
             if not isinstance(getattr(self, fname), dict):
                 raise ValueError(f"{fname} must be an object")
-        if self.error is not None and not isinstance(self.error, str):
-            raise ValueError("error must be a string or null")
+        if self.error is not None:
+            if not isinstance(self.error, str):
+                raise ValueError("error must be a string or null")
+            if len(self.error) > MAX_ERROR_LEN:
+                raise ValueError(f"error exceeds {MAX_ERROR_LEN} characters")
+        if require_id:
+            if not self.ts:
+                raise ValueError("ts is required at ingest")
+            if not _TS_Z.match(self.ts):
+                raise ValueError(f"ts must be UTC ISO-8601 ending in Z at ingest, got {self.ts!r}")
         if self.id:
             if not is_ulid(self.id):
                 raise ValueError(f"id must be a ULID, got {self.id!r}")
@@ -237,6 +247,13 @@ class Measurement:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any], require_id: bool = False) -> Measurement:
+        if not isinstance(d, dict):
+            raise ValueError("measurement must be an object")
+        if require_id and d.get("schema") != SCHEMA:
+            raise ValueError(f"schema must be {SCHEMA!r}")
+        for req in ("probe", "test", "outcome"):
+            if req not in d:
+                raise ValueError(f"missing required field {req!r}")
         known = {f.name for f in dataclasses.fields(cls)}
         return cls(**{k: v for k, v in d.items() if k in known}).validate(require_id=require_id)
 

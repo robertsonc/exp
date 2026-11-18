@@ -2,6 +2,7 @@ import json
 import os
 
 import pytest
+
 from exp_common import config
 from exp_common.config import ConfigError, SchemaError, iter_errors, validate
 
@@ -275,7 +276,7 @@ def test_load_json_errors(tmp_path):
     with pytest.raises(ConfigError, match="duplicate key"):
         config.load_json(p)
     for const in ("NaN", "Infinity", "-Infinity"):
-        p.write_text('{"a": %s}' % const)
+        p.write_text(f'{{"a": {const}}}')
         with pytest.raises(ConfigError, match="non-finite"):
             config.load_json(p)
     p.write_text("[" * 100000)

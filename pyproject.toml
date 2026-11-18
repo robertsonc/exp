@@ -1,0 +1,24 @@
+# Tooling configuration only. exp has no installable product package; components are
+# stdlib-only Python deployed by packaging scripts (see packaging/).
+
+[tool.pytest.ini_options]
+# Per-directory runs are driven by the Makefile so absent component dirs are skipped.
+# These testpaths are the full set the project will contain; `pytest` with explicit
+# paths (as `make test` does) is the supported entry point.
+testpaths = [
+  "shared/python/tests",
+  "shared/openapi",
+  "test/fixtures",
+  "test/fakes",
+  "probe/tests",
+  "collector/tests",
+  "dashboard/tests",
+  "agent/tests",
+  "runner/tests",
+]
+addopts = "-m 'not internet' -ra"
+markers = [
+  "internet: needs the public internet (excluded by default; run with -m internet)",
+  "slow: slow test",
+  "harness: needs the full test harness / fakes stack",
+]

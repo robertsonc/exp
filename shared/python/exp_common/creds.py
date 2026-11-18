@@ -53,7 +53,7 @@ def read_credential_bytes(name: str, directory: str | Path | None = None,
         raise CredentialError(f"credentials directory {base} is not usable ({exc.strerror})") from exc
     try:
         try:
-            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0), dir_fd=dfd)
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0), dir_fd=dfd)
         except FileNotFoundError as exc:
             raise CredentialMissing(f"credential file {where} is missing") from exc
         except OSError as exc:  # ELOOP for a symlink, EACCES, ...

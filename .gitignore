@@ -18,3 +18,8 @@ config.json
 .env
 # OS
 .DS_Store
+.venv/
+node_modules/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/

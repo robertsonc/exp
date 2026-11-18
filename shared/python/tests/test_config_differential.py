@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from exp_common import config
 
 jsonschema = pytest.importorskip("jsonschema")

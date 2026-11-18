@@ -1,5 +1,6 @@
 """WP-0 delta to the measurement reference: `id` (ULID) and bounded `detail`."""
 import pytest
+
 from exp_common.ids import is_ulid
 from exp_common.schema import DETAIL_MAX_ARRAY, Measurement, measure, validate_detail
 
@@ -22,7 +23,8 @@ def test_missing_id_refused_at_ingest_but_not_locally():
     with pytest.raises(ValueError, match="id is required"):
         m.validate(require_id=True)
     with pytest.raises(ValueError, match="id is required"):
-        Measurement.from_dict({"probe": "p", "test": "dns", "outcome": "ok"}, require_id=True)
+        Measurement.from_dict({"schema": "exp.measurement/1", "ts": "2026-11-18T20:00:00Z", "probe": "p",
+                               "test": "dns", "outcome": "ok"}, require_id=True)
 
 
 @pytest.mark.parametrize("bad", ["x", "01ARZ3NDEKTSV4RRFFQ69G5FA", "01ARZ3NDEKTSV4RRFFQ69G5FAVX",
@@ -103,3 +105,36 @@ def test_from_dict_ignores_unknown_fields_and_rejects_bad_types():
         d = {"probe": "p", "test": "dns", "outcome": "ok", **bad}
         with pytest.raises(ValueError):
             Measurement.from_dict(d)
+
+
+def _doc(**kw):
+    d = {"schema": "exp.measurement/1", "id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "ts": "2026-11-18T20:00:00.123Z",
+         "probe": "p", "site": "s", "test": "dns", "outcome": "ok"}
+    d.update(kw)
+    return d
+
+
+def test_ingest_mode_is_strict():
+    Measurement.from_dict(_doc(), require_id=True)
+    for bad in (_doc(schema="exp.measurement/2"), {k: v for k, v in _doc().items() if k != "schema"},
+                {k: v for k, v in _doc().items() if k != "ts"}, _doc(ts="2026-11-18T20:00:00+01:00"),
+                _doc(ts="2026-11-18T20:00:00.1234567Z"), _doc(error="x" * 513), _doc(ts="")):
+        with pytest.raises(ValueError):
+            Measurement.from_dict(bad, require_id=True)
+
+
+def test_local_mode_stays_lenient_about_offsets_and_fills_ts():
+    assert Measurement.from_dict(_doc(ts="2026-11-18T21:00:00+01:00")).ts.endswith("+01:00")
+    d = _doc()
+    del d["ts"]
+    assert Measurement.from_dict(d).ts.endswith("Z")
+
+
+def test_error_bound_and_missing_required_fields_are_valueerrors():
+    with pytest.raises(ValueError):
+        measure("p", "dns", "fail", error="x" * 513)
+    measure("p", "dns", "fail", error="x" * 512)
+    with pytest.raises(ValueError):
+        Measurement.from_dict({"test": "dns", "outcome": "ok"})
+    with pytest.raises(ValueError):
+        Measurement.from_dict([])

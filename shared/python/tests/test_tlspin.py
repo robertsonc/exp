@@ -4,6 +4,7 @@ import threading
 import time
 
 import pytest
+
 from exp_common import tlspin
 from exp_common.tlspin import PinFormatError, PinMismatch, PinnedTimeout
 

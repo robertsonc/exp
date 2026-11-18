@@ -1,0 +1,33 @@
+# Skeleton CI. WP-7 extends this (packaging, manager tests, release).
+# TODO(WP-7): pin every action below to a full commit SHA with a version comment.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4 # TODO(WP-7): pin to full SHA
+      - uses: actions/setup-python@v5 # TODO(WP-7): pin to full SHA
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@v5 # TODO(WP-7): pin to full SHA
+      - run: make venv
+      - run: make lint
+
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4 # TODO(WP-7): pin to full SHA
+      - uses: actions/setup-python@v5 # TODO(WP-7): pin to full SHA
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@v5 # TODO(WP-7): pin to full SHA
+      - run: make venv
+      - run: make test

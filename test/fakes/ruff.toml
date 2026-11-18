@@ -1,0 +1,7 @@
+# Dev-tooling fakes: the root rules apply (security lints included) except a wider line length,
+# because these files carry long protocol tables and assertion messages.
+extend = "../../ruff.toml"
+line-length = 150
+
+[lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108", "S603", "S607", "B007"]
