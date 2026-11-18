@@ -54,13 +54,9 @@ def make_pki(directory: Path, names: list[str], ips: list[str] | None = None) ->
         "keyUsage=critical,keyCertSign,cRLSign",
         cwd=directory,
     )
-    openssl(
-        "req", "-new", *ec, "-keyout", "srv.key", "-out", "srv.csr", "-subj", f"/CN={names[0]}", cwd=directory
-    )
+    openssl("req", "-new", *ec, "-keyout", "srv.key", "-out", "srv.csr", "-subj", f"/CN={names[0]}", cwd=directory)
     san = ",".join([f"DNS:{n}" for n in names] + [f"IP:{i}" for i in (ips or ["127.0.0.1"])])
-    (directory / "ext.cnf").write_text(
-        f"subjectAltName={san}\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n"
-    )
+    (directory / "ext.cnf").write_text(f"subjectAltName={san}\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n")
     openssl(
         "x509",
         "-req",

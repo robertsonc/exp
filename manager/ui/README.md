@@ -43,8 +43,13 @@ behaviour (freshness amber after 90 s, red after 5 min) is tested with Playwrigh
 * `assets/*` are content-hashed: serve with `Cache-Control: public, max-age=31536000, immutable`; `index.html` with `no-cache`.
 * The UI sends no credentials of its own: requests are same-origin, authenticated by the Cloudflare Access cookie / JWT that the
   Worker verifies. It never uses `localStorage` for anything but theme, hosts column choice and saved views (all wrapped in try/catch).
-* A strict CSP works: `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'` (uPlot and Preact set inline
-  `style` properties through the DOM API; `data:` is for the bundled icon masks). No inline scripts.
+* Security headers: `public/_headers` (copied into `dist/` by Vite, applied by Cloudflare Static Assets) sets, for `/*`,
+  `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
+  `Permissions-Policy: camera=(), microphone=(), geolocation=()`. There are no inline scripts or styles (`style` objects are applied
+  through the DOM API, which `style-src 'self'` permits; `data:` is for the bundled icon masks). The e2e run applies the same headers to every
+  non-API response, so a CSP violation fails it. The SSO handoff page is not part of the SPA: the Worker answers it with its own CSP (script
+  hash, `form-action` pinned to the dashboard origin); see the safety rules below.
 * Sign out links to `/cdn-cgi/access/logout`.
 
 ## Layout
@@ -104,8 +109,19 @@ Contract gaps found while building: `docs/spec/changes/CR-wp5-*.md`.
 
 Safety rules the code follows (and the tests check):
 
-* Every mutation goes through the data layer (`mutate`, `mutateText`, `mutateForm`), carries `X-Exp-Request: 1` (a header a cross-site form cannot set)
-  and a JSON body (the release upload is multipart by contract). The Access cookie and the Worker's JWT/Origin checks do the rest (SR-13).
+* Every mutation goes through the data layer (`mutate`, `mutateText`, `mutateForm`). The Worker enforces, for POST/PUT/PATCH/DELETE on
+  `/api/admin/v1/*` (after the Access JWT check; failure is `403 {"error":{"code":"csrf_refused"}}`): (a) the custom header
+  `X-Exp-Request` (any non-empty value; the UI sends `1`), which a cross-site form or simple request cannot set; (b) when there is a body,
+  `Content-Type: application/json` (optional `; charset=utf-8`), except `POST /releases/upload`, which must be `multipart/form-data`;
+  (c) an `Origin` header, if present, must equal the Worker's own origin, and `Sec-Fetch-Site`, if present, must be `same-origin` or `none`.
+  GETs are unaffected. SSO handoff: the SPA's CSP pins `form-action 'self'`, so the SPA never submits the token form itself. The UI
+  calls `POST dashboards/{id}/sso/launch` (header-bearing, so CSRF-guarded like any mutation) which returns a same-origin launch URL
+  `/api/admin/v1/dashboards/{id}/sso/page?n=<nonce>`; a new window navigates to it (a GET, which needs the Access JWT of the same admin)
+  and the Worker answers with the auto-submitting page under its own CSP (`form-action` pinned to the dashboard origin). The nonce is a
+  stateless HMAC over (admin email, dashboard, expiry), 30 s TTL, bound to that admin and dashboard; it is not a dashboard credential, and
+  without it the GET is `403 invalid_launch_nonce`. `POST dashboards/{id}/sso` (returns the page directly) remains for API clients and
+  obeys the same header rule. The form action is the admin-set dashboard `url` or the host's management IP, never the agent-reported
+  `facts.url` (shown in the UI as information only).
 * Destructive actions confirm; decommission, user delete and site delete require typing the name.
 * Secrets are write-only: webhook URLs show `set . updated <time>` and an empty box, never the value; NOC tokens are shown once (copy buttons, NOC URL
   `https://<dash>/noc#t=expn_...`) and live only in component state; the password for a dashboard local user is hashed in the browser with WebCrypto

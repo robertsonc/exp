@@ -86,6 +86,14 @@ describe("wiring", () => {
     }
   });
 
+  it("an agent-reported dashboard facts.url never becomes board_url (admin-set url or mgmt IP only)", () => {
+    const w = baseWorld();
+    for (const c of w.components) if (c.type === "dashboard") c.facts = { ...c.facts, url: "https://attacker.example" };
+    const c = cfg(build(w, H_COL), "collector");
+    expect(c.alerts.board_url).toBe("https://10.32.98.30");
+    expect(JSON.stringify(build(w, H_COL))).not.toContain("attacker.example");
+  });
+
   it("collector: probes, dashboards, token hashes (verifiers only) and webhooks", () => {
     const d = build(baseWorld(), H_COL);
     const c = cfg(d, "collector");

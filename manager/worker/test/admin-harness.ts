@@ -54,11 +54,11 @@ export async function harness(): Promise<Harness> {
   const effective = (): Env => (Object.keys(over).length ? (new Proxy(env, { get: (t, p, r) => (p in over ? (over as Record<string | symbol, unknown>)[p] : Reflect.get(t, p, r)) }) as Env) : env);
   const api: Harness["api"] = async (role, method, path, body, headers = {}) => {
     await ensureAdmin(role);
-    const h = new Headers({ "Cf-Access-Jwt-Assertion": await signJwt(key, goodClaims(emailOf(role), { iat: Math.floor(nowMs() / 1000) - 5, nbf: Math.floor(nowMs() / 1000) - 5, exp: Math.floor(nowMs() / 1000) + 3600 })), "CF-Connecting-IP": freshIp(), ...headers });
+    const h = new Headers({ "Cf-Access-Jwt-Assertion": await signJwt(key, goodClaims(emailOf(role), { iat: Math.floor(nowMs() / 1000) - 5, nbf: Math.floor(nowMs() / 1000) - 5, exp: Math.floor(nowMs() / 1000) + 3600 })), "CF-Connecting-IP": freshIp(), "X-Exp-Request": "1", ...headers });
     let payload: BodyInit | undefined;
     if (body instanceof FormData) payload = body;
     else if (body !== undefined) {
-      h.set("content-type", "application/json");
+      if (!h.has("content-type")) h.set("content-type", "application/json");
       payload = typeof body === "string" ? body : JSON.stringify(body);
     }
     return app.fetch(new Request(`https://manager.example.test/api/admin/v1${path}`, { method, headers: h, body: payload }), effective());

@@ -280,10 +280,8 @@ class AdminClient:
     def __init__(self, mgr: ManagerDev, token_fn: Callable[[], str]) -> None:
         self.mgr, self.token_fn = mgr, token_fn
 
-    def call(
-        self, method: str, path: str, payload: Any = None, *, ok: tuple[int, ...] | None = None
-    ) -> ApiResponse:
-        headers = {"Cf-Access-Jwt-Assertion": self.token_fn(), "Accept": "application/json"}
+    def call(self, method: str, path: str, payload: Any = None, *, ok: tuple[int, ...] | None = None) -> ApiResponse:
+        headers = {"Cf-Access-Jwt-Assertion": self.token_fn(), "Accept": "application/json", "X-Exp-Request": "1"}
         body = None
         if payload is not None:
             body = json.dumps(payload).encode()

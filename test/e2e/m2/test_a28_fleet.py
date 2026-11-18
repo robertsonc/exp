@@ -76,7 +76,12 @@ def test_every_host_shows_its_figures_within_two_status_intervals(stack, fleet):
         )
         took = time.time() - t0
         assert took <= 2 * STATUS_INTERVAL_S + 30, took
-        assert first["state"] == "enrolled" and r["state"] == "enrolled" and r["stale"] is False and r["health"] in ("ok", "degraded")
+        assert (
+            first["state"] == "enrolled"
+            and r["state"] == "enrolled"
+            and r["stale"] is False
+            and r["health"] in ("ok", "degraded")
+        )
         assert 0 <= r["cpu_pct"] <= 100 and 0 < r["mem_pct"] <= 100 and 0 < r["disk_pct_max"] <= 100 and r["uptime_s"] > 0
         assert r["net"]["rx_pps"] >= 0 and r["net"]["rx_bps"] >= 0 and r["net"]["tx_bps"] >= 0
         assert r["site"] == SITE and r["mgmt_ip"] == f.host.ip and r["agent_version"] == stack.version
@@ -99,7 +104,7 @@ def test_host_metric_series_and_component_metrics(stack, fleet):
         pt = m["series"][k][-1]
         assert isinstance(pt["t"], int) and isinstance(pt["avg"], (int, float)), (k, pt)
     # component metrics: each of the three types reports its own figures
-    want = {"collector": "probes_total", "probe": "measurements_per_min", "dashboard": "collectors_total"}
+    want = {"collector": "probes_reporting", "probe": "measurements_per_min", "dashboard": "collectors_reachable"}
 
     def comp_ok():
         for typ, key in want.items():

@@ -2,7 +2,7 @@
 // Playwright is the globally installed one (no browser download): resolved through `npm root -g`.
 import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -90,8 +90,19 @@ const PAGES = await allPages(getJson);
 const browser = await chromium.launch();
 const results = [];
 
+// vite preview ignores public/_headers (Cloudflare Static Assets applies it in production), so the e2e run applies the
+// same headers to every non-API response: a CSP violation then shows up as a console error and fails the test.
+const spaHeaders = Object.fromEntries(
+  readFileSync(path.join(ui, 'dist/_headers'), 'utf8').split('\n').filter((l) => /^\s+\S+:/.test(l)).map((l) => { const i = l.indexOf(':'); return [l.slice(0, i).trim().toLowerCase(), l.slice(i + 1).trim()]; }),
+);
+assert.ok(spaHeaders['content-security-policy'], 'dist/_headers carries a CSP');
+
 async function newPage(opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark', acceptDownloads: true, ...opts });
+  await ctx.route((u) => u.origin === BASE && !u.pathname.startsWith('/api/'), async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({ response: res, headers: { ...res.headers(), ...spaHeaders } });
+  });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));

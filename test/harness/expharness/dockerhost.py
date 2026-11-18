@@ -20,9 +20,7 @@ HERE = Path(__file__).resolve().parent
 TOKEN_RE = re.compile(r"exp[aeidn]_[A-Za-z0-9_-]{8,}")
 
 
-def sh(
-    argv: list[str], *, timeout: float = 120, input_: str | None = None
-) -> subprocess.CompletedProcess[str]:
+def sh(argv: list[str], *, timeout: float = 120, input_: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603
         argv, capture_output=True, text=True, timeout=timeout, input=input_, check=False, env=clean_env()
     )
@@ -33,11 +31,7 @@ def docker_unavailable() -> str | None:
         r = sh(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"docker is not usable: {exc}"
-    return (
-        None
-        if r.returncode == 0
-        else f"docker daemon is not reachable: {(r.stderr or r.stdout).strip()[:200]}"
-    )
+    return None if r.returncode == 0 else f"docker daemon is not reachable: {(r.stderr or r.stdout).strip()[:200]}"
 
 
 _image_cache: dict[str, str | None] = {}

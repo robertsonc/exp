@@ -81,7 +81,7 @@ interface Ctx {
 
 function dashboardUrl(ctx: Ctx, d: WComponent): string | null {
   if (typeof d.config.url === "string") return d.config.url;
-  if (d.facts.url) return d.facts.url;
+  // agent-reported facts.url is informational only: it is never a handoff or alert-link target
   const ip = mgmtIp(hostOf(ctx.w, d));
   return ip ? `https://${ip}` : null;
 }

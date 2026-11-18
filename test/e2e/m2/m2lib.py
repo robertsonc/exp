@@ -196,7 +196,12 @@ def upload_release(
     return stack.mgr.request(
         "POST",
         "/api/admin/v1/releases/upload",
-        headers={"Cf-Access-Jwt-Assertion": stack.token(), "Content-Type": ctype, "Accept": "application/json"},
+        headers={
+            "Cf-Access-Jwt-Assertion": stack.token(),
+            "Content-Type": ctype,
+            "Accept": "application/json",
+            "X-Exp-Request": "1",
+        },
         body=body,
         timeout=180,
     )

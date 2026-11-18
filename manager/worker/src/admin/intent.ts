@@ -17,6 +17,7 @@ import { getSecretByOwner, getSecretRow, prepareCreateSecret, prepareSetSecret, 
 import { COMPONENT_ID_RE, HOST_ID_RE, SLUG_RE, newId, NOC_ID_RE, USR_ID_RE } from "../util/ids";
 import { isoNow } from "../util/time";
 import type { Actor } from "./service";
+import { redact } from "./read";
 
 const IFACE_RE = /^[A-Za-z0-9_.:-]{1,15}$/;
 const IPV4 = /^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/;
@@ -394,6 +395,25 @@ export const IntegrationPutSchema = z
   })
   .strict();
 
+const SECRET_KEY_RE = /(secret|token|password|passwd|passphrase|psk|private_?key|api_?key|credential)/i;
+/** Path of the first secret-looking key at any depth (bounded), else null; deeper than the bound is refused too. */
+function findSecretKey(v: unknown, path: string, depth = 0): string | null {
+  if (depth > 8) return `${path} (nested too deeply)`;
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i++) {
+      const r = findSecretKey(v[i], `${path}[${i}]`, depth + 1);
+      if (r) return r;
+    }
+  } else if (v && typeof v === "object") {
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      if (SECRET_KEY_RE.test(k)) return `${path}.${k}`;
+      const r = findSecretKey(x, `${path}.${k}`, depth + 1);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
 const isKind = (k: string): k is "ec" | "mist" => k === "ec" || k === "mist";
 
 export async function getIntegration(env: Env, kind: string) {
@@ -403,9 +423,9 @@ export async function getIntegration(env: Env, kind: string) {
   if (r?.secret_id) credUpdated = (await env.DB.prepare("SELECT updated_at FROM secrets WHERE secret_id = ?1").bind(r.secret_id).first<{ updated_at: string }>())?.updated_at ?? null;
   return {
     kind,
-    config: parseJson<Record<string, unknown>>(r?.config_json, {}),
+    config: redact(parseJson<Record<string, unknown>>(r?.config_json, {})) as Record<string, unknown>,
     credentials: secretState(credUpdated),
-    allowlist: parseJson<unknown[]>(r?.allowlist_json, []),
+    allowlist: redact(parseJson<unknown[]>(r?.allowlist_json, [])) as unknown[],
     updated_at: r?.updated_at ?? null,
   };
 }
@@ -420,7 +440,10 @@ export async function putIntegration(env: Env, actor: Actor, kind: string, body:
     if (v !== undefined && !(typeof v === "string" && v.length <= 512 && HTTPS_URL.test(v) && !/@/.test(v.split("/")[2] ?? ""))) throw invalidRequest(`config.${k} must be an https URL without credentials`);
   }
   // secrets never live in config: refuse secret-looking keys so they cannot be read back
-  for (const k of Object.keys(config)) if (/(secret|token|password|api_?key|credential)/i.test(k)) throw invalidRequest(`config.${k} looks like a secret; send credentials in the write-only credentials object`);
+  const bad = findSecretKey(config, "config");
+  if (bad) throw invalidRequest(`${bad} looks like a secret; send credentials in the write-only credentials object`);
+  const badAl = allowlist ? findSecretKey(allowlist, "allowlist") : null;
+  if (badAl) throw invalidRequest(`${badAl} looks like a secret; send credentials in the write-only credentials object`);
   const cur = await env.DB.prepare("SELECT secret_id, allowlist_json FROM integrations WHERE kind = ?1").bind(kind).first<{ secret_id: string | null; allowlist_json: string }>();
   const now = isoNow();
   const stmts: D1PreparedStatement[] = [];

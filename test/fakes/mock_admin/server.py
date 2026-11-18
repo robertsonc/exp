@@ -1005,6 +1005,25 @@ def r_dash_sso(a: MockAdmin, r: Req) -> Resp:
     return Resp(200, raw=(page.encode(), "text/html; charset=utf-8"), headers=NO_STORE)
 
 
+def _launch_nonce(a: MockAdmin, r: Req, did: str, exp: int) -> str:
+    return f"{exp}." + _b64(hashlib.sha256(f"{SSO_SECRET!r}|{r.email}|{did}|{exp}".encode()).digest())
+
+
+def r_dash_sso_launch(a: MockAdmin, r: Req) -> Resp:
+    d = dashboard(a, r.params["dashboard_id"])
+    n = _launch_nonce(a, r, d["id"], int(a.now()) + 30)
+    return Resp(200, body={"url": f"/api/admin/v1/dashboards/{d['id']}/sso/page?n={n}", "expires_in_s": 30}, headers=NO_STORE)
+
+
+def r_dash_sso_page(a: MockAdmin, r: Req) -> Resp:
+    d = dashboard(a, r.params["dashboard_id"])
+    n = r.q.text("n", 100) or ""
+    exp = int(n.split(".")[0]) if re.fullmatch(r"\d{10}\.[A-Za-z0-9_-]{43}", n) else 0
+    if not exp or exp < int(a.now()) or n != _launch_nonce(a, r, d["id"], exp):
+        raise ApiError(403, "invalid_launch_nonce", "the dashboard launch link is invalid or expired")
+    return r_dash_sso(a, r)
+
+
 # --- alerts / integrations / webhooks
 def alerts_out(a: MockAdmin, site: str) -> dict[str, Any]:
     al = a.w["alerts"][site]
@@ -1524,6 +1543,8 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("POST", "/dashboards/{dashboard_id}/noc-tokens", "admin", r_noc_create),
         ("DELETE", "/dashboards/{dashboard_id}/noc-tokens/{noc}", "admin", r_noc_revoke),
         ("POST", "/dashboards/{dashboard_id}/sso", "viewer", r_dash_sso),
+        ("POST", "/dashboards/{dashboard_id}/sso/launch", "viewer", r_dash_sso_launch),
+        ("GET", "/dashboards/{dashboard_id}/sso/page", "viewer", r_dash_sso_page),
         ("GET", "/sites/{site}/alerts", "viewer", r_alerts_get), ("PUT", "/sites/{site}/alerts", "admin", r_alerts_put),
         ("POST", "/sites/{site}/alerts/test", "admin", r_alerts_test),
         ("GET", "/integrations/{kind}", "viewer", r_integ_get), ("PUT", "/integrations/{kind}", "owner", r_integ_put),

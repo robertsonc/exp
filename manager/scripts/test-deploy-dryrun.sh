@@ -130,6 +130,115 @@ openssl genpkey -algorithm ec -pkeyopt ec_paramgen_curve:P-256 -out "$T/ec.pem" 
 assert_fails "refuses a non-Ed25519 release key" "not an Ed25519" "${DEPLOY[@]}" --dry-run --account-id "$ACCT" --owner-email o@example.com --release-pubkey "$T/ecpub.pem"
 assert_fails "refuses a bad worker name" "worker-name" "${DEPLOY[@]}" "${base_args[@]}" --worker-name "Bad Name"
 
+echo "deploy.sh takeover guards (ordering, foreign Access apps, policy preservation)"
+# dry-run order: the Workers custom-domain guard and the Access reads come before ANY Access app/policy call
+gline="$(printf '%s\n' "$out" | grep -n 'workers/domains?hostname=exp-control.example.com' | head -n1 | cut -d: -f1)"
+aline="$(printf '%s\n' "$out" | grep -n '/access/' | head -n1 | cut -d: -f1)"
+wline="$(printf '%s\n' "$out" | grep -nE 'API (POST|PUT) /accounts/[0-9a-f]+/access/' | head -n1 | cut -d: -f1)"
+{ [ -n "$gline" ] && [ -n "$aline" ] && [ "$gline" -lt "$aline" ]; } && ok "dry-run: the custom-domain guard is planned before any Access call" || bad "dry-run: guard before Access (guard=$gline access=$aline)" "$out"
+{ [ -n "$aline" ] && [ -n "$wline" ] && [ "$aline" -lt "$wline" ]; } && ok "dry-run: Access reads (and the foreign-app guard) precede the first Access write" || bad "dry-run: reads before writes"
+assert_has "refuse an existing app for exp-control.example.com" "$out" "dry-run documents the foreign-app guard"
+assert_has "--adopt-access-apps" "$out" "dry-run documents the adopt flag"
+
+# a tiny local mock of the Cloudflare API (stdlib only, loopback only) records every request
+cat > "$T/mock-cf.py" <<'PYEOF'
+import json, re, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+scenario, portfile, logfile = sys.argv[1], sys.argv[2], sys.argv[3]
+HOST = "exp-control.example.com"
+UUID = "11111111-2222-3333-4444-555555555555"
+OWNER_POLICY = {"id": "p1", "name": "exp-manager owner", "decision": "allow", "precedence": 3, "session_duration": "1h",
+                "approval_required": True, "purpose_justification_required": True,
+                "include": [{"email": {"email": "admin@example.com"}}],
+                "require": [{"email_domain": {"domain": "example.com"}}],
+                "exclude": [{"email": {"email": "intern@example.com"}}], "created_at": "x", "updated_at": "y"}
+APPS = []
+if scenario == "foreign_app": APPS = [{"id": "f1", "name": "someone-elses-app", "domain": HOST, "type": "self_hosted"}]
+if scenario == "foreign_bypass_path": APPS = [{"id": "f2", "name": "legacy", "domain": HOST + "/healthz", "type": "self_hosted"}]
+if scenario == "name_other_host": APPS = [{"id": "o1", "name": "exp-manager", "domain": "other.example.com", "type": "self_hosted"}]
+if scenario == "preserve": APPS = [{"id": "a1", "name": "exp-manager", "domain": HOST, "type": "self_hosted", "session_duration": "12h"}]
+n = [0]
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def reply(self, result):
+        b = json.dumps({"success": True, "errors": [], "result": result}).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    def handle_any(self):
+        ln = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(ln).decode() if ln else ""
+        with open(logfile, "a") as f: f.write("%s %s\t%s\n" % (self.command, self.path, body))
+        p, m = self.path, self.command
+        if p.endswith("/workers/subdomain"): return self.reply({"subdomain": "acct"})
+        if "/d1/database" in p: return self.reply([{"name": "exp-manager", "uuid": UUID}])
+        if "/r2/buckets" in p: return self.reply({"buckets": [{"name": "exp-artifacts"}]})
+        if "/workers/domains" in p:
+            return self.reply([{"hostname": HOST, "service": "other-worker"}] if scenario == "foreign_domain" else [])
+        if p.endswith("/access/organizations"): return self.reply({"auth_domain": "team.cloudflareaccess.com"})
+        if re.search(r"/access/apps\?", p) and m == "GET": return self.reply(APPS)
+        if re.search(r"/access/apps/[^/]+/policies$", p) and m == "GET":
+            return self.reply([OWNER_POLICY] if (scenario == "preserve" and "/apps/a1/" in p) else [])
+        if re.search(r"/access/apps(/[^/]+)?$", p) and m in ("POST", "PUT"):
+            n[0] += 1; return self.reply({"id": p.rsplit("/", 1)[-1] if m == "PUT" else "new%d" % n[0], "aud": "aud%d" % n[0]})
+        if "/policies" in p and m in ("POST", "PUT"): return self.reply({"id": "p9"})
+        self.reply([])
+    do_GET = do_POST = do_PUT = do_DELETE = handle_any
+srv = HTTPServer(("127.0.0.1", 0), H)
+open(portfile, "w").write(str(srv.server_address[1]))
+srv.serve_forever()
+PYEOF
+# shims so a non-dry run stops right after the Access steps: wrangler/npm/prepare do nothing, `wrangler deploy` fails
+mkdir -p "$T/mbin"; REAL_NODE="$(command -v node)"
+printf '#!/bin/sh\ncase " $* " in *" deploy "*) exit 1;; esac\nexit 0\n' > "$T/mbin/npx"
+printf '#!/bin/sh\nexit 0\n' > "$T/mbin/npm"
+printf '#!/bin/sh\ncase "$*" in *prepare.mjs*) exit 0;; esac\nexec "%s" "$@"\n' "$REAL_NODE" > "$T/mbin/node"
+chmod +x "$T/mbin/npx" "$T/mbin/npm" "$T/mbin/node"
+mock_run() { # mock_run SCENARIO [extra deploy args] -> sets MOUT, MRC, MLOG (recorded requests)
+  local sc="$1"; shift
+  rm -f "$T/mock.port" "$T/mock.log"; : > "$T/mock.log"
+  python3 -I "$T/mock-cf.py" "$sc" "$T/mock.port" "$T/mock.log" & local pid=$!
+  local i; for i in $(seq 1 50); do [ -s "$T/mock.port" ] && break; sleep 0.1; done
+  MRC=0
+  MOUT="$(env -u http_proxy -u HTTP_PROXY -u https_proxy -u HTTPS_PROXY NO_PROXY=127.0.0.1 PATH="$T/mbin:$PATH" CLOUDFLARE_API_TOKEN="$FAKE_TOKEN" \
+    CF_API_BASE="http://127.0.0.1:$(cat "$T/mock.port")" "$MANAGER/deploy.sh" --account-id "$ACCT" --domain exp-control.example.com --owner-email Owner@Example.com \
+    --release-pubkey "$T/pub.pem" "$@" 2>&1)" || MRC=$?
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  MLOG="$(cat "$T/mock.log")"
+}
+access_writes() { printf '%s\n' "$MLOG" | grep -E '^(POST|PUT|DELETE) .*/access/' || true; }
+
+if command -v python3 >/dev/null; then
+  mock_run foreign_domain
+  [ "$MRC" -ne 0 ] && has "already attached to the Worker 'other-worker'" "$MOUT" && ok "refuses a domain served by a different Worker" || bad "refuses a domain served by a different Worker (rc=$MRC)" "$MOUT"
+  [ -z "$(printf '%s\n' "$MLOG" | grep '/access/')" ] && ok "domain refusal happens before ANY Access call" || bad "no Access call before the domain guard" "$MLOG"
+
+  mock_run foreign_app
+  [ "$MRC" -ne 0 ] && has "not managed by this script" "$MOUT" && has "someone-elses-app" "$MOUT" && ok "refuses an existing foreign Access app for the host" || bad "refuses a foreign Access app (rc=$MRC)" "$MOUT"
+  [ -z "$(access_writes)" ] && ok "foreign app: no Access write of any kind was attempted" || bad "foreign app: no Access write" "$(access_writes)"
+  gi="$(printf '%s\n' "$MLOG" | grep -n 'workers/domains' | head -n1 | cut -d: -f1)"; ai="$(printf '%s\n' "$MLOG" | grep -n '/access/' | head -n1 | cut -d: -f1)"
+  { [ -n "$gi" ] && [ -n "$ai" ] && [ "$gi" -lt "$ai" ]; } && ok "real run: the Workers-domain guard call precedes every Access call" || bad "real run order (guard=$gi access=$ai)" "$MLOG"
+
+  mock_run foreign_bypass_path
+  [ "$MRC" -ne 0 ] && has "not managed by this script" "$MOUT" && [ -z "$(access_writes)" ] && ok "refuses a foreign app on a bypass path (HOST/healthz), no write" || bad "refuses a foreign bypass-path app (rc=$MRC)" "$MOUT"
+
+  mock_run foreign_app --adopt-access-apps
+  has "--adopt-access-apps: taking over" "$MOUT" && printf '%s\n' "$MLOG" | grep -q '^PUT .*/access/apps/f1' && ok "--adopt-access-apps allows taking over the foreign app (explicit opt-in)" || bad "--adopt-access-apps adopts" "$MOUT"
+
+  mock_run name_other_host
+  [ "$MRC" -ne 0 ] && has "different host" "$MOUT" && has "Refusing to repoint" "$MOUT" && ok "refuses to repoint an app named like ours that protects another host" || bad "refuses to repoint by name (rc=$MRC)" "$MOUT"
+  [ -z "$(access_writes)" ] && ok "repoint refusal: no Access write was attempted" || bad "repoint refusal: no write" "$(access_writes)"
+  mock_run name_other_host --adopt-access-apps
+  [ "$MRC" -ne 0 ] && has "Refusing to repoint" "$MOUT" && [ -z "$(access_writes)" ] && ok "--adopt-access-apps does NOT override the by-name repoint refusal" || bad "adopt must not repoint by name" "$MOUT"
+
+  mock_run preserve
+  put="$(printf '%s\n' "$MLOG" | grep '^PUT .*/access/apps/a1/policies/p1' | cut -f2)"
+  [ -n "$put" ] && ok "an existing owner policy is updated in place (PUT)" || bad "owner policy PUT happened" "$MLOG"
+  printf '%s' "$put" | jq -e '.require == [{"email_domain":{"domain":"example.com"}}] and .exclude == [{"email":{"email":"intern@example.com"}}]' >/dev/null 2>&1 && ok "policy update keeps the admin's require and exclude rules" || bad "policy update keeps require/exclude" "$put"
+  printf '%s' "$put" | jq -e '.approval_required == true and .purpose_justification_required == true and .session_duration == "1h" and .precedence == 3' >/dev/null 2>&1 && ok "policy update keeps approval/purpose/session_duration/precedence" || bad "policy update keeps other fields" "$put"
+  printf '%s' "$put" | jq -e '(.include | length) == 2 and (.include | any(.email.email == "admin@example.com")) and (.include | any(.email.email == "owner@example.com")) and (has("id") | not)' >/dev/null 2>&1 && ok "policy update unions the includes and sends no read-only ids" || bad "policy include union" "$put"
+else
+  echo "  skip mock-API guard tests (python3 missing)"
+fi
+
 # ---- publish-release.sh ----------------------------------------------------------------------------------------------------------
 echo "publish-release.sh --dry-run"
 PUB=(env PATH="$T/bin:$PATH" "$MANAGER/scripts/publish-release.sh")
@@ -186,14 +295,14 @@ if [ -x "$MANAGER/node_modules/.bin/wrangler" ]; then
   (cd "$MANAGER" && npx --no-install wrangler d1 migrations apply DB --local --persist-to "$P" </dev/null) >"$T/mig.out" 2>&1 || bad "local migrations" "$(tail -5 "$T/mig.out")"
   (cd "$MANAGER" && npx --no-install wrangler d1 execute DB --local --persist-to "$P" --yes --command "INSERT INTO sites (site, name, created_at, updated_at) VALUES ('hall-b','Hall B','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z')" </dev/null) >/dev/null 2>&1
   for run in 1 2; do
-    out="$("${PUB[@]}" --dist "$T/dist" --pubkey "$T/pub.pem" --set-site hall-b --local --persist-to "$P" 2>&1)"; rc=$?
+    out="$("${PUB[@]}" --dist "$T/dist" --pubkey "$T/pub.pem" --set-site hall-b --local --persist-to "$P" --config "$MANAGER/wrangler.toml" 2>&1)"; rc=$?
     [ "$rc" -eq 0 ] && ok "local publish run $run succeeds" || bad "local publish run $run" "$out"
   done
   q="$(cd "$MANAGER" && npx --no-install wrangler d1 execute DB --local --persist-to "$P" --json --command "SELECT (SELECT count(*) FROM releases) AS r, (SELECT count(*) FROM artifacts) AS a, (SELECT release_version FROM sites WHERE site='hall-b') AS s, (SELECT count(*) FROM audit WHERE action='release.publish') AS e, (SELECT length(signature) FROM releases) AS l" </dev/null 2>/dev/null)"
   row="$(printf '%s' "$q" | jq -c '.[0].results[0]' 2>/dev/null)"
   [ "$row" = '{"r":1,"a":2,"s":"0.1.0","e":2,"l":88}' ] && ok "end state: 1 release, 2 artifacts, site at 0.1.0, one audit event per run (2), after TWO runs (idempotent rows)" || bad "end state in local D1" "$row"
   # regression (e2e m2): the "deployed key" check is for the DEPLOYED manager; --local must not be bound to a stale .deploy/ config
-  out3="$("${PUB[@]}" --dist "$T/dist" --pubkey "$T/other-pub.pem" --local --persist-to "$P" 2>&1)" || true
+  out3="$("${PUB[@]}" --dist "$T/dist" --pubkey "$T/other-pub.pem" --local --persist-to "$P" --config "$MANAGER/wrangler.toml" 2>&1)" || true
   case "$out3" in
     *"differs from the RELEASE_PUBKEY_PEM"*) bad "--local ignores the deployed key of .deploy/ (it only checks the signature against --pubkey)" "$out3" ;;
     *"does NOT verify"*) ok "--local ignores the deployed key of .deploy/ (it only checks the signature against --pubkey)" ;;

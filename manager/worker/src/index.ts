@@ -16,6 +16,10 @@ app.use("*", async (c, next) => {
   await next();
   c.header("X-Content-Type-Options", "nosniff");
   c.header("Referrer-Policy", "no-referrer");
+  c.header("X-Frame-Options", "DENY");
+  if (!c.res.headers.has("content-security-policy") && (c.res.headers.get("content-type") ?? "").match(/^(text\/html|application\/json)/i) && new URL(c.req.url).pathname.startsWith("/api/")) {
+    c.header("Content-Security-Policy", "frame-ancestors 'none'");
+  }
 });
 
 app.get("/healthz", (c) => c.text("ok", 200, { "cache-control": "no-store" }));

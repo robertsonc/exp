@@ -223,8 +223,8 @@ describe("upload (multipart)", () => {
     }
   });
 
-  it("wrong content type 415, oversized 413, missing parts 400", async () => {
-    expect((await h.json("admin", "POST", "/releases/upload", { manifest: "x" })).status).toBe(415);
+  it("wrong content type refused as non-multipart (csrf 403), oversized 413, missing parts 400", async () => {
+    expect((await h.json("admin", "POST", "/releases/upload", { manifest: "x" })).status).toBe(403);
     const big = new Request("https://manager.example.test/x", { method: "POST" });
     void big;
     const f = new FormData();

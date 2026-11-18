@@ -151,7 +151,7 @@ change recompiles all its probes and dashboards.
 - **artifacts:** only artifacts referenced in this host's current desired doc (`403` otherwise);
   streamed from R2 with `Content-Length` and `ETag` = sha256.
 - **status:** ≤ 256 KiB, validated against `exp.status/1`; stored in `status_latest`/`status_history`;
-  host `last_seen`/versions updated; component facts merged; recompile if wiring facts changed;
+  host `last_seen`/versions updated; component facts merged; recompile if wiring facts changed **or the host's own compile-relevant facts changed** (management address, default route, interface roles, arch: `install.sh` enrols with minimal facts, so the first full report is what lets a collector/dashboard-only host compile its components);
   **roll-ups upserted** (§13) and **issue rules evaluated** for that host (§14).
 - **rotate**, **decommissioned:** as in the contract (`409 rotation_not_requested` without a pending action); both audited.
 - **Status component facts:** `components[].facts.{tls_fingerprint_sha256,listen,url}` are validated strictly: one malformed value rejects the whole report with `400 invalid_request`, so the agent drops invalid facts first. Only those three wiring facts are copied into `components.facts_json`; other extras live in the bounded `status_latest.report_json`.
@@ -195,7 +195,7 @@ administration flows it must include:
 
 Every 5 min: expire enrol tokens; host `stale` after 3 × its status interval without a report,
 `offline` after 10 min (opening/resolving the matching issues, §14); canary promotion; drop
-`previous_*` secrets past their grace; prune `status_history`.
+`previous_*` secrets past their grace (and recompile, so a collector's `[current, previous]` verifier lists shrink to `current`); prune `status_history`.
 Hourly: compact completed 5-min roll-ups into 1-h buckets; prune 5-min data > 48 h, 1-h data > 30 d,
 resolved issues > 30 d.
 Daily: prune audit > 1 year (configurable), report orphaned R2 objects.

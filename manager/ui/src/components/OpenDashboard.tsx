@@ -1,15 +1,15 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import { ep } from '../api/endpoints';
-import { mutateText } from '../data/hooks';
+import { mutate } from '../data/hooks';
 import { Button } from './atoms';
 import { failText } from './forms';
 import { notify } from './Toasts';
-import { openSsoWindow, parseSsoForm } from '../lib/sso';
+import { openSsoWindow } from '../lib/sso';
 
 /**
- * "Open dashboard": asks the manager for a signed handoff (POST dashboards/{id}/sso) and submits the returned form to
- * the dashboard in a new window. The token only ever travels in a POST body.
+ * "Open dashboard": asks the manager for a short-lived launch URL (POST dashboards/{id}/sso/launch) and navigates a new
+ * window to it; the manager's page there POSTs the signed token to the dashboard. The token only ever travels in a POST body.
  */
 export function OpenDashboardButton({ dashId, primary, label = 'Open dashboard' }: { dashId: string; primary?: boolean; label?: string }): JSX.Element {
   const [busy, setBusy] = useState(false);
@@ -17,14 +17,11 @@ export function OpenDashboardButton({ dashId, primary, label = 'Open dashboard' 
     const win = openSsoWindow();
     setBusy(true);
     try {
-      const html = await mutateText('POST', ep.sso(dashId));
-      const handoff = parseSsoForm(html);
-      if (!handoff) {
+      const r = await mutate<{ url?: unknown }>('POST', ep.ssoLaunch(dashId));
+      if (!win.go(String(r?.url))) {
         win.cancel();
-        notify('error', 'The manager sent an unexpected sign-in form, so the dashboard was not opened.');
-        return;
+        notify('error', 'The manager sent an unexpected launch link, so the dashboard was not opened.');
       }
-      win.submit(handoff);
     } catch (e) {
       win.cancel();
       notify('error', `Could not open ${dashId}: ${failText(e)}`);

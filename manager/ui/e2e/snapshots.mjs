@@ -24,7 +24,8 @@ const HIDE = `
 
 /** Replace "12 s ago" style text with a constant, in the page only, so the shot does not depend on when it was taken. */
 async function normalise(page) {
-  await page.addStyleTag({ content: HIDE });
+  // a constructed stylesheet (CSSOM) is allowed under the SPA's style-src 'self', an injected <style> element is not
+  await page.evaluate((css) => { const sh = new CSSStyleSheet(); sh.replaceSync(css); document.adoptedStyleSheets = [...document.adoptedStyleSheets, sh]; }, HIDE);
   await page.evaluate(async () => {
     await document.fonts.ready;
     const re = /\b(\d+ ?(s|min|h|d)( \d+ ?(s|min|h))?|just now)( ago)?\b/g;

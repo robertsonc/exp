@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { z } from "zod";
 import { accessAuth, adminOf, requireRole } from "../auth/access";
+import { csrfGuard } from "../auth/csrf";
 import type { AppBindings, Env } from "../env";
 import { ApiError, invalidRequest, notFound } from "../errors";
 import { componentMetrics, fleetHosts, fleetSites, fleetSummary, fleetTop, hostMetrics, mgmtIpOf, overview } from "../fleet/query";
@@ -17,10 +18,11 @@ import { isoNow, isoPlusSeconds } from "../util/time";
 import * as intent from "./intent";
 import * as read from "./read";
 import * as svc from "./service";
-import { buildSsoPage } from "./sso";
+import { buildSsoPage, mintLaunchNonce, verifyLaunchNonce } from "./sso";
 
 export const adminRoutes = new Hono<AppBindings>();
 adminRoutes.use("*", accessAuth);
+adminRoutes.use("*", csrfGuard);
 adminRoutes.use("*", async (c, next) => {
   await learnManagerUrl(c.env, c.req.url);
   await next();
@@ -260,20 +262,33 @@ adminRoutes.delete("/dashboards/:did/noc-tokens/:noc", requireRole("admin"), asy
   await svc.revokeNocToken(c.env, actorOf(c), noc);
   return c.body(null, 204);
 });
-adminRoutes.post("/dashboards/:did/sso", requireRole("viewer"), async (c) => {
-  await emptyBody(c);
-  const page = await buildSsoPage(c.env, adminOf(c), c.get("ip"), c.req.param("did"));
-  return new Response(page.html, {
+const ssoResponse = (page: { html: string; csp: string }): Response =>
+  new Response(page.html, {
     status: 200,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": page.csp, "referrer-policy": "no-referrer" },
   });
+adminRoutes.post("/dashboards/:did/sso", requireRole("viewer"), async (c) => {
+  await emptyBody(c);
+  return ssoResponse(await buildSsoPage(c.env, adminOf(c), c.get("ip"), c.req.param("did")));
+});
+// What the SPA uses: POST .../sso/launch (header-bearing) -> {url}; a new window then navigates to that same-origin GET.
+adminRoutes.post("/dashboards/:did/sso/launch", requireRole("viewer"), async (c) => {
+  await emptyBody(c);
+  const d = await read.dashboardSlug(c.env, c.req.param("did"));
+  const n = await mintLaunchNonce(c.env, adminOf(c).email, d.slug);
+  return c.json({ url: `/api/admin/v1/dashboards/${encodeURIComponent(c.req.param("did"))}/sso/page?n=${n}`, expires_in_s: 30 });
+});
+adminRoutes.get("/dashboards/:did/sso/page", requireRole("viewer"), async (c) => {
+  const d = await read.dashboardSlug(c.env, c.req.param("did"));
+  await verifyLaunchNonce(c.env, adminOf(c).email, d.slug, c.req.query("n"));
+  return ssoResponse(await buildSsoPage(c.env, adminOf(c), c.get("ip"), c.req.param("did")));
 });
 
 async function dashboardBase(env: Env, componentId: string): Promise<string | null> {
   const r = await env.DB.prepare("SELECT c.config_json, c.facts_json, h.facts_json AS hf FROM components c JOIN hosts h ON h.host_id = c.host_id WHERE c.component_id = ?1").bind(componentId).first<{ config_json: string; facts_json: string; hf: string }>();
   if (!r) return null;
   try {
-    const url = (JSON.parse(r.config_json) as { url?: string }).url ?? (JSON.parse(r.facts_json) as { facts?: { url?: string } }).facts?.url;
+    const url = (JSON.parse(r.config_json) as { url?: string }).url;
     if (url) return url.replace(/\/+$/, "");
   } catch {
     /* fall through to the management address */

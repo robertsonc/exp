@@ -15,6 +15,8 @@
 #   --worker-name (exp-manager)  --d1-name (exp-manager)  --r2-bucket (exp-artifacts)
 #   --releases-repo owner/repo         optional: GitHub repo holding releases (release import)
 #   --keep-workers-dev                 leave the *.workers.dev route enabled after the smoke tests
+#   --adopt-access-apps                allow taking over an EXISTING Access app for the host that this script did not create
+#                                      (default: refuse). An app named like ours but protecting another host is never repointed.
 #   --dry-run                          print every API call and wrangler command; execute nothing, contact nothing
 #
 # Steps: (1) D1 + R2 (reuse or create), generated wrangler config; (2) migrations; (3) Cloudflare Access (app, owner
@@ -41,6 +43,7 @@ D1_NAME="exp-manager"
 R2_BUCKET="exp-artifacts"
 RELEASES_REPO="${RELEASES_REPO:-}"
 KEEP_WORKERS_DEV=0
+ADOPT_ACCESS_APPS=0
 DRY=0
 DEPLOY_DIR="$HERE/.deploy"
 GEN="$DEPLOY_DIR/wrangler.generated.toml"
@@ -65,6 +68,7 @@ while [ $# -gt 0 ]; do
     --r2-bucket) R2_BUCKET="${2:?--r2-bucket needs a value}"; shift 2 ;;
     --releases-repo) RELEASES_REPO="${2:?--releases-repo needs owner/repo}"; shift 2 ;;
     --keep-workers-dev) KEEP_WORKERS_DEV=1; shift ;;
+    --adopt-access-apps) ADOPT_ACCESS_APPS=1; shift ;;
     --dry-run) DRY=1; shift ;;
     --api-token|--token|--cloudflare-api-token) die "the API token is read from CLOUDFLARE_API_TOKEN only (a flag would leak it into shell history and ps)" ;;
     -h|--help) usage; exit 0 ;;
@@ -262,15 +266,49 @@ log "2/7 database migrations (forward-only)"
 render_config "" ""  # bindings are enough for migrations; vars are filled in below
 wr_run d1 migrations apply DB --remote -c "$GEN"
 
-# ---- 3. Cloudflare Access --------------------------------------------------------------------------------------------
-log "3/7 Cloudflare Access application, owner policy and bypass applications"
+# ---- 3. Guards, then Cloudflare Access ----------------------------------------------------------------------------------
+# The guards run BEFORE the first Access call of any kind: deploy.sh never takes over a domain or an Access application
+# that something else owns.
+log "3/7 takeover guards, then Cloudflare Access application, owner policy and bypass applications"
+
+# guard 1: the custom domain must not already be served by a DIFFERENT Worker (we never take over other services)
+if [ -n "$DOMAIN" ]; then
+  if [ "$DRY" = 1 ]; then api_plan GET "/workers/domains?hostname=$HOST   (refuse if another Worker serves it)"; else
+    other="$(cf_must "checking existing Workers custom domains" GET "/accounts/$ACCOUNT_ID/workers/domains?hostname=$HOST" | jq -r --arg w "$WORKER_NAME" --arg h "$HOST" '[.result[]? | select(.hostname == $h and .service != $w)][0].service // empty')"
+    [ -z "$other" ] || die "$HOST is already attached to the Worker '$other'; refusing to take it over. Choose another --domain."
+  fi
+fi
+
+# The Access applications this script manages: name + exact domain. Anything else is somebody else's.
+WANTED_APPS="$(jq -cn --arg w "$WORKER_NAME" --arg h "$HOST" '[{name: $w, domain: $h}] + [("/api/agent", "/install.sh", "/healthz") as $p | {name: "\($w) bypass \($p)", domain: "\($h)\($p)"}]')"
+# jq: every host/path an application protects (lower-cased)
+JQ_DOMS='def doms: ([.domain] + (.self_hosted_domains // []) + [(.destinations // [])[]? | .uri]) | map(select(type == "string") | ascii_downcase);'
+
+# access_guard APPS_JSON: refuse (before any write) to touch an application deploy.sh does not own
+access_guard() {
+  local file="$1" foreign repoint
+  # (a) an application for exactly HOST or HOST/<bypass path> that is not one of ours (right name for that domain)
+  foreign="$(jq -r --argjson want "$WANTED_APPS" "$JQ_DOMS"'
+    .[] | . as $a | select($a | doms | any(. as $d | ($want | any(.domain == $d)) and ($want | any(.domain == $d and .name == $a.name) | not)))
+    | "\(.name) (\(.domain // "-"))"' "$file")"
+  if [ -n "$foreign" ] && [ "$ADOPT_ACCESS_APPS" != 1 ]; then
+    die "an Access application already protects $HOST (or one of its bypass paths) and is not managed by this script: $(printf '%s' "$foreign" | paste -sd ';' - | head -c 300). Refusing to modify or replace it. If it really is yours, re-run with --adopt-access-apps."
+  fi
+  [ -z "$foreign" ] || warn "--adopt-access-apps: taking over existing Access application(s): $(printf '%s' "$foreign" | paste -sd ';' - | head -c 300)"
+  # (b) an application with one of OUR names that protects something else is never repointed
+  repoint="$(jq -r --argjson want "$WANTED_APPS" "$JQ_DOMS"'
+    .[] | . as $a | select($want | any(. as $w | $w.name == $a.name and (($a | doms | any(. == $w.domain)) | not)))
+    | "\(.name) (\($a | doms | join(",")))"' "$file")"
+  [ -z "$repoint" ] || die "an Access application named like one of ours already protects a different host: $(printf '%s' "$repoint" | paste -sd ';' - | head -c 300). Refusing to repoint it (this script would want $HOST). Rename or delete it in the Zero Trust dashboard, or choose another --worker-name."
+}
+
 ACCESS_AUD=""
 TEAM_DOMAIN=""
 if [ "$DRY" = 1 ]; then
   api_plan GET "/access/organizations"
-  api_plan GET "/access/apps?per_page=100"
+  api_plan GET "/access/apps?per_page=100   (guard: refuse an existing app for $HOST[/api/agent|/install.sh|/healthz] not named '$WORKER_NAME'/'$WORKER_NAME bypass <path>' unless --adopt-access-apps; refuse an app with one of those names for another host)"
   api_plan POST "/access/apps" "{\"name\":\"$WORKER_NAME\",\"domain\":\"$HOST\",\"type\":\"self_hosted\",\"session_duration\":\"24h\"}   (or PUT when an app for $HOST exists)"
-  api_plan POST "/access/apps/<app-id>/policies" "{\"name\":\"$WORKER_NAME owner\",\"decision\":\"allow\",\"include\":[{\"email\":{\"email\":\"$OWNER_EMAIL\"}}],\"precedence\":1}"
+  api_plan POST "/access/apps/<app-id>/policies" "{\"name\":\"$WORKER_NAME owner\",\"decision\":\"allow\",\"include\":[{\"email\":{\"email\":\"$OWNER_EMAIL\"}}],\"precedence\":1}   (an existing policy is PUT from its current object: require/exclude/etc. kept, includes unioned)"
   for p in /api/agent /install.sh /healthz; do
     api_plan POST "/access/apps" "{\"name\":\"$WORKER_NAME bypass $p\",\"domain\":\"$HOST$p\",\"type\":\"self_hosted\",\"session_duration\":\"24h\"}"
     api_plan POST "/access/apps/<app-id>/policies" "{\"name\":\"bypass everyone\",\"decision\":\"bypass\",\"include\":[{\"everyone\":{}}],\"precedence\":1}"
@@ -291,12 +329,14 @@ else
     [ "$(printf '%s' "$resp" | jq '.result | length')" -ge 100 ] || break
     page=$((page + 1)); [ "$page" -le 50 ] || die "too many Access applications to list"
   done
+  access_guard "$APPS_JSON"
 
-  # app_upsert NAME DOMAIN -> sets APP_ID and APP_AUD. Looks up by domain, then by name; existing settings are kept.
+  # app_upsert NAME DOMAIN -> sets APP_ID and APP_AUD. Matches by DOMAIN only (never by name: access_guard has already
+  # refused an app with our name on another host); an existing app keeps all its other settings.
   app_upsert() {
     local name="$1" domain="$2" found payload body method path resp
     payload="$(jq -cn --arg n "$name" --arg d "$domain" '{name: $n, domain: $d, type: "self_hosted", session_duration: "24h", app_launcher_visible: false}')"
-    found="$(jq -c --arg n "$name" --arg d "$domain" '([.[] | select(.domain == $d)][0]) // ([.[] | select(.name == $n)][0]) // empty' "$APPS_JSON")"
+    found="$(jq -c --arg d "$domain" "$JQ_DOMS"'[.[] | select(doms | any(. == $d))][0] // empty' "$APPS_JSON")"
     if [ -n "$found" ]; then
       method=PUT; path="/accounts/$ACCOUNT_ID/access/apps/$(printf '%s' "$found" | jq -r '.id')"
       body="$(printf '%s' "$found" | jq -c --argjson new "$payload" 'del(.id, .uid, .aud, .created_at, .updated_at) + $new')"
@@ -310,17 +350,20 @@ else
     APP_AUD="$(printf '%s' "$resp" | jq -r '.result.aud // empty')"
     [ -n "$APP_ID" ] && [ -n "$APP_AUD" ] || die "Access did not return an id and AUD tag for '$name'"
   }
-  # policy_upsert APP_ID NAME DECISION INCLUDE_JSON [keep-existing-includes]
+  # policy_upsert APP_ID NAME DECISION INCLUDE_JSON [merge]
+  # An existing policy is updated FROM ITS OWN OBJECT: require, exclude, session_duration, isolation/approval/purpose
+  # fields and precedence an admin set are kept; only name, decision and include change (with "merge": include is the
+  # union of the existing and the wanted identities, so nothing an admin added by hand is dropped).
   policy_upsert() {
     local app="$1" pname="$2" decision="$3" include="$4" merge="${5:-}" list found pid body method path
     list="$(cf_must "listing policies of '$pname'" GET "/accounts/$ACCOUNT_ID/access/apps/$app/policies")"
     found="$(printf '%s' "$list" | jq -c --arg n "$pname" '[.result[]? | select(.name == $n)][0] // empty')"
     if [ -n "$found" ]; then
       pid="$(printf '%s' "$found" | jq -r '.id')"
-      if [ -n "$merge" ]; then # never drop identities an admin added by hand: union of existing and wanted
+      if [ -n "$merge" ]; then
         include="$(jq -cn --argjson have "$(printf '%s' "$found" | jq -c '.include // []')" --argjson want "$include" '$have + [$want[] | select(. as $w | $have | index($w) | not)]')"
       fi
-      body="$(jq -cn --arg n "$pname" --arg d "$decision" --argjson i "$include" '{name: $n, decision: $d, include: $i, precedence: 1}')"
+      body="$(printf '%s' "$found" | jq -c --arg n "$pname" --arg d "$decision" --argjson i "$include" 'del(.id, .uid, .created_at, .updated_at, .version) + {name: $n, decision: $d, include: $i, precedence: (.precedence // 1)}')"
       method=PUT; path="/accounts/$ACCOUNT_ID/access/apps/$app/policies/$pid"
     else
       body="$(jq -cn --arg n "$pname" --arg d "$decision" --argjson i "$include" '{name: $n, decision: $d, include: $i, precedence: 1}')"
@@ -336,14 +379,6 @@ else
     app_upsert "$WORKER_NAME bypass $p" "$HOST$p"
     policy_upsert "$APP_ID" "bypass everyone" bypass '[{"everyone":{}}]'
   done
-fi
-
-# guard: the custom domain must not already be served by a DIFFERENT Worker (we never take over other services)
-if [ -n "$DOMAIN" ]; then
-  if [ "$DRY" = 1 ]; then api_plan GET "/workers/domains?hostname=$HOST   (refuse if another Worker serves it)"; else
-    other="$(cf_must "checking existing Workers custom domains" GET "/accounts/$ACCOUNT_ID/workers/domains?hostname=$HOST" | jq -r --arg w "$WORKER_NAME" --arg h "$HOST" '[.result[]? | select(.hostname == $h and .service != $w)][0].service // empty')"
-    [ -z "$other" ] || die "$HOST is already attached to the Worker '$other'; refusing to take it over. Choose another --domain."
-  fi
 fi
 
 # ---- 4. build and deploy ---------------------------------------------------------------------------------------------

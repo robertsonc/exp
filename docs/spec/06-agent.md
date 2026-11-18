@@ -73,8 +73,8 @@ without a token repairs the agent installation.
    6. Render units from the artifact's `systemd/` templates into `/etc/systemd/system/` (names
       must match `exp-*.service|timer`); `daemon-reload`.
    7. Flip `current` if the version changed; restart units whose version, config, or creds changed
-      (a changed credential file → **restart that unit**: systemd refreshes `LoadCredential=` files only
-      when a unit (re)starts, so reload/`SIGHUP` is never used for credentials; `ExecReload=` may still serve
+      (a changed credential file → **restart the units that `LoadCredential=` it** (not the namespaces and
+      leases of a probe): systemd refreshes `LoadCredential=` files only when a unit (re)starts, so reload/`SIGHUP` is never used for credentials; `ExecReload=` may still serve
       config-only changes a component implements — a unit with an `ExecReload=` line gets
       `systemctl reload` for a config-only change). Order: `netns` units first, then template instances
       (`exp-probe-lease@<port>`, `exp-probe-target@<port>`), then the remaining units that have `[Install]`.
@@ -89,7 +89,7 @@ without a token repairs the agent installation.
       `/var/lib/exp/agent/previous/<c>/`), restart, re-check, report `rolled_back` with the error,
       and do not retry this desired version until it changes.
 5. Remove components no longer desired: stop/disable units, remove unit files and
-   `/opt/exp/<c>/`; **keep data** under `/var/lib/exp/<c>/` (decommission purges it — §5). For a
+   `/opt/exp/<c>/` and `reset-failed` the removed units; **keep data** under `/var/lib/exp/<c>/` (decommission purges it — §5). For a
    probe, stopping `exp-probe-netns` returns every port to the host.
 6. Execute `actions` once per action id (ids remembered in `/var/lib/exp/agent/actions.json`):
    `rotate_agent_secret` (call `POST rotate`, swap the secret atomically), `restart_component`,

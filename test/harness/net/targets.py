@@ -2,6 +2,7 @@
 """Local HTTP(S) stand-ins for the internet apps (runs in the `isp` namespace and listens on every address
 there: 142.250.80.46 "google", ...). 200 on any path; /generate_204 -> 204 (captive-portal detectors);
 /bytes/<n> -> n bytes. Stdlib only."""
+
 from __future__ import annotations
 
 import argparse

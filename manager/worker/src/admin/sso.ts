@@ -11,7 +11,7 @@ import { DEFAULT_ORG } from "../env";
 import { ApiError, ConfigError, unavailable } from "../errors";
 import { mgmtIpOf } from "../fleet/query";
 import { getSecretByOwner, readSecret } from "../secrets/store";
-import { b64ToBytes, bytesToB64url, utf8 } from "../util/encoding";
+import { b64ToBytes, bytesToB64url, constantTimeEqual, utf8 } from "../util/encoding";
 import { nowMs } from "../util/time";
 import { dashboardSlug } from "./read";
 
@@ -58,10 +58,10 @@ export async function buildSsoPage(env: Env, admin: { email: string; role: Role 
     .first<{ config_json: string; facts_json: string; host_facts: string }>();
   if (!row) throw new ApiError(404, "not_found", "no such dashboard");
   const cfg = parseJson<{ url?: string }>(row.config_json, {});
-  const reported = parseJson<{ facts?: { url?: string } }>(row.facts_json, {}).facts?.url;
+  // the handoff target is admin-set (config.url) or the host's management address, NEVER the agent-reported facts.url
   const mgmt = mgmtIpOf(row.host_facts);
-  const base = cfg.url ?? reported ?? (mgmt ? `https://${mgmt}` : null);
-  if (!base) throw new ApiError(409, "dashboard_url_unknown", "the dashboard has no known URL yet (it has not reported one and has no management address)");
+  const base = cfg.url ?? (mgmt ? `https://${mgmt}` : null);
+  if (!base) throw new ApiError(409, "dashboard_url_unknown", "the dashboard has no known URL yet (no admin-set url and no management address)");
   let target: URL;
   try {
     target = new URL(`${base.replace(/\/+$/, "")}/auth/sso`);
@@ -104,4 +104,35 @@ export async function buildSsoPage(env: Env, admin: { email: string; role: Role 
     `<noscript><button type="submit">Continue to the dashboard</button></noscript></form><script>${SCRIPT}</script></body></html>\n`;
   const csp = `default-src 'none'; script-src 'sha256-${await sha256B64(SCRIPT)}'; form-action ${target.origin}; base-uri 'none'; frame-ancestors 'none'`;
   return { html, csp };
+}
+
+// ---- launch nonce ---------------------------------------------------------------------------------------------
+// The admin SPA's CSP pins form-action to 'self', so the SPA never submits a form to the dashboard itself. Instead the UI
+// fetches POST dashboards/{id}/sso/launch (header-bearing, CSRF-guarded like every mutation) and navigates a new window to
+// the returned same-origin GET URL, which serves the SSO page under its own CSP (form-action pinned to the dashboard).
+// The nonce is stateless: HMAC(master key) over (admin email, dashboard id, expiry), 30 s TTL, bound to the admin and
+// the dashboard; the GET still needs the Access JWT of that same admin. It is not a credential for the dashboard.
+export const LAUNCH_TTL_S = 30;
+
+async function launchKey(env: Env): Promise<CryptoKey> {
+  if (!env.EXP_MASTER_KEY) throw unavailable("EXP_MASTER_KEY is not set");
+  const raw = new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(`exp-sso-launch/v1|${env.EXP_MASTER_KEY}`)));
+  return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+
+async function launchSig(env: Env, email: string, dashId: string, exp: number): Promise<string> {
+  const k = await launchKey(env);
+  return bytesToB64url(new Uint8Array(await crypto.subtle.sign("HMAC", k, utf8(`${email}\n${dashId}\n${exp}`))));
+}
+
+export async function mintLaunchNonce(env: Env, email: string, dashId: string): Promise<string> {
+  const exp = Math.floor(nowMs() / 1000) + LAUNCH_TTL_S;
+  return `${exp}.${await launchSig(env, email, dashId, exp)}`;
+}
+
+export async function verifyLaunchNonce(env: Env, email: string, dashId: string, nonce: string | undefined): Promise<void> {
+  const m = /^(\d{10})\.([A-Za-z0-9_-]{43})$/.exec(nonce ?? "");
+  const exp = m ? Number(m[1]) : 0;
+  const ok = m && exp >= Math.floor(nowMs() / 1000) && exp <= Math.floor(nowMs() / 1000) + LAUNCH_TTL_S && constantTimeEqual(m[2]!, await launchSig(env, email, dashId, exp));
+  if (!ok) throw new ApiError(403, "invalid_launch_nonce", "the dashboard launch link is invalid or expired; open the dashboard again from the manager");
 }
