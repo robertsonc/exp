@@ -46,3 +46,16 @@ Each entry in `metrics` (and `duration_ms`) becomes a time series:
 **Cardinality rule:** anything that can take many distinct values (full URLs, trace hops, IDs)
 stays in the record/event log — never a series label. `metric` and `label` names must match
 `[a-zA-Z_][a-zA-Z0-9_]*`.
+
+## Untrusted input
+
+Probe reports are **untrusted** at the collector. `Measurement.validate()` enforces:
+
+- **Reserved labels** — a probe may not set `probe`, `site`, `outcome`, `target`, or any
+  `__`-prefixed key in `labels`; those are set by the trusted base in `series()`. (And `series()`
+  applies the trusted labels last, so they win even on an un-validated record.)
+- **Bounds** — ≤ 20 labels, ≤ 50 metrics, label values ≤ 128 chars, `target` ≤ 256 chars; no
+  control characters in `target` or label values; metrics must be finite numbers.
+- **Timestamp** — `ts` must be a parseable ISO-8601 string (validated up front, not at write
+  time). Clock-skew bounding is a **collector** policy, not the schema's — probes legitimately
+  backfill old records from their local spool after an outage.

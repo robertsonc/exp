@@ -22,6 +22,15 @@ TESTS = ("gateway", "dhcp", "dns", "app", "throughput", "heartbeat")
 
 _SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")          # probe / site ids
 _NAME = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*\Z")            # metric / label names (VM-safe)
+_CTRL = re.compile(r"[\x00-\x1f\x7f]")                     # control chars, rejected in free text
+
+# Probe input is untrusted. These labels are set by the trusted base in series() and must never
+# be supplied by a probe (else it could spoof another probe's identity or its own outcome).
+RESERVED_LABELS = frozenset({"probe", "site", "outcome", "target"})
+MAX_LABELS = 20            # cardinality/DoS guard
+MAX_METRICS = 50
+MAX_LABEL_LEN = 128
+MAX_TARGET_LEN = 256
 
 
 def utcnow() -> str:
@@ -57,19 +66,49 @@ class Measurement:
             raise ValueError(f"site must be a slug [a-z0-9-], got {self.site!r}")
         if not self.test or not _NAME.match(self.test):
             raise ValueError(f"test must be a non-empty identifier, got {self.test!r}")
+        if len(self.metrics) > MAX_METRICS:
+            raise ValueError(f"too many metrics (>{MAX_METRICS})")
         for k, v in self.metrics.items():
             if not _NAME.match(k):
                 raise ValueError(f"metric name {k!r} is not a valid series name")
             if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
                 raise ValueError(f"metric {k} must be a finite number, got {v!r}")
-        for k in self.labels:
+        # target can become a series label, so treat it as untrusted free text
+        if not isinstance(self.target, str):
+            raise ValueError("target must be a string")
+        if len(self.target) > MAX_TARGET_LEN:
+            raise ValueError(f"target exceeds {MAX_TARGET_LEN} characters")
+        if _CTRL.search(self.target):
+            raise ValueError("target contains control characters")
+        # labels are untrusted: a probe could spoof reserved keys or explode cardinality
+        if len(self.labels) > MAX_LABELS:
+            raise ValueError(f"too many labels (>{MAX_LABELS})")
+        for k, v in self.labels.items():
             if not _NAME.match(k):
                 raise ValueError(f"label name {k!r} is not valid")
+            if k in RESERVED_LABELS or k.startswith("__"):
+                raise ValueError(f"label name {k!r} is reserved (set by the collector, not the probe)")
+            if not isinstance(v, str):
+                raise ValueError(f"label {k!r} value must be a string, got {type(v).__name__}")
+            if len(v) > MAX_LABEL_LEN:
+                raise ValueError(f"label {k!r} value exceeds {MAX_LABEL_LEN} characters")
+            if _CTRL.search(v):
+                raise ValueError(f"label {k!r} value contains control characters")
         if self.duration_ms is not None and (
-                not isinstance(self.duration_ms, (int, float)) or not math.isfinite(self.duration_ms)):
+                not isinstance(self.duration_ms, (int, float)) or isinstance(self.duration_ms, bool)
+                or not math.isfinite(self.duration_ms)):
             raise ValueError("duration_ms must be a finite number or None")
+        # ts: fill when empty, else require a parseable ISO-8601 string (fail here, not later in
+        # series()). Clock-skew bounding is the collector's job — probes backfill old spool records.
         if not self.ts:
             self.ts = utcnow()
+        elif not isinstance(self.ts, str):
+            raise ValueError("ts must be an ISO-8601 string")
+        else:
+            try:
+                iso_to_ms(self.ts)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"ts is not a valid ISO-8601 timestamp: {self.ts!r}") from exc
         return self
 
     def to_dict(self) -> dict[str, Any]:
@@ -88,16 +127,17 @@ class Measurement:
         series name  : exp_<test>_<metric>   (e.g. exp_dns_rtt_ms)
         labels       : probe, site, outcome + low-card labels (+ target if short)
         """
-        base = {"probe": self.probe, "site": self.site, "outcome": self.outcome}
-        for k, v in self.labels.items():
-            base[k] = str(v)
+        # probe-supplied labels first; trusted labels applied LAST so a probe cannot override
+        # them — defence in depth even if this record was constructed without validate().
+        labels = {k: str(v) for k, v in self.labels.items()}
         if self.target and len(self.target) <= 80:
-            base["target"] = self.target
+            labels["target"] = self.target
+        labels.update(probe=self.probe, site=self.site, outcome=self.outcome)
         metrics = dict(self.metrics)
         if self.duration_ms is not None:
             metrics.setdefault("duration_ms", float(self.duration_ms))
         ts_ms = iso_to_ms(self.ts)
-        return [{"metric": f"exp_{self.test}_{name}", "labels": dict(base),
+        return [{"metric": f"exp_{self.test}_{name}", "labels": dict(labels),
                  "value": float(val), "timestamp_ms": ts_ms}
                 for name, val in metrics.items()]
 
