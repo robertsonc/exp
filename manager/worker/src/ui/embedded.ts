@@ -1,5 +1,6 @@
 // Embedded admin UI (deploy.sh --embed-ui): serves the SPA from the Worker script when there is no ASSETS binding.
 // Used by index.ts only for non-API paths. Pure function of (request, asset map, header rules) so tests can feed fixtures.
+import type { Env } from "../env";
 import { ApiError, errorResponse, notFound } from "../errors";
 
 export interface EmbeddedAsset {
@@ -71,4 +72,11 @@ export function serveEmbedded(req: Request, assets: EmbeddedAssets, rules: Heade
   if (etagMatches(req.headers.get("if-none-match"), asset.etag)) return new Response(null, { status: 304, headers: h });
   if (req.method === "HEAD") return new Response(null, { status: 200, headers: h });
   return new Response(b64ToBytes(asset.b64), { status: 200, headers: h });
+}
+
+/** Non-API fallthrough: the ASSETS binding when present, else the embedded copy, else null (caller answers 404 JSON). */
+export function uiFallback(env: Env, req: Request, assets: EmbeddedAssets, rules: HeaderRules): Promise<Response> | Response | null {
+  if (env.ASSETS) return env.ASSETS.fetch(req);
+  if (Object.keys(assets).length > 0) return serveEmbedded(req, assets, rules);
+  return null;
 }

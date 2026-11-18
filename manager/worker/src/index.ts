@@ -9,7 +9,7 @@ import type { AppBindings, Env } from "./env";
 import { ApiError, ConfigError, errorResponse, notFound } from "./errors";
 import { renderInstallSh } from "./install/install";
 import { UI_ASSETS, UI_HEADERS } from "../.generated/ui-assets";
-import { serveEmbedded } from "./ui/embedded";
+import { uiFallback } from "./ui/embedded";
 
 export const app = new Hono<AppBindings>();
 
@@ -38,9 +38,9 @@ app.notFound(async (c) => {
   const p = new URL(c.req.url).pathname;
   // anything outside the API is the SPA (served from static assets); the API itself answers 404 JSON
   if (!p.startsWith("/api/") && p !== "/install.sh" && p !== "/healthz") {
-    if (c.env.ASSETS) return c.env.ASSETS.fetch(c.req.raw);
-    // deploy.sh --embed-ui: no ASSETS binding, the UI is bundled into the script (empty map in the default build)
-    if (Object.keys(UI_ASSETS).length > 0) return serveEmbedded(c.req.raw, UI_ASSETS, UI_HEADERS);
+    // ASSETS binding, or (deploy.sh --embed-ui: no binding) the UI bundled into the script; the map is empty in the default build
+    const ui = uiFallback(c.env, c.req.raw, UI_ASSETS, UI_HEADERS);
+    if (ui) return ui;
   }
   return errorResponse(notFound("no such path"));
 });

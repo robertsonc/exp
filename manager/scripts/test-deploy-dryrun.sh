@@ -118,6 +118,22 @@ fi
 assert_has "no --domain: deploying to" "$(cat "$T/wd.out")" "warns when deploying to workers.dev"
 assert_lacks "custom_domain" "$(cat "$GEN")" "no custom-domain route without --domain"
 
+echo "deploy.sh --embed-ui"
+[ -f "$GEN" ] && assert_has "[assets]" "$(cat "$GEN")" "default render still contains the [assets] section"
+[ -f "$GEN" ] && assert_has 'binding = "ASSETS"' "$(cat "$GEN")" "default render still has the ASSETS binding"
+eout="$("${DEPLOY[@]}" "${base_args[@]}" --embed-ui 2>&1)"; erc=$?
+[ "$erc" -eq 0 ] && ok "--dry-run --embed-ui exits 0" || bad "--dry-run --embed-ui exits 0 (rc=$erc)" "$eout"
+assert_has "ui=embedded-in-worker" "$eout" "dry-run prints the embedded mode"
+assert_has "EXP_EMBED_UI=1 node scripts/prepare.mjs" "$eout" "dry-run plans the embedding prepare step"
+eg="$(cat "$GEN")"
+assert_lacks "[assets]" "$eg" "embedded render has no [assets] section"
+assert_lacks "ASSETS" "$eg" "embedded render has no ASSETS binding"
+assert_lacks "run_worker_first" "$eg" "embedded render has no run_worker_first"
+assert_has "[[d1_databases]]" "$eg" "embedded render keeps the D1 binding"
+assert_has "[vars]" "$eg" "embedded render keeps the vars"
+"${DEPLOY[@]}" "${base_args[@]}" >/dev/null 2>&1
+assert_has "[assets]" "$(cat "$GEN")" "re-running without the flag restores the [assets] section"
+
 echo "deploy.sh refusals"
 assert_fails "refuses a missing API token" "CLOUDFLARE_API_TOKEN is not set" env -u CLOUDFLARE_API_TOKEN "$MANAGER/deploy.sh" "${base_args[@]}"
 assert_fails "refuses the token as a flag" "CLOUDFLARE_API_TOKEN only" "${DEPLOY[@]}" --api-token abc "${base_args[@]}"

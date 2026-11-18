@@ -407,8 +407,11 @@ else
   fi
   [ -d "$HERE/ui/dist" ] || die "ui/dist does not exist: the admin UI must be built (manager/ui) before deploying"
   if [ "$EMBED_UI" = 1 ]; then
-    EXP_EMBED_UI=1 node "$HERE/scripts/prepare.mjs" >&2 || die "embedding the admin UI failed"
+    # exported: wrangler's own [build] command (node scripts/prepare.mjs) must regenerate the SAME embedded module
+    export EXP_EMBED_UI=1
+    node "$HERE/scripts/prepare.mjs" >&2 || die "embedding the admin UI failed"
   else
+    unset EXP_EMBED_UI
     node "$HERE/scripts/prepare.mjs" >&2
   fi
   "${WR[@]}" deploy -c "$GEN" </dev/null >&2 || die "wrangler deploy failed"
