@@ -1,0 +1,5 @@
+#!/bin/sh
+# busybox udhcpc calls this with an event name (deconfig, bound, renew, nak,
+# leasefail) and the lease in environment variables. It runs inside the client
+# namespace; the Python side configures only that namespace.
+exec /usr/bin/python3 /opt/exm/bin/exm udhcpc-hook "$1"

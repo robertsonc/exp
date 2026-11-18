@@ -1,0 +1,9 @@
+# An exm-probe VM, streamed over SSH from its management address. Written by:
+#   sudo exm-collector probe add probe-01 --host 192.0.2.10 --label "Hall B registration"
+# The file name (without .toml) is the probe's name; it should match probe_id on the probe.
+name = "probe-01"
+kind = "linux"
+label = "Hall B registration"
+host = "192.0.2.10"           # the probe's management address
+port = 22
+user = "exm-stream"           # created on the probe by `exm authorize-collector`

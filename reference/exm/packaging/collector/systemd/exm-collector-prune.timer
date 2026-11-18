@@ -1,0 +1,10 @@
+[Unit]
+Description=EXM collector: daily retention prune
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

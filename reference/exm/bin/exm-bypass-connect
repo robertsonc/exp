@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Connect every Silicom bypass pair to its NIC at boot.
+#
+# Silicom bypass adapters (here PE2G4BPi35L, subsystem 1374:03d0, from Silver Peak
+# appliances) shipped set to power up in Disconnect mode: the relays leave the RJ45 jacks open, so
+# the Intel ports show no carrier until Silicom's bpctl driver switches them. This
+# loads bpctl_mod (installed via DKMS), creates its control device root-only (its
+# ioctls have no permission checks of their own), and turns Disconnect and Bypass
+# off on every control port. Runtime only: it does not change stored settings.
+# On srv-02 the cards were written to standard-NIC mode with a connected power-up
+# default on 2026-10-23, so this is now a check and a fallback, not the fix.
+#
+# On failure it exits non-zero and changes nothing further: the ports stay
+# disconnected, the unit shows as failed, and the probe records "no link".
+set -uo pipefail
+UTIL=/usr/local/sbin/bpctl_util
+
+if ! modprobe bpctl_mod; then
+    echo "exm-bypass: cannot load bpctl_mod (DKMS build for $(uname -r) missing?). Ports stay disconnected." >&2
+    exit 1
+fi
+major=$(awk '$2=="bpctl" {print $1}' /proc/devices)
+[ -n "$major" ] || { echo "exm-bypass: bpctl device not registered" >&2; exit 1; }
+rm -f /dev/bpctl0 /dev/bpctl
+mknod -m 0600 /dev/bpctl0 c "$major" 0
+ln -sf /dev/bpctl0 /dev/bpctl
+[ -x "$UTIL" ] || { echo "exm-bypass: $UTIL missing" >&2; exit 1; }
+
+found=0 failed=0
+for dev in /sys/bus/pci/devices/*; do
+    [ "$(cat "$dev/subsystem_vendor" 2>/dev/null)" = "0x1374" ] || continue
+    bdf=$(basename "$dev" | sed 's/^0000://')
+    # Only the control port of each pair accepts mode changes; slaves report as such.
+    "$UTIL" "$bdf" is_bypass 2>/dev/null | grep -q "control" || continue
+    found=$((found + 1))
+    # Record how the card came up before touching it: with standard-NIC mode stored
+    # on the card, it should already be connected and this script changes nothing.
+    pre_std=$("$UTIL" "$bdf" get_std_nic 2>&1 | tail -1)
+    pre_disc=$("$UTIL" "$bdf" get_disc 2>&1 | tail -1)
+    echo "exm-bypass: $bdf at boot, before any change: $pre_std $pre_disc"
+    "$UTIL" "$bdf" set_disc off >/dev/null 2>&1
+    "$UTIL" "$bdf" set_bypass off >/dev/null 2>&1
+    disc=$("$UTIL" "$bdf" get_disc 2>&1 | tail -1)
+    byp=$("$UTIL" "$bdf" get_bypass 2>&1 | tail -1)
+    echo "exm-bypass: $bdf: $disc $byp"
+    case "$disc $byp" in
+        *non-Disconnect*non-Bypass*) ;;
+        *) failed=$((failed + 1)) ;;
+    esac
+done
+echo "exm-bypass: $found bypass pair(s) found, $failed not connected"
+[ "$found" -gt 0 ] && [ "$failed" -eq 0 ]

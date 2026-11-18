@@ -1,0 +1,29 @@
+[Unit]
+Description=EXM collector: incidents (logged always; pushed to a webhook if one is configured)
+Documentation=file:///opt/exm-collector/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/exm-collector/bin/exm-collector alert-follow
+# The webhook URL (a secret, root-only on disk) reaches this unprivileged service as a credential.
+# An empty file (the installer creates one) means: incidents are logged, nothing is sent.
+User=exm-collector
+Group=exm-collector
+LoadCredential=webhook:/etc/exm/alert-webhook
+ReadWritePaths=/var/lib/exm-collector
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

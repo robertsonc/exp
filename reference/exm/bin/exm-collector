@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+"""exm-collector: the EXM collector (exm-collector package). Dashboard, alerts, and the probes' streams.
+
+  exm-collector probe add NAME --host ADDR [--label L] [--user exm-stream] [--port 22] [--trust]
+  exm-collector probe add NAME --local [--results-dir /var/lib/exm/results]      (a probe on this host)
+  exm-collector probe add NAME --kind mac --host ADDR --user LOGIN --attach-to PROBE [--ssid NAME] [--trust]
+  exm-collector probe trust NAME [--yes]     scan and pin the probe's SSH host key (check the fingerprint)
+  exm-collector probe list | remove NAME [--purge]
+  exm-collector apply                        (root) start/stop followers, restart dashboard and alerts
+  exm-collector status                       every board's lines right now
+  exm-collector alert-test [--dry-run]       post (or print) a sample down + back message
+  exm-collector prune                        drop streamed results older than retention_days
+  exm-collector web | alert-follow | follow NAME     the services' entry points
+  exm-collector version
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import pwd
+import shutil
+import stat
+import subprocess
+import sys
+import urllib.request
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+
+from exm import collector as K  # noqa: E402
+
+SELF = os.path.realpath(__file__)
+
+
+def need_root():
+    if os.geteuid() != 0:
+        sys.exit("exm-collector: this command needs root (sudo)")
+
+
+def _toml(v) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, int):
+        return str(v)
+    return json.dumps(str(v))                  # a TOML basic string: JSON escapes are valid TOML escapes
+
+
+# Ownership, done so that root never acts through a link the service user could plant:
+# - keys and pinned host keys are root's, readable by the service group only (it can use, not change them);
+# - /var/lib/exm-collector is root's; only its probes/, state/ and incidents/ belong to the service;
+# - nothing is ever chowned recursively, and every chown refuses a symlink.
+def _service_ids():
+    try:
+        u = pwd.getpwnam(K.USER)
+    except KeyError:
+        return None, None
+    return u.pw_uid, u.pw_gid
+
+
+def _share(path: str, mode: int) -> None:
+    """A root-owned file the service may read (group), never write."""
+    st = os.lstat(path)
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+        sys.exit(f"exm-collector: refusing to touch {path}: not a regular file")
+    _, gid = _service_ids()
+    os.chown(path, 0, gid if gid is not None else 0, follow_symlinks=False)
+    os.chmod(path, mode)
+
+
+def _service_dir(path: str) -> None:
+    """A directory the service writes, inside a root-owned parent (so it can't have been swapped for a link)."""
+    parent = os.lstat(os.path.dirname(path))
+    if parent.st_uid != 0:
+        sys.exit(f"exm-collector: {os.path.dirname(path)} must be owned by root (re-run the installer)")
+    if not os.path.lexists(path):
+        os.mkdir(path, 0o755)
+    st = os.lstat(path)
+    if not stat.S_ISDIR(st.st_mode):
+        sys.exit(f"exm-collector: refusing to touch {path}: not a directory")
+    uid, gid = _service_ids()
+    if uid is not None:
+        os.chown(path, uid, gid, follow_symlinks=False)
+
+
+def _scan(host: str, port: int) -> list[str]:
+    r = subprocess.run(["ssh-keyscan", "-T", "5", "-p", str(port), "-t", "ed25519,ecdsa", host],
+                       capture_output=True, text=True)
+    return [ln for ln in r.stdout.splitlines() if ln and not ln.startswith("#")]
+
+
+def _fingerprints(lines: list[str]) -> list[str]:
+    r = subprocess.run(["ssh-keygen", "-lf", "-"], input="\n".join(lines) + "\n", capture_output=True, text=True)
+    return [ln for ln in r.stdout.splitlines() if ln]
+
+
+def _trust(p: dict, yes: bool) -> int:
+    lines = _scan(p["host"], p["port"])
+    if not lines:
+        print(f"could not reach {p['host']}:{p['port']} for its host key; run `exm-collector probe trust {p['name']}` when it is up")
+        return 1
+    print(f"{p['host']} host keys:")
+    for fp in _fingerprints(lines):
+        print("  " + fp)
+    if not yes:
+        print("Compare with the probe's own (on the probe: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub), then:")
+        print(f"  sudo exm-collector probe trust {p['name']} --yes")
+        return 1
+    kh = p["known_hosts"]
+    os.makedirs(os.path.dirname(kh), mode=0o700, exist_ok=True)
+    name = p["host"] if p["port"] == 22 else f"[{p['host']}]:{p['port']}"
+    if os.path.exists(kh):
+        subprocess.run(["ssh-keygen", "-R", name, "-f", kh], capture_output=True)
+        try:
+            os.unlink(kh + ".old")
+        except FileNotFoundError:
+            pass
+    if os.path.islink(kh):
+        sys.exit(f"exm-collector: refusing to write {kh}: it is a symlink")
+    with open(kh, "a") as fh:
+        fh.write("\n".join(lines) + "\n")
+    _share(kh, 0o644)
+    print(f"pinned in {kh}")
+    return 0
+
+
+def cmd_probe_add(args, cfg):
+    need_root()
+    from exm import remote
+    if not K.NAME.fullmatch(args.name):
+        sys.exit("exm-collector: a probe name is lower-case letters, digits and dashes (use the probe's probe_id)")
+    fields = {"name": args.name, "kind": args.kind, "label": args.label or args.name}
+    if args.local:
+        fields.update(local=True, results_dir=args.results_dir or "/var/lib/exm/results")
+    else:
+        if not args.host:
+            sys.exit("exm-collector: --host (the probe's management address) or --local")
+        fields.update(host=args.host, port=args.port)
+        fields["user"] = args.user or ("exm-stream" if args.kind == "linux" else "")
+        if not fields["user"]:
+            sys.exit("exm-collector: a mac probe needs --user (the Mac login that runs the agent)")
+    if args.kind == "mac":
+        fields["attach_to"] = args.attach_to or ""
+        if args.ssid:
+            fields["ssid"] = args.ssid
+    path = os.path.join(cfg["_probes_dir"], f"{args.name}.toml")
+    os.makedirs(cfg["_probes_dir"], exist_ok=True)
+    old = open(path).read() if os.path.exists(path) else None
+    with open(path, "w") as fh:
+        fh.write(f"# {args.name}: written by `exm-collector probe add` {datetime.date.today()}\n")
+        fh.write("".join(f"{k} = {_toml(v)}\n" for k, v in fields.items()))
+    os.chmod(path, 0o644)
+    try:
+        cfg = K.load(cfg["_path"], cfg["_probes_dir"])
+    except K.ConfigError as exc:
+        if old is None:
+            os.unlink(path)
+        else:
+            open(path, "w").write(old)
+        sys.exit(f"exm-collector: {exc}")
+    p = K.get(cfg, args.name)
+    print(f"{'updated' if old else 'added'} {path}")
+    if p["local"]:
+        print(f"{args.name} is local: its results are read from {p['results_dir']}. Next: sudo exm-collector apply")
+        return 0
+    for f in (p["key"], p["key"] + ".pub"):
+        if os.path.islink(f):
+            sys.exit(f"exm-collector: refusing to use {f}: it is a symlink")
+    pub = remote.ensure_key(p["key"], p["name"])
+    _share(p["key"], 0o640)
+    _share(p["key"] + ".pub", 0o644)
+    _trust(p, args.trust)
+    print()
+    if p["kind"] == "linux":
+        print("On the probe, as root, run:")
+        print(f"  sudo exm authorize-collector '{pub}'")
+    else:
+        print("Install the beta Wi-Fi agent from a machine that can SSH to the Mac (mac/install.sh in the release):")
+        print(f"  ./install.sh {p['user']}@{p['host']} {p['name']} {p['key']}.pub")
+    print("Then here: sudo exm-collector apply")
+    return 0
+
+
+def cmd_probe_trust(args, cfg):
+    need_root()
+    p = K.get(cfg, args.name)
+    if p["local"]:
+        sys.exit(f"exm-collector: {args.name} is local; there is no host key to pin")
+    return _trust(p, args.yes)
+
+
+def _unit_state(name: str) -> str:
+    try:
+        r = subprocess.run(["systemctl", "is-active", f"exm-follow@{name}.service"], capture_output=True, text=True)
+    except FileNotFoundError:
+        return "no-systemd"
+    return r.stdout.strip() or "unknown"
+
+
+def _newest(d: str) -> str:
+    day = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    try:
+        m = max(os.path.getmtime(os.path.join(d, day, f)) for f in os.listdir(os.path.join(d, day)))
+        return f"{int(datetime.datetime.now().timestamp() - m)} s ago"
+    except (FileNotFoundError, ValueError):
+        return "none today"
+
+
+def cmd_probe_list(args, cfg):
+    print(f"{'probe':22} {'kind':6} {'source':28} {'board':16} {'follower':10} newest result")
+    for p in cfg["probes"]:
+        src = "local " + p["results_dir"] if p["local"] else f"{p['user']}@{p['host']}" + (f":{p['port']}" if p["port"] != 22 else "")
+        board = p["name"] if p["kind"] == "linux" else "→ " + p["attach_to"]
+        state = "-" if p["local"] else _unit_state(p["name"])
+        print(f"{p['name']:22} {p['kind']:6} {src[:28]:28} {board[:16]:16} {state:10} {_newest(p['results_dir'])}")
+    if not cfg["probes"]:
+        print("(none: sudo exm-collector probe add NAME --host ADDRESS)")
+    return 0
+
+
+def cmd_probe_remove(args, cfg):
+    need_root()
+    p = K.get(cfg, args.name)
+    if any(q.get("attach_to") == args.name for q in cfg["probes"]):
+        sys.exit(f"exm-collector: laptops are attached to {args.name}; remove them first")
+    subprocess.run(["systemctl", "disable", "--now", f"exm-follow@{args.name}.service"], capture_output=True)
+    os.unlink(os.path.join(cfg["_probes_dir"], f"{args.name}.toml"))
+    if not p["local"]:
+        for f in (p["key"], p["key"] + ".pub"):
+            if os.path.exists(f):
+                os.unlink(f)
+        if args.purge and os.path.isdir(p["results_dir"]):
+            shutil.rmtree(p["results_dir"])
+    print(f"removed {args.name}" + (" and its results" if args.purge else "; its streamed results are kept") + ". Next: sudo exm-collector apply")
+    return 0
+
+
+def cmd_apply(args, cfg):
+    need_root()
+    # The followers create their own results directories (as the service user); root only makes the top ones.
+    for sub in ("probes", "state", "incidents"):
+        _service_dir(os.path.join(cfg["data_dir"], sub))
+    subprocess.run(["systemctl", "daemon-reload"], check=False)
+    wanted = {f"exm-follow@{p['name']}.service" for p in cfg["probes"] if not p["local"]}
+    listed = subprocess.run(["systemctl", "list-units", "--all", "--plain", "--no-legend", "exm-follow@*"],
+                            capture_output=True, text=True).stdout.split()
+    enabled = subprocess.run(["systemctl", "list-unit-files", "--plain", "--no-legend", "exm-follow@*"],
+                             capture_output=True, text=True).stdout.split()
+    for unit in sorted({u for u in listed + enabled if u.startswith("exm-follow@") and u.endswith(".service")
+                        and u != "exm-follow@.service"} - wanted):
+        subprocess.run(["systemctl", "disable", "--now", unit], check=False)
+        print(f"stopped {unit}")
+    for unit in sorted(wanted):
+        subprocess.run(["systemctl", "enable", unit], check=False, capture_output=True)
+        subprocess.run(["systemctl", "restart", unit], check=False)      # a changed ssid or host takes effect now
+    subprocess.run(["systemctl", "enable", "exm-web.service"], check=False, capture_output=True)
+    subprocess.run(["systemctl", "restart", "exm-web.service"], check=False)
+    hook = cfg["alerts"].get("url_file", "/etc/exm/alert-webhook")
+    if not os.path.exists(hook):                  # systemd needs the credential file; empty = log only
+        fd = os.open(hook, os.O_WRONLY | os.O_CREAT, 0o600)
+        os.close(fd)
+    if cfg["alerts"].get("enabled", False):
+        subprocess.run(["systemctl", "enable", "exm-alert.service"], check=False, capture_output=True)
+        subprocess.run(["systemctl", "restart", "exm-alert.service"], check=False)
+        if not os.path.getsize(hook):
+            print(f"incidents are logged (/api/incidents); to also send them, put a webhook URL in {hook}, then apply")
+    else:
+        subprocess.run(["systemctl", "disable", "--now", "exm-alert.service"], check=False, capture_output=True)
+    subprocess.run(["systemctl", "enable", "--now", "exm-collector-prune.timer"], check=False, capture_output=True)
+    print(f"applied {len(cfg['probes'])} probe(s), {len(wanted)} follower(s); dashboard on port {cfg['web']['port']}")
+    return 0
+
+
+def cmd_prune(args, cfg):
+    keep = int(cfg.get("retention_days", 14))
+    cutoff = (datetime.date.today() - datetime.timedelta(days=keep)).isoformat()
+    removed = 0
+    for p in cfg["probes"]:
+        if p["local"] or not os.path.isdir(p["results_dir"]):
+            continue                                      # a local probe prunes its own results
+        for d in sorted(os.listdir(p["results_dir"])):
+            if len(d) == 10 and d < cutoff:
+                shutil.rmtree(os.path.join(p["results_dir"], d))
+                removed += 1
+    print(f"prune: removed {removed} probe-day(s) older than {cutoff}")
+    return 0
+
+
+def cmd_status(args, cfg):
+    url = f"http://127.0.0.1:{cfg['web']['port']}/api/boards"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            j = json.load(r)
+    except OSError as exc:
+        sys.exit(f"exm-collector: the dashboard is not answering on {url} ({exc}); systemctl status exm-web")
+    lanes = ["Network", "DHCP", "DNS", "Internet", "Wi-Fi"]
+    for b in j["boards"]:
+        age = "no results" if b["newest_s"] is None else f"newest {b['newest_s']} s ago"
+        lines = "  ".join(f"{n}:{s}" for n, s in zip(lanes, b["lines"]))
+        print(f"{b['label']:28} {lines}   {age}" + (f"   where: {b['where']['seg']}" if b.get("where") else ""))
+    return 0
+
+
+def cmd_web(args, cfg):
+    from exm import web
+    return web.serve(cfg, args.bind or cfg["web"]["bind"], args.port or int(cfg["web"]["port"]))
+
+
+def cmd_alert_follow(args, cfg):
+    from exm import alert
+    return alert.follow(cfg)
+
+
+def cmd_alert_test(args, cfg):
+    from exm import alert
+    if not args.dry_run:
+        need_root()                       # the webhook file is root-only
+    return alert.test_message(cfg, args.dry_run)
+
+
+def cmd_follow(args, cfg):
+    from exm import remote
+    return remote.follow(cfg, args.name)
+
+
+def cmd_version(args, cfg):
+    print(f"exm-collector {K.VERSION}")
+    return 0
+
+
+def main():
+    p = argparse.ArgumentParser(prog="exm-collector", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--config", default=None)
+    p.add_argument("--probes-dir", default=None)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    pr = sub.add_parser("probe", help="add, trust, list or remove probes").add_subparsers(dest="pcmd", required=True)
+    s = pr.add_parser("add")
+    s.add_argument("name")
+    s.add_argument("--host")
+    s.add_argument("--port", type=int, default=22)
+    s.add_argument("--user")
+    s.add_argument("--label")
+    s.add_argument("--kind", choices=["linux", "mac"], default="linux")
+    s.add_argument("--attach-to")
+    s.add_argument("--ssid")
+    s.add_argument("--local", action="store_true")
+    s.add_argument("--results-dir")
+    s.add_argument("--trust", action="store_true", help="pin the host key now, without asking")
+    s = pr.add_parser("trust")
+    s.add_argument("name")
+    s.add_argument("--yes", action="store_true")
+    pr.add_parser("list")
+    s = pr.add_parser("remove")
+    s.add_argument("name")
+    s.add_argument("--purge", action="store_true")
+    sub.add_parser("apply")
+    sub.add_parser("status")
+    sub.add_parser("prune")
+    s = sub.add_parser("web")
+    s.add_argument("--port", type=int)
+    s.add_argument("--bind")
+    sub.add_parser("alert-follow")
+    s = sub.add_parser("alert-test")
+    s.add_argument("--dry-run", action="store_true")
+    s = sub.add_parser("follow")
+    s.add_argument("name")
+    sub.add_parser("version")
+    args = p.parse_args()
+    if args.cmd == "version":
+        return cmd_version(args, None)
+    try:
+        cfg = K.load(args.config, args.probes_dir)
+    except (K.ConfigError, FileNotFoundError) as exc:
+        sys.exit(f"exm-collector: {exc}")
+    if args.cmd == "probe":
+        handler = {"add": cmd_probe_add, "trust": cmd_probe_trust, "list": cmd_probe_list, "remove": cmd_probe_remove}[args.pcmd]
+    else:
+        handler = {"apply": cmd_apply, "status": cmd_status, "prune": cmd_prune, "web": cmd_web, "alert-follow": cmd_alert_follow,
+                   "alert-test": cmd_alert_test, "follow": cmd_follow}[args.cmd]
+    sys.exit(handler(args, cfg) or 0)
+
+
+if __name__ == "__main__":
+    main()

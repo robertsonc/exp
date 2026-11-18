@@ -1,0 +1,6 @@
+# All-in-one: an exm-probe on this same host. Its results are read in place; nothing is streamed.
+#   sudo exm-collector probe add aio-01 --local
+name = "aio-01"
+kind = "linux"
+local = true
+results_dir = "/var/lib/exm/results"

@@ -1,0 +1,14 @@
+[Unit]
+Description=EXM probe: test scheduler (supercronic, /etc/exm/crontab)
+Documentation=file:///opt/exm/README.md
+After=exm-netns.service
+Wants=exm-netns.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/supercronic -passthrough-logs /etc/exm/crontab
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
