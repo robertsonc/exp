@@ -255,10 +255,13 @@ def test_upstream_sends_last_event_id_on_reconnect(world, monkeypatch):
     expected = hub._last_id["col-b"]
     port = f.port
     f.stop()
+    # let the hub notice the drop before the fake restarts: restarting clears the fake's stop flag, and
+    # an old stream handler that has not yet noticed it would otherwise stay connected (a test race)
+    assert world.wait_for(lambda: hub.upstream_up["col-b"] is False, timeout=30)
     f.httpd = None
     f._want_port = port
     f.start()
-    assert world.wait_for(lambda: seen and hub.upstream_up["col-b"], timeout=20)
+    assert world.wait_for(lambda: seen and hub.upstream_up["col-b"], timeout=30)
     assert seen[0] == expected
 
 

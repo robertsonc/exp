@@ -12,7 +12,7 @@ the data plane.
 |---|---|---|
 | 1 | foundation, Access auth, agent API, secrets, compiler, audit | **done** (this tree) |
 | 2 | releases import/upload (Ed25519 verify), admin API routes, fleet roll-ups, issues, cron | **done** (this tree) |
-| 3 | fleet API, demo seed, drills/integrations, deploy rehearsal | pending |
+| 3 | one-command deploy, release publishing, backup, demo seed, perf test, docs | **done** (this tree) |
 
 Every admin endpoint of `shared/openapi/admin.yaml` is implemented except **drills** (`/drills*` answers
 `501 not_implemented` until step 3). Roles follow `x-exp-min-role` in the OpenAPI file; every mutation writes
@@ -25,7 +25,7 @@ manager/
   wrangler.toml          bindings: DB (D1), ARTIFACTS (R2), RL_ENROL/RL_AGENT/RL_ADMIN, ASSETS, crons, vars
   deploy.sh              one-command deploy (idempotent)
   migrations/0001_init.sql
-  scripts/               prepare.mjs (bundles install.sh), dev.mjs, build-check.mjs, seed-demo.mjs (step 3)
+  scripts/               prepare.mjs (bundles install.sh), dev.mjs, build-check.mjs, seed-demo.ts + lib/seed-fleet.ts, publish-release.sh, backup.sh, test-deploy-dryrun.sh
   worker/src/
     index.ts             hono app, error envelope, /healthz, /install.sh, scheduled()
     auth/access.ts       Cloudflare Access JWT verification (RS256, JWKS cache), roles
@@ -55,9 +55,95 @@ npm test          # vitest: workers project (D1/R2) + node project (compiler gol
 npm run build     # tsc --noEmit + wrangler bundle dry-run (size, no Node built-ins)
 npm run dev       # local wrangler dev (creates .dev.vars with a random EXP_MASTER_KEY)
 ./deploy.sh --check
+npm run seed:demo                 # demo fleet in the LOCAL D1 (see Local development)
+npm run test:perf                 # 500 hosts x 30 days, fleet API p95 < 300 ms (slow, separate)
+npm run test:deploy               # shell dry-run tests of deploy.sh / publish-release.sh / backup.sh (no network)
 ```
 
 `UPDATE_GOLDEN=1 npx vitest run --project node` rewrites `worker/test/node/golden/*.json`; review the diff.
+
+## Deploying (one command)
+
+Prerequisites: node >= 20, `npx wrangler` (installed by `npm ci`), `curl`, `jq`, `openssl`, a Cloudflare account and
+(for a custom domain) a zone in that account.
+
+Create an API token (My Profile -> API Tokens -> Custom token) with exactly:
+
+* Account - Workers Scripts: Edit
+* Account - D1: Edit
+* Account - Workers R2 Storage: Edit
+* Account - Access: Apps and Policies: Edit
+* Account - Account Settings: Read
+* Zone - Workers Routes: Edit
+* Zone - DNS: Edit
+* Zone - Zone: Read
+
+```
+cd manager && npm ci
+export CLOUDFLARE_API_TOKEN=...           # environment only; deploy.sh refuses it as a flag and never prints it
+./deploy.sh --account-id <id> --domain exp-control.example.com --owner-email you@example.com \
+            --org-name "Example Org" [--release-pubkey ../packaging/keys/release-pub.pem] [--dry-run]
+```
+
+`--dry-run` prints every API call and wrangler command without executing anything. Without `--domain` the Worker is
+served from `*.workers.dev`. Re-running upgrades in place (existing D1, R2, Access apps and the master key are reused).
+Steps: D1 + R2 create-or-reuse, a generated config in `manager/.deploy/wrangler.generated.toml` (gitignored; the
+committed `wrangler.toml` is never modified), migrations, `EXP_MASTER_KEY` (generated only if absent, stored via
+stdin), UI build, `wrangler deploy` (Custom Domain route only; other Workers and routes are never touched),
+Cloudflare Access (self-hosted app with an allow policy for the owner, 24 h sessions, bypass apps for
+`/api/agent`, `/install.sh`, `/healthz`), Worker vars (`ACCESS_AUD`, `ACCESS_TEAM_DOMAIN`, `EXP_OWNER_EMAIL`,
+`ORG_NAME`, `RELEASE_PUBKEY_PEM`), then smoke tests: `/healthz`, a direct workers.dev request to the admin API with
+no JWT and with a forged JWT (both must be 401 from the Worker), `/install.sh` is a shell script, and a bogus enrol
+token gets 401. The workers.dev route is disabled again afterwards unless `--keep-workers-dev`. Finally it prints
+the URL and "sign in as <owner email>".
+
+### Back up EXP_MASTER_KEY
+
+On first deploy the key (32 random bytes, base64) is printed once, to the terminal only. **Copy it to an offline
+password manager or printed safe immediately.** It is never written to a file, never regenerated if the secret
+exists, and without it every stored secret (dashboard SSO secrets, webhook URLs, agent credentials in desired
+state) is unrecoverable. `scripts/backup.sh --out-dir /secure/path` exports the D1 database (ciphertext only) to a
+location outside the repository; the key is not in it, so keep the two separately.
+
+## Publishing a release
+
+```
+packaging/build.sh ...                                 # produces dist/exp-<v>-manifest.json, .sig, artifacts
+export CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=...
+manager/scripts/publish-release.sh --dist dist [--set-site hall-a] [--dry-run]
+```
+
+The script verifies the manifest signature with `openssl pkeyutl -verify -pubin -rawin` against the same public key
+the manager was deployed with, then every artifact sha256 and size, and only then uploads to R2 and upserts the
+`releases`/`artifacts` rows (all SQL values are validated against strict patterns first). Re-running is idempotent.
+Production rollouts use the canary flow in the UI; `--set-site` is a bootstrap convenience.
+
+## Local development with a seeded fleet
+
+```
+cd manager && npm ci
+npm run seed:demo                  # 3 sites, 48 hosts, probes, a runner, 30 days of roll-ups, open issues (deterministic)
+npm run seed:demo -- --scale 500   # perf-sized fleet
+npm run seed:demo -- --touch --watch   # keep hosts "fresh" (last_seen = now) every 30 s
+npm run dev                        # wrangler dev on the same local D1 (.wrangler/state)
+```
+
+Admin auth needs a real Access JWT; for UI work without Access use `test/fakes/mock_admin`. The seed never touches a
+remote database. WP-5 UI development: run `npm run seed:demo`, then `npm run dev`, and point the UI dev server at it.
+
+## Troubleshooting deploys
+
+* **Access 401 on the browser URL / login loop**: the Access app domain must equal the Worker custom domain exactly;
+  re-run `deploy.sh` (it updates the app). Check that you sign in as the `--owner-email`.
+* **Access 403 "Forbidden"**: the allow policy does not include your identity; add the email in Zero Trust ->
+  Access -> Applications, or re-run with the right `--owner-email`.
+* **401 from the Worker for every admin call even when signed in**: `ACCESS_AUD` / `ACCESS_TEAM_DOMAIN` vars are empty
+  or stale; re-run `deploy.sh` and confirm `wrangler.generated.toml` has them.
+* **Agents get 302/403 on `/api/agent/*`**: the bypass applications are missing or shadowed by a broader app.
+* **API 403 `Authentication error` during deploy**: the token lacks one of the permissions listed above; the error
+  names the failing call.
+* **`wrangler secret put` failed**: nothing was printed; fix the cause and re-run (the key is generated again only
+  while no secret exists).
 
 ## Configuration
 

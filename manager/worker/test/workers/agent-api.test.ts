@@ -98,7 +98,7 @@ describe("agent secret rotation grace", () => {
     const h = await enrolHost("hall-b");
     const r = await call("/api/agent/v1/rotate", { method: "POST", headers: bearer(h.secret), body: "{}" });
     expect(r.status).toBe(409);
-    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("no_rotate_action");
+    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("rotation_not_requested");
     expect((await call("/api/agent/v1/rotate", { method: "POST", headers: bearer(h.secret), body: '{"x":1}' })).status).toBe(400);
   });
 
@@ -269,7 +269,9 @@ describe("POST status", () => {
 describe("decommission", () => {
   it("only valid while the desired state carries decommission: true; then credentials are revoked", async () => {
     const h = await enrolHost("hall-b");
-    expect((await call("/api/agent/v1/decommissioned", { method: "POST", headers: bearer(h.secret), body: "{}" })).status).toBe(409);
+    const refused = await call("/api/agent/v1/decommissioned", { method: "POST", headers: bearer(h.secret), body: "{}" });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe("decommission_not_requested");
     await decommissionHost(env, ADMIN_ACTOR, h.host_id);
     const doc = (await (await getDesired(h.secret)).json()) as { decommission: boolean; components: unknown[] };
     expect(doc.decommission).toBe(true);

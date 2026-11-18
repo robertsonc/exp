@@ -49,6 +49,8 @@ MAX_REJECT_THREADS = 32
 AUTH_NONE = "none"
 AUTH_INGEST = auth.SCOPE_INGEST
 AUTH_DASHBOARD = auth.SCOPE_DASHBOARD
+# The ONE /api route an executor (probe or runner) calls with its ingest token: the drill kill switch.
+EXECUTOR_ROUTE = "/api/v1/drills/control"
 
 _PARAM = re.compile(r"\{([a-z_]+)\}")
 _SEGMENT = r"[A-Za-z0-9_.-]{1,128}"
@@ -86,7 +88,8 @@ class Router:
             raise ValueError(f"bad auth scope {auth!r}")
         if template.startswith("/ingest/") and auth != AUTH_INGEST:
             raise ValueError("/ingest/* routes must use ingest-token auth")
-        if template.startswith("/api/") and auth != AUTH_DASHBOARD:
+        if template.startswith("/api/") and auth != AUTH_DASHBOARD and not (
+                template == EXECUTOR_ROUTE and auth == AUTH_INGEST):
             raise ValueError("/api/* routes must use dashboard-token auth")
         rx = "^" + _PARAM.sub(lambda m: f"(?P<{m.group(1)}>{_SEGMENT})", re.escape(template).replace("\\{", "{")
                               .replace("\\}", "}")) + "$"
@@ -136,6 +139,13 @@ class Handler(BaseHTTPRequestHandler):
             self.connection.shutdown(socket.SHUT_RDWR)
         except OSError:
             pass
+
+    @property
+    def user(self) -> str:
+        """The dashboard user from ``X-Exp-User`` (audit only, never used for authorization): printable
+        ASCII-ish text <= 128 chars with control characters removed; "-" when absent."""
+        raw = self.headers.get("X-Exp-User") or ""
+        return "".join(ch for ch in raw if ch >= " " and ch != "\x7f")[:128].strip() or "-"
 
     # --- request loop --------------------------------------------------------------------------
     def handle_one_request(self) -> None:
@@ -328,6 +338,25 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, status: int, obj: Any, headers: dict[str, str] | None = None) -> None:
         self._send(status, json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8"),
                    "application/json", headers)
+
+    # --- streaming (SSE) -----------------------------------------------------------------------
+    def begin_stream(self, ctype: str = "text/event-stream") -> None:
+        """Start an open-ended response (no Content-Length; the connection closes at the end)."""
+        self._responded = True
+        self.close_connection = True
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.flush()
+
+    def write_stream(self, data: bytes) -> None:
+        """One chunk of an open response; raises OSError when the client is gone or too slow."""
+        self.wfile.write(data)
+        self.wfile.flush()
 
     def send_text(self, status: int, text: str) -> None:
         self._send(status, text.encode("utf-8"), "text/plain; charset=utf-8")

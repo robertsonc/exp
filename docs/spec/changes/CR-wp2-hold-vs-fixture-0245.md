@@ -16,3 +16,12 @@ The golden test asserts the nine expected pages from 02:55 onward; the CLI repla
 above hold_down_s.
 
 **Compatibility:** documentation only; no schema or API change.
+
+## Addendum (evidence)
+
+`reference/exm/test/unit.py:231` replays EXM's alert engine from `2026-10-27T02:55:00Z` to `04:28:00Z`, so the nine
+pages in the fixture README were never produced for 02:45; the "stays under the hold-down" wording is the README's
+inference. The collector reproduces exactly the nine pages over that window
+(`exp-collector replay ... --from 2026-10-27T02:55:00Z --to 2026-10-27T04:28:00Z`, tested in
+`collector/tests/golden/test_golden_cli_replay.py`). Requested WP-0 action: reword README lines 49-52 to
+"over 02:55-04:28". No collector code change is needed or made.

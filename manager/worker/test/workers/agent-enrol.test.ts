@@ -108,6 +108,19 @@ describe("POST /api/agent/v1/enrol", () => {
     expect((await enrol(h.enrol_token)).status).toBe(201); // token still usable
   });
 
+  it("fails closed (503) without burning the token when RELEASE_PUBKEY_PEM is unset", async () => {
+    const { app } = await import("../../src/index");
+    const h = await createHost(env, ADMIN_ACTOR, { name: "srv-02", site: "hall-b" });
+    for (const bad of [undefined, "", "  "]) {
+      const r = await app.fetch(
+        new Request("https://manager.example.test/api/agent/v1/enrol", { ...json({ token: h.enrol_token, facts: FACTS() }), headers: { "content-type": "application/json", "CF-Connecting-IP": freshIp() } }),
+        { ...env, RELEASE_PUBKEY_PEM: bad as unknown as string },
+      );
+      expect(r.status).toBe(503);
+    }
+    expect((await enrol(h.enrol_token)).status).toBe(201);
+  });
+
   it("a decommissioned host cannot be re-enrolled", async () => {
     const h = await createHost(env, ADMIN_ACTOR, { name: "srv-02", site: "hall-b" });
     await env.DB.prepare("UPDATE hosts SET state = 'removed' WHERE host_id = ?1").bind(h.host_id).run();

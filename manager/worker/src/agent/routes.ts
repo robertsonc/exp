@@ -48,6 +48,8 @@ agentRoutes.post("/enrol", async (c) => {
   const parsed = EnrolSchema.safeParse(raw);
   if (!parsed.success) throw invalidRequest("schema validation failed", zodDetails(parsed.error));
   const { token, facts } = parsed.data;
+  const pem = (env.RELEASE_PUBKEY_PEM ?? "").trim();
+  if (!pem) throw unavailable("RELEASE_PUBKEY_PEM is not configured; refusing to enrol agents without a release key");
   await requireKey(env); // fail closed before burning the token if the server cannot store secrets
 
   const hash = await tokenHash(token);
@@ -99,7 +101,7 @@ agentRoutes.post("/enrol", async (c) => {
       agent_id: hostId,
       agent_secret: secret,
       poll_interval_s: s?.agent_poll_interval_s ?? 30,
-      release_pubkey_pem: env.RELEASE_PUBKEY_PEM ?? "",
+      release_pubkey_pem: pem.endsWith("\n") ? pem : `${pem}\n`,
       manager_time: isoNow(),
     },
     201,
@@ -322,7 +324,7 @@ authed.post("/rotate", async (c) => {
   } catch {
     hasAction = false;
   }
-  if (!hasAction) throw new ApiError(409, "no_rotate_action", "desired state carries no rotate_agent_secret action");
+  if (!hasAction) throw new ApiError(409, "rotation_not_requested", "desired state carries no rotate_agent_secret action");
 
   const cur = await env.DB.prepare("SELECT secret_hash, revoked_at FROM agent_creds WHERE host_id = ?1").bind(agent.hostId).first<{ secret_hash: string; revoked_at: string | null }>();
   if (!cur || cur.revoked_at) throw invalidToken();
@@ -362,7 +364,7 @@ authed.post("/decommissioned", async (c) => {
   await readEmptyObject(c.req.raw);
   const host = await env.DB.prepare("SELECT state FROM hosts WHERE host_id = ?1").bind(agent.hostId).first<{ state: string }>();
   if (!host || host.state !== "decommissioning") {
-    throw new ApiError(409, "not_decommissioning", "desired state does not carry decommission: true");
+    throw new ApiError(409, "decommission_not_requested", "desired state does not carry decommission: true");
   }
   const now = isoNow();
   await env.DB.batch([

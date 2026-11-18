@@ -120,7 +120,7 @@ assert_lacks "custom_domain" "$(cat "$GEN")" "no custom-domain route without --d
 
 echo "deploy.sh refusals"
 assert_fails "refuses a missing API token" "CLOUDFLARE_API_TOKEN is not set" env -u CLOUDFLARE_API_TOKEN "$MANAGER/deploy.sh" "${base_args[@]}"
-assert_fails "refuses the token as a flag" "environment only\|CLOUDFLARE_API_TOKEN only" "${DEPLOY[@]}" --api-token abc "${base_args[@]}"
+assert_fails "refuses the token as a flag" "CLOUDFLARE_API_TOKEN only" "${DEPLOY[@]}" --api-token abc "${base_args[@]}"
 assert_fails "refuses a bad account id" "32 hex" "${DEPLOY[@]}" --dry-run --account-id nope --owner-email o@example.com --release-pubkey "$T/pub.pem"
 assert_fails "refuses a bad domain" "must be a host name" "${DEPLOY[@]}" --dry-run --account-id "$ACCT" --domain "https://x.example.com/a" --owner-email o@example.com --release-pubkey "$T/pub.pem"
 assert_fails "refuses a bad owner email" "email" "${DEPLOY[@]}" --dry-run --account-id "$ACCT" --owner-email nope --release-pubkey "$T/pub.pem"
@@ -153,7 +153,7 @@ ids1="$(printf '%s' "$out" | grep -o 'art_[0-9A-F]\{26\}' | sort -u)"; ids2="$(p
 [ -n "$ids1" ] && [ "$ids1" = "$ids2" ] && ok "artifact ids are deterministic (re-runs replace, never duplicate)" || bad "artifact ids are deterministic"
 
 echo "publish-release.sh refusals"
-assert_fails "refuses a wrong public key" "does NOT verify" "${PUB[@]}" --dist "$T/dist" --pubkey "$T/other-pub.pem" --dry-run
+assert_fails "refuses a wrong public key" "differs from the RELEASE_PUBKEY_PEM" "${PUB[@]}" --dist "$T/dist" --pubkey "$T/other-pub.pem" --dry-run
 cp -r "$T/dist" "$T/tampered"; head -c 3000 /dev/urandom > "$T/tampered/exp-agent-0.1.0-noarch.tar.gz"
 assert_fails "refuses a tampered artifact (sha256 differs from the signed manifest)" "sha256 differs" "${PUB[@]}" --dist "$T/tampered" --pubkey "$T/pub.pem" --dry-run
 cp -r "$T/dist" "$T/short"; truncate -s 100 "$T/short/exp-probe-0.1.0-noarch.tar.gz"
@@ -191,7 +191,7 @@ if [ -x "$MANAGER/node_modules/.bin/wrangler" ]; then
   done
   q="$(cd "$MANAGER" && npx --no-install wrangler d1 execute DB --local --persist-to "$P" --json --command "SELECT (SELECT count(*) FROM releases) AS r, (SELECT count(*) FROM artifacts) AS a, (SELECT release_version FROM sites WHERE site='hall-b') AS s, (SELECT count(*) FROM audit WHERE action='release.publish') AS e, (SELECT length(signature) FROM releases) AS l" </dev/null 2>/dev/null)"
   row="$(printf '%s' "$q" | jq -c '.[0].results[0]' 2>/dev/null)"
-  [ "$row" = '{"r":1,"a":2,"s":"0.1.0","e":1,"l":88}' ] && ok "end state: 1 release, 2 artifacts, site at 0.1.0, 1 audit event, after TWO runs (idempotent)" || bad "end state in local D1" "$row"
+  [ "$row" = '{"r":1,"a":2,"s":"0.1.0","e":2,"l":88}' ] && ok "end state: 1 release, 2 artifacts, site at 0.1.0, one audit event per run (2), after TWO runs (idempotent rows)" || bad "end state in local D1" "$row"
   aid="$(printf '%s' "$out" | head -c0; cd "$MANAGER" && npx --no-install wrangler d1 execute DB --local --persist-to "$P" --json --command "SELECT artifact_id FROM artifacts WHERE name='exp-agent-0.1.0-noarch.tar.gz'" </dev/null 2>/dev/null | jq -r '.[0].results[0].artifact_id')"
   if [ -n "$aid" ] && (cd "$MANAGER" && npx --no-install wrangler r2 object get "exp-artifacts/artifacts/$aid" --file "$T/got.bin" --local --persist-to "$P" </dev/null) >/dev/null 2>&1; then
     cmp -s "$T/got.bin" "$T/dist/exp-agent-0.1.0-noarch.tar.gz" && ok "end state: the R2 object holds exactly the artifact bytes" || bad "R2 object differs from the artifact"

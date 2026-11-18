@@ -32,6 +32,8 @@ exp-collector replay FILE [--at TS ...] [--alerts] [--from TS --to TS] [--tz ZON
                           [--board-url URL] [--format text|slack|teams|json]
                                                     run the rules (and with --alerts the incident engine, 2 s
                                                     ticks) over an NDJSON(.gz) recording; prints States / messages
+                                                    (EXM outage: the README's nine pages are --from 02:55:00; a
+                                                    110 s DNS failure at 02:45 outlasts hold_down_s and pages)
 exp-collector vm-args | vm-exec | iperf3-exec | reflector
 ```
 

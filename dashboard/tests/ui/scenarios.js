@@ -203,9 +203,9 @@ S.overview = async () => {
   assert.ok((await page.locator(".row[data-probe='probe-a1'] .chip").count()) >= 4);
   await need("stop_collector", { collector: "col-b" });
   await page.waitForSelector(".banner-partial:not([hidden])", { timeout: 20000 });
-  assert.ok((await page.locator(".banner-partial").textContent()).includes("Hall B collector unreachable"));
+  await page.waitForFunction(() => document.querySelector(".banner-partial").textContent.includes("Hall B collector unreachable"), null, { timeout: 20000 });
   await page.waitForFunction(() => document.querySelectorAll(".row[data-probe='probe-b1']").length === 0, null, { timeout: 15000 });
-  assert.ok((await page.locator(".banner-partial").textContent()).includes("Hall B collector unreachable"));
+  await page.waitForFunction(() => document.querySelector(".banner-partial").textContent.includes("Hall B collector unreachable"), null, { timeout: 20000 });
   await page.click(".row[data-probe='probe-a1']");
   await page.waitForSelector(".board .line");
   assert.strictEqual(new URL(page.url()).pathname, "/probe/probe-a1");
