@@ -42,6 +42,7 @@ from .store import Store
 log = logging.getLogger(__name__)
 
 TICK_S = 2.0
+MIN_GAP_S = 0.5
 MAX_LOAD_RECORDS = 400_000
 EXTRA_TESTS = ("drill", "ext_mist", "ext_ec")      # timeline markers
 _WORDS = {"fail": {"network": "unstable"}, "warn": {"network": "shaky"}}
@@ -237,7 +238,8 @@ class _DeferredSink:
 class RulesEngine:
     def __init__(self, config: Any, store: Store, *, sender: WebhookSender | None = None,
                  clock: Callable[[], float] = time.time, tick_s: float = TICK_S,
-                 history_ms: int = HISTORY_MS) -> None:
+                 history_ms: int = HISTORY_MS, min_gap_s: float = MIN_GAP_S,
+                 wake_on_ingest: bool = True) -> None:
         self.config, self.store, self.clock, self.tick_s, self.history_ms = config, store, clock, tick_s, history_ms
         alerts = dict(getattr(config, "alerts", {}) or {})
         self.tz = alerts.get("timezone", "UTC")
@@ -260,6 +262,9 @@ class RulesEngine:
         self._eval_samples: collections.deque[float] = collections.deque(maxlen=300)
         self.last_tick: float | None = None
         self._stop = threading.Event()
+        self._wake = threading.Event()
+        self.min_gap_s = min_gap_s
+        self.wake_on_ingest = wake_on_ingest
         self._thread: threading.Thread | None = None
 
     # ------------------------------------------------------------------------------------- lifecycle
@@ -271,6 +276,7 @@ class RulesEngine:
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
@@ -301,7 +307,18 @@ class RulesEngine:
             return None
 
     def _loop(self) -> None:
-        while not self._stop.wait(self.tick_s):
+        """Tick every `tick_s`, or sooner (but at most every `min_gap_s`) when records arrive, so a state
+        change reaches the dashboard within about a second of the batch that caused it."""
+        last = 0.0
+        while not self._stop.is_set():
+            self._wake.wait(self.tick_s)
+            if self._stop.is_set():
+                return
+            gap = self.min_gap_s - (time.monotonic() - last)
+            if gap > 0 and self._wake.is_set():
+                self._stop.wait(gap)
+            self._wake.clear()
+            last = time.monotonic()
             try:
                 self.tick()
             except Exception:  # noqa: BLE001 - judgement must keep running
@@ -324,6 +341,8 @@ class RulesEngine:
                     buf = self._buffers[pid] = BeatStore()
                 for r in recs:
                     buf.add(r)
+        if self.wake_on_ingest:
+            self._wake.set()
 
     # ------------------------------------------------------------------------------------------ tick
     def tick(self, now_ms: int | None = None) -> None:

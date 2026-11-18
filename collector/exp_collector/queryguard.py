@@ -71,9 +71,9 @@ def _tokenize(q: str) -> list[tuple[str, str]]:
             continue
         if c.isdigit() or (c == "." and i + 1 < n and q[i + 1].isdigit()):
             m = _NUMBER.match(q, i)
-            assert m is not None
-            toks.append(("num", m.group(0)))
-            i = m.end()
+            end = m.end() if m else i + 1
+            toks.append(("num", q[i:end]))
+            i = end
             continue
         m2 = _IDENT.match(q, i)
         if m2 is not None:

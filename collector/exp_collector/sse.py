@@ -50,7 +50,7 @@ class Event:
         return f"id: {self.id}\nevent: {self.kind}\ndata: {self.data}\n\n".encode()
 
 
-@dataclass
+@dataclass(eq=False)
 class Client:
     probes: frozenset[str] | None
     site: str | None
@@ -78,6 +78,7 @@ class Hub:
         self._clock = clock
         self.queue_max = queue_max
         self.ring_s = ring_s
+        self.keepalive_s = KEEPALIVE_S
         self.max_clients = max_clients
         self._lock = threading.Lock()
         self._clients: set[Client] = set()

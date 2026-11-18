@@ -41,6 +41,10 @@ class FakeVM:
         self.lines: list[dict[str, Any]] = []
         self.requests = 0
         self.mode = "up"          # up | 503 | 400
+        self.queries: list[str] = []                      # query_range request paths seen
+        self.query_status = 200
+        self.query_body: bytes | None = None              # None: an empty matrix
+        self.query_delay_s = 0.0
         self.lock = threading.Lock()
         outer = self
 
@@ -59,6 +63,15 @@ class FakeVM:
             def do_GET(self) -> None:
                 if self.path == "/health":
                     self._reply(503 if outer.mode == "503" else 200, b"OK")
+                elif self.path.startswith("/api/v1/query_range"):
+                    with outer.lock:
+                        outer.queries.append(self.path)
+                    if outer.query_delay_s:
+                        time.sleep(outer.query_delay_s)
+                    body = outer.query_body
+                    if body is None:
+                        body = b'{"status":"success","data":{"resultType":"matrix","result":[]}}'
+                    self._reply(outer.query_status, body)
                 elif self.path.startswith("/api/v1/series/count"):
                     self._reply(200, json.dumps({"status": "success", "data": [len(outer.lines)]}).encode())
                 elif self.path == "/metrics":
@@ -277,6 +290,7 @@ class Env:
 
     def start(self, **kw: Any) -> CollectorApp:
         kw.setdefault("monitor_interval_s", 0.3)
+        kw.setdefault("rules_wake", False)      # tests drive ticks by hand; e2e tests opt in to the live loop
         creds = CredStore(self.creds, poll_s=kw.pop("poll_s", 0.2))
         app = CollectorApp(self.config(), self.paths(), creds=creds, vm_url=self.vm_url,
                            listen=kw.pop("listen", ("127.0.0.1", 0)), **kw)

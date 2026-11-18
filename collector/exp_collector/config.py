@@ -313,10 +313,11 @@ class CredStore:
         log.info("credentials loaded: %d ingest identities, %d dashboard identities, %d webhooks",
                  len(self._ingest), len(self._dashboard), len(self._webhooks))
 
-    def reload_if_changed(self) -> bool:
-        """Re-read the files when any changed. On error the previous good set stays active."""
+    def reload_if_changed(self, force: bool = False) -> bool:
+        """Re-read the files when any changed (or always with `force`, e.g. on SIGHUP). On error the previous
+        good set stays active."""
         sigs = {n: self._signature(n) for n in CRED_FILES}
-        if sigs == self._sig:
+        if sigs == self._sig and not force:
             return False
         try:
             tables = self._read_all()

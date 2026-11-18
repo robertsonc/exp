@@ -98,8 +98,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda _s, _f: stop.set())
+    reload_creds = threading.Event()
+    signal.signal(signal.SIGHUP, lambda _s, _f: reload_creds.set())     # re-read credentials now
     try:
-        stop.wait()
+        while not stop.wait(0.5):
+            if reload_creds.is_set():
+                reload_creds.clear()
+                log.info("SIGHUP: reloading credentials")
+                app.creds.reload_if_changed(force=True)
     finally:
         log.info("shutting down")
         app.stop()

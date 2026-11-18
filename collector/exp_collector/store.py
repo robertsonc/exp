@@ -341,8 +341,10 @@ class Store:
         return dict(zip(self._INC_COLS, r, strict=True)) if r else None
 
     def list_incidents(self, *, probe: str | None = None, site: str | None = None, from_ms: int | None = None,
-                       to_ms: int | None = None, open_only: bool = False, limit: int = 1000) -> list[dict[str, Any]]:
-        """Incidents overlapping [from_ms, to_ms], newest first. Open = no end yet."""
+                       to_ms: int | None = None, open_only: bool = False, limit: int = 1000,
+                       before: tuple[int, str] | None = None) -> list[dict[str, Any]]:
+        """Incidents overlapping [from_ms, to_ms], newest first. Open = no end yet. `before` is the exclusive
+        (start_ms, id) keyset cursor of the previous page."""
         sql = "SELECT " + ",".join(self._INC_COLS) + " FROM incidents WHERE 1=1"  # noqa: S608 - constant columns
         args: list[Any] = []
         if probe is not None:
@@ -359,6 +361,9 @@ class Store:
             args.append(from_ms)
         if open_only:
             sql += " AND end_ms IS NULL"
+        if before is not None:
+            sql += " AND (start_ms<? OR (start_ms=? AND id<?))"
+            args += [before[0], before[0], before[1]]
         sql += " ORDER BY start_ms DESC, id DESC LIMIT ?"
         args.append(max(1, min(int(limit), 1000)))
         with self.reader() as conn:
