@@ -309,3 +309,25 @@ def test_invalid_upstream_events_are_ignored(world):
     hub._on_upstream_event(c, "beat", "[1,2]", "2")
     hub._on_upstream_event(c, "weird-kind", "{}", "3")
     assert len(hub._ring) == before
+
+
+def test_dashboard_restart_mid_sse_browser_reconnects(world):
+    """A unit restart (credential rotation) drops open streams; the session survives and a reconnect works."""
+    wait_upstream(world)
+    v = world.as_user("vera")
+    s1 = Sse(world, "/api/v1/stream?probes=probe-a1", v)
+    assert s1.wait(lambda: s1.status == 200)
+    world.restart()
+    s1.pump(1.0)
+    assert s1.closed                                   # the server went away; EventSource would retry
+    s1.close()
+    wait_upstream(world)
+    v.port = world.port
+    assert v.whoami().status == 200                    # sessions live in the state dir, not in memory
+    s2 = Sse(world, "/api/v1/stream?probes=probe-a1", v, last_event_id="stale.1")
+    try:
+        assert s2.wait(lambda: s2.status == 200)
+        beat(world, "col-a", "probe-a1", v=7)
+        assert s2.wait(lambda: len(s2.kinds("beat")) == 1)
+    finally:
+        s2.close()

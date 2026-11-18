@@ -104,7 +104,8 @@ def seed(world: Any) -> dict[str, Any]:
     # incidents: one open (a1, dns), one resolved (c1, network)
     for probe, line, kind, start, end, facts in (
             ("probe-a1", "dns", "down", fail_from, None, ["No answers from 1.1.1.1 " + XSS]),
-            ("probe-c1", "network", "back", now - 20 * 60000, now - 18 * 60000, ["Gateway answered again"])):
+            ("probe-c1", "network", "back", now - 20 * 60000, now - 18 * 60000, ["Gateway answered again"]),
+            ("probe-c1", "probe", "down", now - 40 * 60000, now - 30 * 60000, ["Probe went silent"])):
         iso = lambda ms: time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ms // 1000)) + ".000Z"  # noqa: E731
         world.fakes[FAKE_OF[probe]].app.inject_incident({
             "id": "inc_" + ids.new_ulid(), "probe": probe, "site": SITE[probe], "line": line, "kind": kind,

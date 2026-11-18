@@ -68,7 +68,6 @@ class Plan:
     rendered: dict[str, str]  # unit file name -> text
     infos: dict[str, units.UnitInfo]
     instances: list[str]
-    reload_ok: bool
 
 
 def _config_bytes(config: dict[str, Any]) -> bytes:
@@ -224,9 +223,8 @@ class Reconciler:
             cred_map.setdefault(n, b"")
         config = comp["config"]
         instances = units.instance_units(c, config, set(rendered))
-        reload_ok = any(i.has_reload for n, i in infos.items() if not units.is_template(n) and i.has_install)
         return Plan(
-            c, version, config, _config_bytes(config), cred_map, rendered, infos, instances, reload_ok
+            c, version, config, _config_bytes(config), cred_map, rendered, infos, instances
         )
 
     def _primary(self, plan: Plan) -> list[str]:
@@ -365,9 +363,8 @@ class Reconciler:
         creds.sync(fs, c, dict(plan.creds), referenced=set())
         if diff.config or force:
             fs.write(paths.config(c), plan.config_bytes, 0o644)
-        tls_new = (
-            tls.ensure_tls(fs, ctx.runner, c, plan.config, ctx.user_ids) if (diff.tls or force) else False
-        )
+        # state layout (tls/, vm/ ownership) + TLS pair: idempotent, before the first start
+        tls_new = tls.ensure_tls(fs, ctx.runner, c, plan.config, ctx.user_ids)
         old_primary = list(rec.get("units", [])) if rec else []
         old_instances = list(rec.get("instances", [])) if rec else []
         new_primary = self._primary(plan)
@@ -391,15 +388,16 @@ class Reconciler:
             + plan.instances
             + [u for u in new_primary if "netns" not in u]
         )
-        if force or diff.version or diff.config or diff.units or tls_new or (diff.instances and not rec):
+        if force or diff.version or diff.units or diff.creds or tls_new or (diff.instances and not rec):
+            # a changed credential file always restarts: systemd re-reads LoadCredential= only at start
+            # (CR-wp2-cred-rotation-loadcredential), so reload/SIGHUP is never used for credentials
             sc.restart(everything)
-        elif diff.creds:
+        elif diff.config:
+            # config-only change: a unit that declares ExecReload= gets a reload, the rest restart
             reloadable = [u for u in new_primary if plan.infos[u].has_reload and u.endswith(".service")]
-            if plan.reload_ok and reloadable:
-                for u in reloadable:
-                    sc.reload(u)
-            else:
-                sc.restart(everything)
+            for u in reloadable:
+                sc.reload(u)
+            sc.restart([u for u in everything if u not in reloadable])
         elif new_units:
             sc.restart([u for u in everything if u in new_units])
 
@@ -489,12 +487,27 @@ class Reconciler:
 
         ctx = self.ctx
         client, cfg = need(ctx.client, "manager client"), need(ctx.cfg, "agent config")
-        secret = client.rotate()
+        old_secret = cfg.agent_secret
+        secret, grace_s = client.rotate()
         new = AgentConfig(cfg.manager_url, cfg.agent_id, secret, cfg.release_pubkey_pem)
-        save_agent_config(ctx.fs, new)
+        try:
+            save_agent_config(ctx.fs, new)  # atomic; the new secret is only returned once
+        except OSError as exc:
+            raise AgentError(f"could not store the rotated agent secret: {exc.strerror}") from None
         ctx.cfg = new
         client.set_secret(secret)
-        ctx.state.event("info", "agent secret rotated")
+        # The old secret is only valid for `grace_s`: prove the new one works inside that window, and if the
+        # manager does not accept it, put the old one back (still valid) so the host is not locked out.
+        if not client.check_auth():
+            restored = AgentConfig(cfg.manager_url, cfg.agent_id, old_secret, cfg.release_pubkey_pem)
+            save_agent_config(ctx.fs, restored)
+            ctx.cfg = restored
+            client.set_secret(old_secret)
+            raise AgentError(
+                f"the rotated agent secret was not accepted by the manager; kept the previous one "
+                f"(valid for {grace_s}s)"
+            )
+        ctx.state.event("info", f"agent secret rotated (the previous secret stays valid for {grace_s}s)")
 
     def _restart(self, component_id: str, comps: list[dict[str, Any]]) -> None:
         ctx = self.ctx

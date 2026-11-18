@@ -230,6 +230,11 @@ S.incidents = async () => {
   await page.selectOption("#f-line", "network");
   assert.ok((await page.locator(".incident").count()) >= 1);
   assert.strictEqual(await page.locator(".incident[data-incident] h3", { hasText: "DNS" }).count(), 0);
+  // silent-probe incident (line "probe") is labelled "Probe" and filterable
+  await page.selectOption("#f-line", "probe");
+  await page.waitForSelector(".incident[data-incident] h3");
+  assert.ok((await page.locator(".incident[data-incident] h3", { hasText: "Probe" }).count()) >= 1, "line probe renders as Probe");
+  assert.strictEqual(await page.locator(".incident[data-incident] h3", { hasText: "Network" }).count(), 0);
   await page.selectOption("#f-line", "");
   await page.selectOption("#f-open", "true");
   await page.waitForSelector(".incident[data-open='true']");

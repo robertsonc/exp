@@ -11,7 +11,7 @@ tarball (`bin/` + `lib/` + `vendor/`).
 
 ```
 exp-dashboard run          [--config PATH] [--log-level L] [--log-json]
-exp-dashboard health       [--config PATH] [--json]      # exit 0 iff status == "ok"
+exp-dashboard health       [--config PATH] [--json]      # exit 0 for ok and degraded, 1 only for fail
 exp-dashboard version
 exp-dashboard selftest     [--config PATH]
 exp-dashboard hash-password [--iterations N]              # password on stdin -> pbkdf2_sha256$... (dev/tests)

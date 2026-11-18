@@ -45,8 +45,10 @@ export function titleCase(slug) {
     .join(" ");
 }
 
-export const LINE_LABEL = { network: "Network", dhcp: "DHCP", dns: "DNS", internet: "Internet", apps: "Apps", wifi: "Wi-Fi", path: "Path" };
+export const LINE_LABEL = { network: "Network", dhcp: "DHCP", dns: "DNS", internet: "Internet", apps: "Apps", wifi: "Wi-Fi", path: "Path", probe: "Probe" };
 export const LINE_ORDER = ["network", "dhcp", "dns", "internet", "apps", "wifi", "path"];
+// Incident.line additionally allows "probe" (silent-probe incident, CR-wp2-incident-line-probe); it is not a State line.
+export const INCIDENT_LINE_ORDER = [...LINE_ORDER, "probe"];
 export const lineLabel = (k) => LINE_LABEL[k] || String(k);
 export const lineIcon = (k) => (LINE_LABEL[k] ? k : "probe");
 export const SEV_RANK = { fail: 0, warn: 1, unknown: 2, ok: 3 };

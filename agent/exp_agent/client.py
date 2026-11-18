@@ -236,9 +236,15 @@ class ManagerClient:
         return doc
 
     def get_desired(self, etag: str | None) -> tuple[int, dict[str, Any] | None, str | None]:
-        """(200, doc, etag) or (304, None, etag)."""
+        """(200, doc, etag), (304, None, etag) or (404, None, None): nothing compiled for this host yet
+        (CR-wp4-desired-404; not an outage, retry at the next normal poll)."""
         h = {"If-None-Match": etag} if etag else {}
-        resp = self.request("GET", API_PREFIX + "desired", headers=h)
+        try:
+            resp = self.request("GET", API_PREFIX + "desired", headers=h)
+        except ClientError as exc:
+            if exc.status == 404 and exc.code == "not_found":
+                return 404, None, None
+            raise
         if resp.status == 304:
             return 304, None, resp.headers.get("etag", etag)
         doc = resp.json()
@@ -293,12 +299,26 @@ class ManagerClient:
     def post_status(self, doc: dict[str, Any]) -> None:
         self.request("POST", API_PREFIX + "status", body=doc)
 
-    def rotate(self) -> str:
+    def rotate(self) -> tuple[str, int]:
+        """(new secret, grace_s): the OLD secret stays valid for grace_s seconds after this call."""
         doc = self.request("POST", API_PREFIX + "rotate", body={}).json()
         secret = doc.get("agent_secret") if isinstance(doc, dict) else None
         if not exp_ids.is_token(secret, "expa"):
             raise Refused("manager returned a malformed rotated secret")
-        return secret
+        grace = doc.get("grace_s")
+        if not isinstance(grace, int) or isinstance(grace, bool) or not 0 <= grace <= 86400:
+            raise Refused("manager returned a malformed rotation grace period")
+        return secret, grace
+
+    def check_auth(self) -> bool:
+        """True when the current secret is accepted (a cheap authenticated call); False on 401."""
+        try:
+            self.request("GET", API_PREFIX + "desired", headers={"If-None-Match": '"exp-auth-probe"'})
+        except Unauthorized:
+            return False
+        except ClientError:
+            return True  # authenticated, the answer was something else (e.g. 404 nothing compiled)
+        return True
 
     def decommissioned(self) -> None:
         self.request("POST", API_PREFIX + "decommissioned", body={})

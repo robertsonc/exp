@@ -58,7 +58,8 @@ def test_health_degraded_when_collector_down_and_no_secrets(world):
     world.as_user("vera").get("/api/v1/probes")
     p = cli(world, "health", "--json")
     doc = json.loads(p.stdout)
-    assert doc["status"] == "degraded" and "col-c" in doc["detail"] and p.returncode == 1
+    assert doc["status"] == "degraded" and "col-c" in doc["detail"]
+    assert p.returncode == 0          # CR-wp1-health-exit: degraded still exits 0
     blob = p.stdout + p.stderr
     from conftest import DASH_TOKEN
     for secret in (DASH_TOKEN, world.noc_token, "alice-pass-1", world.hashes["alice"]):
@@ -211,3 +212,17 @@ def test_requirements_apt_is_within_the_allowlist():
     lines = [x.strip() for x in (ROOT / "dashboard" / "requirements.apt").read_text().splitlines() if x.strip()]
     assert set(lines) <= allowed
     _ = Path
+
+
+def test_health_facts_satisfy_status_component_facts(world):
+    """The agent copies health facts into exp.status/1 components[].facts (CR-wp4-status-component-facts)."""
+    doc = json.loads(cli(world, "health", "--json").stdout)
+    assert set(doc["facts"]) >= {"tls_fingerprint_sha256", "url"}
+    status = {
+        "schema": "exp.status/1", "agent": {"version": "0.1.0"}, "facts": {}, "metrics": {},
+        "components": [{"type": "dashboard", "id": "dashboard", "version": doc["version"], "state": "running",
+                        "health": doc["status"], "detail": doc["detail"], "facts": doc["facts"],
+                        "metrics": doc["metrics"]}],
+    }
+    errs = cfg.iter_errors(status, "status.schema.json")
+    assert not [e for e in errs if str(e).lstrip("- ").startswith("/components")], errs

@@ -315,3 +315,11 @@ class SafeFS:
                 "not a root-owned, non-service-writable directory"
             )
         self._lchown(str(p), uid, gid)
+
+    def fchown(self, fd: int, path: str | os.PathLike[str], uid: int, gid: int) -> None:
+        """Ownership change through a descriptor the caller opened with O_NOFOLLOW (so the object cannot be
+        swapped for a symlink afterwards). `path` is only used by an injected test double."""
+        if self._lchown is os.lchown:
+            os.fchown(fd, uid, gid)
+        else:
+            self._lchown(str(path), uid, gid)

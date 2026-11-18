@@ -15,7 +15,7 @@ export function mountIncidents(root, opts) {
   const el = {
     open: h("select", { id: "f-open" }, h("option", { value: "true", text: "Open" }), h("option", { value: "false", text: "Resolved" }), h("option", { value: "", text: "All" })),
     site: h("select", { id: "f-site" }, h("option", { value: "", text: "All sites" })),
-    line: h("select", { id: "f-line" }, h("option", { value: "", text: "All lines" }), LINE_ORDER.map((k) => h("option", { value: k, text: lineLabel(k) }))),
+    line: h("select", { id: "f-line" }, h("option", { value: "", text: "All lines" }), INCIDENT_LINE_ORDER.map((k) => h("option", { value: k, text: lineLabel(k) }))),
     q: h("input", { id: "f-q", type: "search", placeholder: "Probe or text", maxlength: "80", autocomplete: "off" }),
     list: h("ul", { class: "inc-rows" }),
     count: h("p", { class: "sub", role: "status" }),

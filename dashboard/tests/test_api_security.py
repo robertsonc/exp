@@ -91,6 +91,11 @@ def test_ack_unknown_incident_404_and_bad_note_400(world):
     assert c.post(f"/api/v1/incidents/{INC}/ack").status == 404
     assert c.post(f"/api/v1/incidents/{INC}/ack", json_body={"note": "x" * 2000}).status == 400
     assert c.post(f"/api/v1/incidents/{INC}/ack", json_body={"note": 5}).status == 400
+    r = c.post(f"/api/v1/incidents/{INC}/ack", json_body={"note": "x" * 513})
+    assert r.status == 400 and set(r.json()["error"]) == {"code", "message", "details"}
+    for bad in ("a\x00b", "line1\nline2", "tab\there", "del\x7f"):
+        r = c.post(f"/api/v1/incidents/{INC}/ack", json_body={"note": bad})
+        assert r.status == 400 and r.json()["error"]["code"] == "invalid_request", bad
     assert c.post(f"/api/v1/incidents/{INC}/ack", body=b"{bad", headers={"Content-Type": "application/json"}
                   ).status == 400
 
@@ -385,3 +390,25 @@ def test_unread_body_on_refused_request_does_not_desync(world):
            + str(len(body)).encode() + b"\r\nContent-Type: application/json\r\n\r\n" + body)
     r = raw(world.port, req)
     assert r.count(b"HTTP/1.1 ") == 1 and b"401" in r.split(b"\r\n")[0]
+
+
+def test_ack_note_limit_matches_openapi(world):
+    world.fakes["col-b"].app.inject_incident({
+        "id": INC, "probe": "probe-b1", "site": "hall-b", "line": "probe", "kind": "down",
+        "start": "2026-11-18T15:13:42.000Z", "end": None, "where": {"seg": "edge", "ip": "10.1.0.2"},
+        "facts": ["x"], "folded_into": None, "acked_by": None, "link": "https://10.0.0.1/probe/probe-b1"})
+    c = world.as_user("alice")
+    assert c.post(f"/api/v1/incidents/{INC}/ack", json_body={"note": "x" * 512}).status == 204
+    # the incident list passes the silent-probe line through unchanged
+    items = c.get("/api/v1/incidents").json()["items"]
+    assert any(i["id"] == INC and i["line"] == "probe" for i in items)
+
+
+def test_every_api_error_uses_the_envelope(world):
+    c = world.as_user("vera")
+    for r in (c.get("/api/v1/summary?probe=nope"), c.get("/api/v1/incidents/zzz"),
+              c.post(f"/api/v1/incidents/{INC}/ack", json_body={"note": "x" * 600}),
+              c.get("/api/v1/query_range"), c.get("/api/v1/nope/nope")):
+        assert r.status >= 400
+        err = r.json()["error"]
+        assert set(err) == {"code", "message", "details"} and isinstance(err["code"], str)

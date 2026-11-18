@@ -34,6 +34,8 @@ log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 MAX_CONNECTIONS = 256
 MAX_SSE_CLIENTS = 200
+ACK_NOTE_MAX = 512                      # shared/openapi/collector.yaml AckRequest.note maxLength
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")   # ... and its pattern ^[^\x00-\x1f\x7f]*$
 MAX_BODY = 16 * 1024
 MAX_HEADER_BYTES = 16 * 1024
 MAX_REQUEST_TARGET = 4096
@@ -465,8 +467,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._require("operator")
                 doc = self._body_params(body) if body else {}
                 note = doc.get("note")
-                if note is not None and (not isinstance(note, str) or len(note) > 1000):
-                    raise ApiProblem(400, "invalid_request", "note must be a string (max 1000 characters)")
+                if note is not None and (not isinstance(note, str) or len(note) > ACK_NOTE_MAX
+                                         or _CTRL_RE.search(note)):
+                    raise ApiProblem(400, "invalid_request",
+                                     f"note must be a string of at most {ACK_NOTE_MAX} characters "
+                                     "without control characters")
                 payload = json.dumps({"note": note} if note else {}).encode()
                 return self._relay(*fed.post_try_all(f"incidents/{segs[1]}/ack", user, payload))
             if segs[0] == "drills" and len(segs) == 3 and segs[2] == "abort" and segs[1] != "control":

@@ -73,7 +73,8 @@ def cmd_health(a: argparse.Namespace) -> int:
         print(json.dumps(doc, separators=(",", ":")))
     else:
         print(f"{doc['status']}: {doc.get('detail') or 'ok'}")
-    return 0 if doc.get("status") == "ok" else 1
+    # CR-wp1-health-exit: ok and degraded exit 0 (still serving); only fail exits 1.
+    return 0 if doc.get("status") in ("ok", "degraded") else 1
 
 
 def cmd_version(_a: argparse.Namespace) -> int:
@@ -166,7 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--log-level", default="INFO")
     r.add_argument("--log-json", action="store_true")
     r.set_defaults(fn=cmd_run)
-    h = sub.add_parser("health", help="print exp.health/1 (exit 0 iff status is ok)")
+    h = sub.add_parser("health", help="print exp.health/1 (exit 0 for ok/degraded, 1 for fail)")
     _common(h)
     h.add_argument("--json", action="store_true")
     h.set_defaults(fn=cmd_health)

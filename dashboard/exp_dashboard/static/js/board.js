@@ -444,7 +444,7 @@ export function mountBoard(root, opts) {
         st.incidents.push(e);
         const t = parseTs(e.start);
         st.markers = st.markers.filter((m) => m.ref !== e.id);
-        if (Number.isFinite(t)) st.markers.push({ t, kind: "incident", text: String(e.line) + " " + String(e.kind), ref: e.id });
+        if (Number.isFinite(t)) st.markers.push({ t, kind: "incident", text: lineLabel(e.line) + " " + String(e.kind), ref: e.id });
         renderTimeline(); renderIncidents();
       },
       collector: (e) => { if (st.collectorId && e.collector_id === st.collectorId) { st.collectorDown = e.ok === false; renderBanners(); } },
