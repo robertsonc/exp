@@ -224,7 +224,7 @@ Compiled by the manager per host. The agent treats it as the whole truth for tha
   "host_id": "h_01JD…", "version": 42, "generated_at": "2026-11-18T20:00:00.000Z",
   "org": {"id": "default", "name": "HPE Event NOC"},
   "site": {"id": "hall-b", "name": "Hall B", "timezone": "America/Chicago"},
-  "agent": {"version": "0.1.0", "artifact": "art_01JD…", "poll_interval_s": 30},
+  "agent": {"version": "0.1.0", "artifact": "art_01JD…", "poll_interval_s": 30, "status_interval_s": 60},
   "release": {"version": "0.1.0",
               "manifest_url": "/api/agent/v1/releases/0.1.0/manifest",
               "signature_url": "/api/agent/v1/releases/0.1.0/manifest.sig"},
@@ -257,7 +257,8 @@ Rules:
 
 ## 8. Status report — `exp.status/1` (agent → manager)
 
-Sent every 60 s and right after each reconcile.
+Sent every `agent.status_interval_s` (default 60 s; allowed 30–300) and right after each
+reconcile. This is the **fleet-health heartbeat**: the manager is a roll-up, not real-time.
 
 ```json
 {
@@ -270,15 +271,62 @@ Sent every 60 s and right after each reconcile.
     "interfaces": [{"name": "eno1", "mac": "18:66:…", "state": "up", "speed_mbps": 1000, "driver": "tg3",
                     "addrs": ["10.32.98.25/23"], "default_route": true, "in_use_by": "mgmt"}]
   },
+  "metrics": {
+    "interval_s": 60, "uptime_s": 1234567,
+    "cpu": {"pct": 23.4, "iowait_pct": 1.2, "steal_pct": 0.0, "load1": 0.8, "load5": 0.6, "load15": 0.5},
+    "mem": {"total_mb": 32000, "used_mb": 8200, "available_mb": 23800, "pct": 25.6, "swap_used_mb": 0},
+    "disk": [{"mount": "/", "total_gb": 437.0, "used_gb": 13.1, "pct": 3.0},
+             {"mount": "/var/lib/exp", "total_gb": 437.0, "used_gb": 13.1, "pct": 3.0}],
+    "disk_io": {"read_kbps": 12.0, "write_kbps": 340.5},
+    "net": [{"iface": "eno1", "role": "mgmt", "link": "up", "speed_mbps": 1000,
+             "rx_pps": 120.5, "tx_pps": 98.2, "rx_bps": 340000, "tx_bps": 120000,
+             "rx_errors": 0, "tx_errors": 0, "rx_drops": 0, "tx_drops": 0}],
+    "temp_c_max": 54
+  },
   "components": [{"type": "collector", "id": "col-hallb", "version": "0.1.0", "state": "running",
                   "health": "ok", "detail": "", "since": "…",
-                  "facts": {"tls_fingerprint_sha256": "AB:CD:…", "listen": "10.32.98.25:8443", "ingest_rps": 120}}],
+                  "process": {"cpu_pct": 12.5, "rss_mb": 410, "restarts": 0, "uptime_s": 86000},
+                  "metrics": {"ingest_records_per_s": 305.2, "…": "per §8.1"},
+                  "facts": {"tls_fingerprint_sha256": "AB:CD:…", "listen": "10.32.98.25:8443"}}],
   "reconcile": {"at": "…", "result": "ok|error|rolled_back", "error": null, "duration_ms": 5400},
   "events": [{"ts": "…", "level": "info|warn|error", "msg": "installed exp-probe 0.1.0"}]
 }
 ```
 `in_use_by` ∈ `mgmt | probe:<port_id> | none`. The manager uses `components[].facts.tls_fingerprint_sha256`
 and `listen` to wire probes and dashboards to collectors.
+
+**Host metrics** (collected by the agent): CPU from `/proc/stat` deltas, load from `/proc/loadavg`,
+memory from `/proc/meminfo` (`used = total − available`), disks via `statvfs` for `/` and every
+mount holding `/var/lib/exp` (deduplicated), disk I/O from `/proc/diskstats`, network from
+`/sys/class/net/*/statistics` for **host-namespace** interfaces, uptime from `/proc/uptime`,
+temperature from `/sys/class/thermal` when present. **Rates are deltas over the interval**; the
+first report after a start has rates `null`. Counter resets (reboot, link reset) yield `null` for
+that interval, never negative values.
+
+**Process metrics** per component: summed over its units via systemd
+(`systemctl show <unit> -p CPUUsageNSec -p MemoryCurrent -p NRestarts -p ActiveEnterTimestampMonotonic`).
+
+### 8.1 Component health — `exp.health/1`
+
+Every component implements `exp-<c> health --json` (exit 0 = healthy; must answer in < 5 s; output
+≤ 64 KiB). The agent copies `status`, `detail`, `metrics`, and `facts` into the status report.
+```json
+{"schema": "exp.health/1", "status": "ok|degraded|fail", "detail": "", "version": "0.1.0",
+ "uptime_s": 86000, "metrics": {}, "facts": {}}
+```
+Required metric keys (rates per second or per minute as named; counters since start where named `_total`):
+
+| Type | `metrics` keys | `facts` keys |
+|---|---|---|
+| probe | `measurements_per_min`, `by_test_per_min` (map test → n), `fail_per_min`, `error_per_min`, `spool_depth`, `spool_bytes`, `push_lag_s`, `clock_offset_ms`, `skipped_per_hour`, `ports` (array, below) | `collector_reachable` (bool), `collector_url`, `mode` |
+| collector | `ingest_records_per_s`, `ingest_rejected_per_min`, `ingest_duplicates_per_min`, `ingest_bytes_per_s`, `probes_total`, `probes_reporting`, `vm_up` (0/1), `vm_backlog_points`, `vm_series`, `vm_storage_gb`, `records_db_gb`, `storage_free_gb`, `days_to_full`, `sse_clients`, `open_incidents`, `webhook_failures_1h`, `rules_eval_ms_p95` | `tls_fingerprint_sha256`, `listen` |
+| dashboard | `sessions_active`, `requests_per_min`, `sse_clients`, `collectors_total`, `collectors_reachable`, `login_failures_1h` | `tls_fingerprint_sha256`, `url` |
+| runner | `drills_active`, `pullers` (array of `{source, last_ok, errors_1h}`) | `inventory` (discovered drill targets, bounded) |
+
+Probe `ports[]` item: `{"id","iface","role","link":"up|down","leased":true,"ip","gateway","rx_pps","tx_pps",
+"rx_bps","tx_bps","rx_errors","tx_errors","rx_drops","tx_drops","last":{"network":"ok","dhcp":"ok","dns":"fail"}}` —
+counters read inside each port's namespace (the agent cannot see them).
+`days_to_full` = free storage ÷ the 24-h average growth rate (`null` when growth ≤ 0).
 
 ## 9. Component configs
 
@@ -486,5 +534,10 @@ All mutations write an audit event. Full request/response schemas are produced i
 | integrations | `GET/PUT integrations/{ec\|mist}` (credentials write-only), `POST integrations/{x}/test` |
 | drills | `GET/POST drills`, `POST drills/{id}/approve`, `POST drills/{id}/start`, `POST drills/abort-all`, `GET drills/{id}/runs/{run}` |
 | status | `GET overview` (sites, hosts, component health, versions), `GET hosts/{id}/status` |
+| fleet | `GET fleet/summary` (KPIs: hosts by state, components by type × health, measurements/min, ingest/s, open issues by severity, version drift, open experience incidents), `GET fleet/sites` (per-site roll-up), `GET fleet/hosts?site&type&health&state&version&q&sort&limit&cursor` (rows with latest metrics), `GET fleet/hosts/{id}/metrics?range=1h\|6h\|24h\|7d\|30d&keys=…`, `GET fleet/components/{component_id}/metrics?range&keys` (series `{t, avg, max}` from roll-ups), `GET fleet/top?metric=cpu\|mem\|disk\|net&limit` |
+| issues | `GET issues?severity&site&kind&state=open\|resolved`, `POST issues/{id}/snooze` (`{for: "1h"\|"24h"\|"resolved"}`), `DELETE issues/{id}/snooze` |
+| platform alerts | `GET/PUT settings/fleet-thresholds`, `GET/PUT settings/platform-webhook` (URL write-only), `POST settings/platform-webhook/test` |
+
+Fleet endpoints return `ETag` and `Cache-Control: private, max-age=15`; the UI polls every 30 s.
 | audit | `GET audit?from&to&actor&resource` |
 | settings | `GET/PATCH settings` (org name, drills enabled, retention defaults, owner) |

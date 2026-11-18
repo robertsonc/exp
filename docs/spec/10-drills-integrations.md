@@ -85,6 +85,10 @@ an immediate revert.
 - Calls observed in the reference implementation: `GET /gms/rest/appliance`,
   `GET /gms/rest/deployment?nePk=…`, `GET /gms/rest/appliance/rest?nePk=…&url=vrrp&cached=false`,
   and interface get/set through `/gms/rest/appliance/rest?nePk=…&url=networkInterfaces`.
+- **The API key is sent only in a request header** (per the Orchestrator API docs, e.g.
+  `X-Auth-Token`) — never in the URL query string. Request URLs, headers, and exception text are
+  redacted before logging (the reference code put `apiKey=` in URLs and logged request exceptions).
+  The runner exposes no inbound HTTP/Socket interface.
 - **Request and response field names MUST come from the Orchestrator API documentation
   (`orchestrator-apiDocs.json`) or recorded live responses — not from the reference code.** Fixtures
   built from code encode its bugs (lesson from earlier work). The CI fake Orchestrator is built from

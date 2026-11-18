@@ -163,8 +163,8 @@ Written directly to VM: `exp_collector_ingest_records_total{result}`, `exp_colle
 
 ## 10. CLI
 
-`exp-collector run` · `health` (JSON: status, version, `tls_fingerprint_sha256`, `listen`, VM up,
-backlog) · `version` · `selftest` · `rules eval --probe <id> --at <ts> [--voice]` (print State) ·
+`exp-collector run` · `health --json` (`exp.health/1`: collector metrics of `01-contracts.md` §8.1 —
+ingest rates, backlog, storage, `days_to_full` — and facts `tls_fingerprint_sha256`, `listen`) · `version` · `selftest` · `rules eval --probe <id> --at <ts> [--voice]` (print State) ·
 `replay <ndjson[.gz]> --at <ts>…` (run the rules + incident engine over a file; used by golden tests)
 · `prune --now`.
 

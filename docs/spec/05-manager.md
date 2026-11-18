@@ -39,7 +39,7 @@ All tables carry `org_id TEXT NOT NULL DEFAULT 'default'` (future multi-tenancy)
 
 | Table | Key columns |
 |---|---|
-| `settings` | `org_name`, `drills_enabled` (0), `default_retention_*`, `release_channel` |
+| `settings` | `org_name`, `drills_enabled` (0), `default_retention_*`, `release_channel`, `fleet_thresholds_json` (§14), `platform_webhook_secret_id` |
 | `admins` | `email` (unique), `role` (`owner\|admin\|operator\|viewer`), `disabled`, `last_seen` |
 | `sites` | `site` (slug pk), `name`, `timezone`, `release_version`, `canary_host_id`, `alerts_json` (no secrets), `edge_label` |
 | `hosts` | `host_id` (pk `h_…`), `name`, `site`, `state` (`pending\|enrolled\|stale\|offline\|decommissioning\|removed`), `facts_json`, `last_seen`, `agent_version`, `desired_version`, `applied_version`, `desired_hash` |
@@ -57,6 +57,11 @@ All tables carry `org_id TEXT NOT NULL DEFAULT 'default'` (future multi-tenancy)
 | `integrations` | `kind` (`ec\|mist`), `config_json` (non-secret), `secret_id`, `allowlist_json` (drill targets) |
 | `drills` / `drill_runs` | see `10-drills-integrations.md` |
 | `audit` | `evt_id`, `ts`, `actor` (email or `agent:h_…` or `system`), `action`, `resource`, `details_json` (no secrets), `ip` |
+| `fleet_host_5m` / `fleet_host_1h` | `host_id`, `bucket` (epoch s), `samples`, `cpu_sum`, `cpu_max`, `mem_pct_sum`, `mem_pct_max`, `disk_pct_max`, `load1_max`, mgmt-interface `rx_pps_sum`, `tx_pps_sum`, `rx_bps_sum`, `tx_bps_sum`, `errors_sum`, `drops_sum` (§13) |
+| `fleet_iface_5m` | `host_id`, `iface`, `bucket`, `samples`, `rx_pps_sum`, `tx_pps_sum`, `rx_bps_sum`, `tx_bps_sum`, `errors_sum`, `drops_sum` — host-namespace interfaces, 48 h |
+| `fleet_component_5m` / `fleet_component_1h` | `component_id`, `bucket`, `samples`, `metrics_json` (`{key: [sum, max]}` for the type's chartable keys, §13) |
+| `issues` | `issue_id`, `kind`, `severity` (`warn\|crit`), `host_id`, `component_id`, `site`, `opened_at`, `resolved_at`, `last_value`, `detail` |
+| `issue_snoozes` | `kind`, `host_id`, `until` (or `resolved`), `created_by` |
 
 Migrations are forward-only SQL files applied by `deploy.sh` (`wrangler d1 migrations apply`).
 
@@ -143,7 +148,8 @@ change recompiles all its probes and dashboards.
 - **artifacts:** only artifacts referenced in this host's current desired doc (`403` otherwise);
   streamed from R2 with `Content-Length` and `ETag` = sha256.
 - **status:** ≤ 256 KiB, validated against `exp.status/1`; stored in `status_latest`/`status_history`;
-  host `last_seen`/versions updated; component facts merged; recompile if wiring facts changed.
+  host `last_seen`/versions updated; component facts merged; recompile if wiring facts changed;
+  **roll-ups upserted** (§13) and **issue rules evaluated** for that host (§14).
 - **rotate**, **decommissioned:** as in the contract; both audited.
 - Every agent request is rate limited per agent; repeated auth failures from one IP are throttled.
 
@@ -162,11 +168,13 @@ change recompiles all its probes and dashboards.
 
 ## 10. Admin UI (`manager/ui`)
 
-HPE design language (`shared/ui/tokens.css`), keyboard accessible, works at 390 px. Pages:
+The full UI specification — fleet health overview, issues, hosts table, host and component
+views, design system, refresh model, performance budget — is **`11-manager-ui.md`**. The
+administration flows it must include:
 
 | Page | Key interactions |
 |---|---|
-| **Overview** | Sites with health counts (probes/collectors/dashboards ok/warn/fail/offline), version drift, recent audit events, failing canaries. |
+| **Fleet overview** | See `11-manager-ui.md` §4.1 (KPIs, needs-attention issues, sites, fleet resources). |
 | **Sites** | Create/edit (name, slug, timezone, edge label), release version, alert settings (webhook URLs write-only + "Send test"), retention. |
 | **Add host wizard** | 1) name, site, shapes → 2) the one-liner with a copy button and a 1-h countdown, live "waiting for the host…" (polls every 3 s) → 3) the host's facts appear; for a probe, an **interface picker** (name, MAC, link, speed, addresses; the management/default-route interface is disabled with the reason) assigning `client`/`target`/`wifi` roles and target addresses → 4) Apply; progress until every component reports healthy. |
 | **Host detail** | Components with health, desired vs applied version, last reconcile result and events, actions: restart component, rotate credentials, new enrol token, decommission. |
@@ -178,8 +186,11 @@ HPE design language (`shared/ui/tokens.css`), keyboard accessible, works at 390 
 
 ## 11. Cron
 
-Every 5 min: expire enrol tokens; host `stale` after 3 × poll interval without status, `offline`
-after 10 min; canary promotion; drop `previous_*` secrets past their grace; prune `status_history`.
+Every 5 min: expire enrol tokens; host `stale` after 3 × its status interval without a report,
+`offline` after 10 min (opening/resolving the matching issues, §14); canary promotion; drop
+`previous_*` secrets past their grace; prune `status_history`.
+Hourly: compact completed 5-min roll-ups into 1-h buckets; prune 5-min data > 48 h, 1-h data > 30 d,
+resolved issues > 30 d.
 Daily: prune audit > 1 year (configurable), report orphaned R2 objects.
 
 ## 12. `deploy.sh` (one-command manager deployment)
@@ -198,7 +209,68 @@ re-running upgrades):
    request) — proving enforcement, not just configuration.
 7. Print the URL and "sign in as <owner email>".
 
-## 13. Acceptance tests (WP-4/WP-5 definition of done)
+## 13. Fleet roll-ups (decision D14)
+
+Status reports are the fleet-health heartbeat (`01-contracts.md` §8, every 60 s by default). The
+manager keeps:
+- **latest** values per host and component (`status_latest`) for tables and tiles;
+- **5-minute buckets for 48 h** and **1-hour buckets for 30 days** for charts (1 h/6 h/24 h ranges
+  read 5-min data; 7 d/30 d read hourly data).
+
+Each report upserts its bucket in one statement per table
+(`INSERT … ON CONFLICT(host_id, bucket) DO UPDATE SET cpu_sum = cpu_sum + excluded.cpu_sum,
+cpu_max = max(cpu_max, excluded.cpu_max), samples = samples + 1, …`). `null` rates (first report,
+counter reset) are skipped, never stored as zero. Charts return `{t, avg = sum/samples, max}`; a
+bucket with no samples is absent and drawn as a gap.
+
+Chartable component keys (stored in `metrics_json`): probe `measurements_per_min`, `fail_per_min`,
+`spool_depth`, `push_lag_s`, `clock_offset_ms`; collector `ingest_records_per_s`,
+`ingest_rejected_per_min`, `vm_backlog_points`, `vm_storage_gb`, `records_db_gb`, `probes_reporting`;
+dashboard `sessions_active`, `requests_per_min`, `collectors_reachable`; runner `drills_active`.
+Probe per-port counters are kept as latest values only (port tiles); interface history is kept for
+host-namespace interfaces (48 h).
+
+Sizing: 500 hosts ≈ 1.5 M rows across roll-up tables — comfortable for D1. Beyond ~2,000 hosts,
+move roll-ups to Workers Analytics Engine (same API shape; documented option, not v1).
+
+The fleet API (`01-contracts.md` §13) reads only `status_latest`, roll-ups, and `issues`; p95 < 300 ms
+at 500 hosts with 30 days of data. Responses carry `ETag` and a 15-s private cache.
+
+## 14. Fleet health issues
+
+Rules evaluated on each status report and by cron (staleness). Thresholds are defaults, editable in
+Settings → Fleet thresholds.
+
+| Kind | Severity | Opens when |
+|---|---|---|
+| `host_stale` | warn | no report for 3 × status interval |
+| `host_offline` | crit | no report for 10 min |
+| `disk_high` | warn ≥ 85 %, crit ≥ 95 % | any reported mount |
+| `storage_runway` | warn < 7 d, crit < 2 d | collector `days_to_full` |
+| `mem_low` | warn | `available` < 10 % for 10 min |
+| `cpu_high` | warn | CPU ≥ 90 % averaged over 15 min |
+| `clock` | warn | time not synced, or \|offset\| > 1 s |
+| `component_unhealthy` | warn (`degraded`), crit (`fail`) | component health |
+| `crash_loop` | crit | ≥ 3 restarts in 15 min |
+| `reconcile_failed` | warn | last reconcile `error` or `rolled_back` |
+| `version_drift` | warn | applied ≠ desired for > 10 min |
+| `probe_ports` | warn | client ports without lease or link down (value = count) |
+| `probe_push_lag` | warn > 120 s, crit > 600 s | `push_lag_s` |
+| `probe_spool` | warn | spool > 50 % of its limit |
+| `probe_collector` | crit | `collector_reachable` false for > 2 min |
+| `collector_rejects` | warn | rejected > 1 % of ingest over 5 min |
+| `collector_vm` | crit | `vm_up` = 0, or backlog growing for 10 min |
+| `collector_probes` | warn | `probes_reporting` < `probes_total` for > 2 min |
+| `dashboard_collectors` | warn | `collectors_reachable` < `collectors_total` |
+| `iface_errors` | warn | mgmt errors + drops > 0.1 % of packets over 15 min |
+
+Lifecycle: an issue opens when its rule holds (for its duration) and **resolves after two
+consecutive clean reports** (hysteresis — no flapping issues). `host_offline` suppresses that host's
+other issues. Snoozes hide an issue kind for a host from the UI and from the platform webhook but it
+is still recorded. The optional **platform webhook** (Slack/Teams/JSON, separate from experience
+alerts, URL stored as a secret) fires on `crit` open and on resolve.
+
+## 15. Acceptance tests (WP-4/WP-5 definition of done)
 
 Vitest with `@cloudflare/vitest-pool-workers` (local D1/R2), plus UI tests:
 1. Admin auth: absent JWT, bad signature, wrong `aud`, expired, unknown email → 401/403; valid → 200.
@@ -211,4 +283,10 @@ Vitest with `@cloudflare/vitest-pool-workers` (local D1/R2), plus UI tests:
    decrypt round-trip; rotation overlap works end to end.
 7. Every mutation writes exactly one audit event without secret values.
 8. UI: the add-host wizard end to end against a fake agent; interface picker disables the mgmt
-   interface; password hashing happens client-side (no plaintext in the request).
+   interface; password hashing happens client-side (no plaintext in the request); plus
+   `11-manager-ui.md` §11.
+9. Roll-ups: a synthetic status sequence produces the expected 5-min and 1-h buckets; `null` rates
+   and counter resets are skipped; compaction and pruning keep the stated retention.
+10. Issues: each §14 rule opens and resolves with hysteresis; offline suppresses the host's other
+    issues; snooze hides and is audited; the platform webhook fires on crit open/resolve only.
+11. Fleet API p95 < 300 ms with 500 hosts × 30 days seeded (`manager/scripts/seed-demo.ts` at scale).

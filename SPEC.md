@@ -22,6 +22,7 @@ session can implement the system in parallel without the conversation that produ
 | `docs/spec/08-operations.md` | Packaging, releases, deployment, upgrades, testing, CI |
 | `docs/spec/09-work-packages.md` | Parallel work breakdown, ownership, dependencies, definition of done |
 | `docs/spec/10-drills-integrations.md` | Resilience drills (chaos) and event correlation |
+| `docs/spec/11-manager-ui.md` | Manager UI: fleet health roll-up, issues, hosts, administration |
 | `KICKOFF.md` | Ready-to-use kickoff instructions for the multi-agent build session |
 | `reference/` | Read-only prior art (EXM, netvitals, perf, chaos_monkey) to port from |
 
@@ -134,6 +135,7 @@ ISP › DNS › apps.
 | D11 | **Probe architecture = one long-running daemon with an internal scheduler** (no supercronic/cron), netns per test port (EXM model) or host mode. | Fewer processes and packages; EXM's netns model is proven. |
 | D12 | **Platform versioning**: one semver for all components; agent N supports components N and N-1. | Simple compatibility story. |
 | D13 | **Drills are opt-in, allowlisted, time-boxed, auto-reverting, audited, and executed on-prem by a runner.** | Breaking a live network must be deliberate and bounded. |
+| D14 | **Fleet health is a roll-up, not real-time:** agents send host/process/component metrics in the status report every 60 s (30–300); the manager keeps latest values plus D1 roll-ups (5 min × 48 h, 1 h × 30 d) and evaluates fleet issues; the UI polls every 30 s. | One channel (no extra agents or exporters); D1 is ample to 500 hosts; Analytics Engine is the scale-out path. |
 
 ## 6. Component summaries
 
@@ -148,7 +150,9 @@ Full detail in `docs/spec/02–06`. Interfaces in `docs/spec/01-contracts.md`.
   where), alerting (holds, again, flapping, folding), query API + SSE, reflector + iperf3 server.
 - **Dashboard** (`exp-dashboard`): HTTPS server, sessions (SSO handoff, local users, NOC tokens),
   federated proxy to collectors, the Pulse board + overview + incidents + drill results SPA.
-- **Manager** (`exp-manager`): Access-protected admin UI/API, sites/hosts/components intent, enrol
+- **Manager** (`exp-manager`): Access-protected admin UI/API with a **fleet health roll-up**
+  (CPU/memory/disk/uptime, pps and bps in/out, measurements/min, ingest, storage runway, issues —
+  `11-manager-ui.md`), sites/hosts/components intent, enrol
   tokens, desired-state compiler, release import/storage (R2), secrets (AES-GCM), dashboard users
   and NOC tokens, alert/integration settings, drills, audit log; agent API.
 - **Agent** (`exp-agent`): bootstrap via `install.sh`, enrol, poll desired state (ETag), verify
@@ -231,6 +235,9 @@ Each milestone is accepted only when its **end-to-end acceptance tests** (in `te
   tampered artifact is refused.
 - **A2.6** Rotate a probe ingest token and the agent secret without data loss.
 - **A2.7** Decommission a host: components removed, credentials revoked, host gone from UI.
+- **A2.8** Fleet view: every host shows CPU/memory/disk/uptime/pps/bps and its component metrics
+  within 2 status intervals; filling a collector disk past 85 % opens a `disk_high` issue; stopping a
+  host's agent marks it `stale` then `offline` — never shown as current.
 
 ### M3 — Multi-site, alerts, offline
 - **A3.1** 3 collectors × 2 sites federated in one dashboard; overview correct.

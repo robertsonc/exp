@@ -41,7 +41,8 @@ without a token repairs the agent installation.
 
 - Poll `GET desired` with `If-None-Match` every `poll_interval_s` (30 s) ± 20% jitter. For 2 min
   after enrolment or after applying a change, poll every 5 s (fast convergence).
-- On a new desired state → **reconcile** (§3) → `POST status`. Otherwise `POST status` every 60 s.
+- On a new desired state → **reconcile** (§3) → `POST status`. Otherwise `POST status` every
+  `agent.status_interval_s` (default 60 s, 30–300) — the fleet-health heartbeat (§3.1).
 - Manager unreachable → keep the last applied state (cached at `/var/lib/exp/agent/desired.json`),
   back off 30 s → 5 min, keep reporting locally (`exp-agent status`). Components are never stopped
   because the manager is unreachable.
@@ -83,6 +84,17 @@ without a token repairs the agent installation.
    `collect_diagnostics` (sanitized journal excerpts and versions; never creds).
 7. Report status (`01-contracts.md` §8), including each component's `health` facts (collector TLS
    fingerprint and listen address, dashboard fingerprint, probe port states).
+
+### 3.1 Metrics (fleet health)
+
+Each status report carries host metrics and per-component process and work metrics exactly as
+defined in `01-contracts.md` §8–8.1: CPU, load, memory, disks (`/` and `/var/lib/exp` mounts),
+disk I/O, host-namespace interface pps/bps/errors/drops, uptime, temperature; per component, systemd
+cgroup CPU/memory/restarts/uptime plus `exp-<c> health --json` metrics and facts (probe per-port
+counters come from the probe, which can see inside its namespaces). Rates are computed from counter
+deltas between reports (first report and counter resets → `null`). Collection is cheap (< 50 ms CPU,
+reads from `/proc` and `/sys`) and a health command that exceeds 5 s is reported as `degraded`
+with `detail: "health timeout"`.
 
 **Facts:** hostname, machine-id, `/etc/os-release`, kernel, arch, CPUs, memory, free disk under
 `/var/lib`, Python, time sync (`timedatectl show`), interfaces (`ip -j link/addr/route`, speed and

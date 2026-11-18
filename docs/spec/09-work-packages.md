@@ -89,16 +89,19 @@ incidents; M2: SSO handoff, NOC tokens; M3: partial-failure UX, kiosk; M5: drill
 DoD: `04-dashboard.md` §7; SR-13.
 
 ### WP-4 — Manager backend · size L
-Scope: `05-manager.md` §1–9, §11–12 (M2: auth, data model, agent API, compiler, secrets, releases,
-rollout, cron, deploy.sh; M3: alerts settings, NOC tokens, dashboard users; M5: drills/integrations API).
-DoD: `05-manager.md` §13 items 1–7; SR-6/7/8/9/14/16.
+Scope: `05-manager.md` §1–9, §11–14 (M2: auth, data model, agent API, compiler, secrets, releases,
+rollout, cron, deploy.sh, **fleet roll-ups, fleet API, fleet issues**, demo seeder; M3: alerts settings,
+NOC tokens, dashboard users, platform webhook; M5: drills/integrations API).
+DoD: `05-manager.md` §15 items 1–7 and 9–11; SR-6/7/8/9/14/16.
 
-### WP-5 — Manager UI · size M
-Scope: `05-manager.md` §10, against `mock_admin` then the real backend.
-DoD: `05-manager.md` §13 item 8; accessibility and 390-px checks; SR-13.
+### WP-5 — Manager UI · size L
+Scope: **`11-manager-ui.md`** (fleet overview, issues, hosts table, host/component views, design
+system, refresh model) and the administration flows of `05-manager.md` §10 — against `mock_admin`
+and the demo seed, then the real backend.
+DoD: `05-manager.md` §15 item 8 and `11-manager-ui.md` §11; performance budget (§9); SR-13.
 
 ### WP-6 — Agent + bootstrap · size L
-Scope: `06-agent.md`.
+Scope: `06-agent.md` (including host/process metrics, §3.1).
 DoD: `06-agent.md` §9; SR-8/14/17.
 
 ### WP-7 — Packaging, release, CI · size M

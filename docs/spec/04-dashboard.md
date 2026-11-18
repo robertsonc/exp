@@ -96,7 +96,8 @@ responses. No inline scripts or styles. HSTS only when `tls.mode = provided`.
 
 ## 6. CLI
 
-`exp-dashboard run` · `health` (JSON: status, version, collectors reachable, TLS fingerprint) ·
+`exp-dashboard run` · `health --json` (`exp.health/1`: dashboard metrics of `01-contracts.md` §8.1 —
+sessions, requests, collectors reachable — and facts `tls_fingerprint_sha256`, `url`) ·
 `version` · `selftest`.
 
 ## 7. Acceptance tests (WP-3 definition of done)
