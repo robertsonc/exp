@@ -24,6 +24,12 @@ from exp_agent.runner import Result, Runner, check_argv
 
 SVC_UID = 4242
 
+# The version of the agent that is "running" in the fake world. The fake releases, desired documents and installed trees
+# below are all built around it, so the agent under test is pinned to it instead of reading the repo's VERSION file
+# (which changes with every release; the CLI/version tests compare against VERSION separately).
+RUNNING_AGENT_VERSION = "0.1.0"
+REPO_VERSION = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
+
 HEALTH_OK = {
     "schema": "exp.health/1",
     "status": "ok",
@@ -240,6 +246,7 @@ class Env:
             sleep=self.clock.sleep,
             user_exists=lambda n: n in self.runner.users,
             user_ids=lambda n: (SVC_UID, SVC_UID),
+            agent_version=RUNNING_AGENT_VERSION,
         )
         self.cfg = AgentConfig(
             f"{'https' if tls else 'http'}://127.0.0.1:{self.fake.port}",

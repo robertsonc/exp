@@ -8,7 +8,7 @@ import stat
 import sys
 
 import pytest
-from agent_helpers import Env
+from agent_helpers import REPO_VERSION, RUNNING_AGENT_VERSION, Env
 from exp_common import config as exp_config
 
 from exp_agent import cli
@@ -27,6 +27,7 @@ def env(tmp_path, monkeypatch):
 
     def guarded(root, **kw):
         assert os.path.abspath(str(root)) != "/", "a test tried to run against the REAL root filesystem"
+        kw.setdefault("agent_version", RUNNING_AGENT_VERSION)  # the fake world's running agent (see agent_helpers)
         return real(root, runner=e.runner, lchown=lambda *a: None, user_exists=lambda n: True, **kw)
 
     monkeypatch.setattr(cli, "build_context", guarded)
@@ -135,7 +136,8 @@ def test_uninstall_without_local_notifies_the_manager_best_effort(env, capsys, m
 
 # ------------------------------------------------------------------------------------------ CLI
 def test_version_and_help_and_unknown(env, capsys):
-    assert cli.main(["version"]) == 0 and capsys.readouterr().out.strip() == "0.1.0"
+    # the CLI prints the version of the package it runs from: in a dev tree, the repo VERSION file
+    assert cli.main(["version"]) == 0 and capsys.readouterr().out.strip() == REPO_VERSION
     with pytest.raises(SystemExit):
         cli.main(["bogus"])
     with pytest.raises(SystemExit) as e:
