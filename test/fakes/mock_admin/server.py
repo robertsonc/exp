@@ -1583,9 +1583,13 @@ def r_audit(a: MockAdmin, r: Req) -> Resp:
     return ok(paginate(r.q, items))
 
 
+# Same derivation as the Worker (secrets/crypto.ts keyId), over a fixed fake "key": the id is not secret and no real key exists here.
+_MOCK_KEY_ID = hashlib.sha256(b"exp-key-id/v1|mock-admin: no real master key").hexdigest()[:16]
+
+
 def r_master_key(a: MockAdmin, r: Req) -> Resp:
-    """Steady state, no rotation in progress (CR-m3-master-key-rotation). Key ids are fixed fakes, not derived from keys."""
-    return ok({"current_key_id": "0123456789abcdef", "previous_key_id": None, "remaining_previous": 0,
+    """Steady state, no rotation in progress (CR-m3-master-key-rotation)."""
+    return ok({"current_key_id": _MOCK_KEY_ID, "previous_key_id": None, "remaining_previous": 0,
                "unknown_key_rows": 0, "safe_to_remove_previous": True})
 
 
