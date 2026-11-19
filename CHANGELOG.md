@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+### Fixed
+- `deploy.sh`: a relative `--release-pubkey` is resolved against the caller's directory (the script changes into
+  `manager/`); the forged-JWT smoke check is retried like the others (`workers.dev` can answer a transient 404 right
+  after it is enabled); if the run stops for any reason after `wrangler deploy`, an exit trap still disables the
+  `workers.dev` route; version preview URLs (`preview_urls`) are never enabled.
+
+## [0.1.1] - 2026-11-19
+
 ### Added
 - `manager/deploy.sh --embed-ui`: bundle the admin UI into the Worker (no Static Assets binding) for deploy hosts
   behind a proxy that rewrites `Authorization` to `api.cloudflare.com`.
