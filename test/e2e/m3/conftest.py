@@ -55,3 +55,38 @@ def stack(release: m3lib.L.Release, artifacts: Path, tmp_path_factory: pytest.Te
                 print(f"could not save logs: {exc}")
         if os.environ.get("EXP_E2E_KEEP") != "1":
             m3lib.tear_down()
+
+
+# ------------------------------------------------------------------------------------------ A3.3: manager unreachable
+@pytest.fixture(scope="module")
+def outage_site(release: m3lib.L.Release, artifacts: Path, tmp_path_factory: pytest.TempPathFactory):
+    """The M2 control-plane stack plus one agent-managed host (collector + dashboard + probe) with webhook alerts."""
+    import outagelib as O
+    from expharness import dockerhost, hostsfile
+    if not hostsfile.can_edit():
+        pytest.skip("/etc/hosts is not writable (the Worker reaches the local Access issuer by host name)")
+    if not (O.REPO / "manager" / "node_modules" / ".bin" / "wrangler").exists():
+        pytest.skip("manager/node_modules is missing: run `npm ci` in manager/")
+    reason = dockerhost.ensure_image("24.04")
+    if reason:
+        pytest.skip(reason)
+    work = tmp_path_factory.mktemp("work-outage")
+    hooks = O.HookReceiver(work)
+    hooks.start()
+    site = None
+    try:
+        with O.manager_stack(release.dist, release.pubkey, artifacts) as st:
+            site = O.provision_site(st, hooks)
+            try:
+                yield st, site, hooks
+            finally:
+                try:
+                    (artifacts / "a33-host-diagnostics.txt").write_text(site.host.diagnostics())
+                    (artifacts / "a33-host-journal.txt").write_text(site.host.journal(None, 1500))
+                    (artifacts / "a33-webhooks.jsonl").write_text(hooks.log.read_text())
+                except Exception as exc:  # noqa: BLE001  logs are best effort
+                    print(f"could not save logs: {exc}")
+                if os.environ.get("EXP_E2E_KEEP") != "1":
+                    site.host.remove()
+    finally:
+        hooks.stop()

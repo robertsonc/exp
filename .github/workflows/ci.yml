@@ -223,6 +223,15 @@ jobs:
           set -euo pipefail
           npm install --no-save --no-audit --no-fund --ignore-scripts --prefix test/e2e/m1 "playwright@${PLAYWRIGHT_VERSION}"
           (cd test/e2e/m1 && npx --no-install playwright install --with-deps chromium)
+      - name: Dashboard offline operation in a network namespace (04-dashboard.md 7.7, needs root for unshare -n)
+        if: hashFiles('test/harness/Makefile') != ''
+        # Skipped in the unprivileged unit job (no network namespace there); here it MUST run, so a skip fails the step.
+        run: |
+          set -euo pipefail
+          sudo -E env "PATH=$PATH" PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest \
+            "dashboard/tests/test_offline_netns.py::test_outer_runs_inside_netns" -q -rs -p no:cacheprovider | tee "$RUNNER_TEMP/offline-netns.log"
+          grep -qE '(^| )1 passed' "$RUNNER_TEMP/offline-netns.log"
+          ! grep -qiE 'skipped' "$RUNNER_TEMP/offline-netns.log"
       - name: make -C test/harness ci (privileged Docker; images are built, not pre-pulled)
         if: hashFiles('test/harness/Makefile') != ''
         run: make -C test/harness ci

@@ -15,7 +15,10 @@
   gateway-down [--site N]                       the gateway of that site stops answering the LAN altogether: everything
                                                arriving from the event LAN is dropped (ICMP to the gateway, DHCP, DNS,
                                                forwarding): the "Network down" fault
-  restore                                       remove every injected fault
+  cut-internet                                  take the WHOLE simulated internet away: the isp namespace (1.1.1.1, 8.8.8.8, every
+                                               app server) drops everything on every path (event LANs via the edge AND the
+                                               management network), so no site and no host reaches a public address
+  restore                                       remove every injected fault (cut-internet included)
   status                                        JSON of the faults currently injected
   canary IP [--site N]                          exit 0 if the resolver at IP answers canary.exp.test (known-good probe)
   hooks-mode CODE|ok / hooks-clear              multisite: make the webhook receiver answer CODE (e.g. 503) / restore 200;
@@ -149,6 +152,23 @@ def cmd_cut_egress(a: argparse.Namespace) -> None:
         nsx("edge", "iptables", "-w", "-A", "EXP_FAULT_FWD", "-i", EDGE_IF[site], "-o", "edge-up", "-j", "DROP")
 
 
+ISP_NS, ISP_CHAIN = "isp", "EXP_FAULT_NET"
+
+
+def cmd_cut_internet(_a: argparse.Namespace) -> None:
+    """Created lazily (the chain is not in lan-up.sh): INPUT (the simulated hosts live on the isp's loopback),
+    FORWARD and OUTPUT of the isp namespace drop everything that is not loopback, whichever interface it uses."""
+    if nsx(ISP_NS, "iptables", "-w", "-S", ISP_CHAIN, check=False).returncode != 0:
+        nsx(ISP_NS, "iptables", "-w", "-N", ISP_CHAIN)
+    for hook in ("INPUT", "FORWARD", "OUTPUT"):
+        if nsx(ISP_NS, "iptables", "-w", "-C", hook, "-j", ISP_CHAIN, check=False).returncode != 0:
+            nsx(ISP_NS, "iptables", "-w", "-I", hook, "1", "-j", ISP_CHAIN)
+    nsx(ISP_NS, "iptables", "-w", "-F", ISP_CHAIN)
+    for hook_dir in ("-i", "-o"):
+        nsx(ISP_NS, "iptables", "-w", "-A", ISP_CHAIN, hook_dir, "isp-dn", "-j", "DROP")
+        nsx(ISP_NS, "iptables", "-w", "-A", ISP_CHAIN, hook_dir, "isp-mg", "-j", "DROP")
+
+
 def cmd_gateway_down(a: argparse.Namespace) -> None:
     site = site_ok(a.site)
     for chain in ("EXP_FAULT_IN", "EXP_FAULT_FWD"):
@@ -156,7 +176,10 @@ def cmd_gateway_down(a: argparse.Namespace) -> None:
 
 
 def fault_chains() -> list[tuple[str, tuple[str, ...]]]:
-    return [(n, ("EXP_FAULT_IN", "EXP_FAULT_FWD")) for _i, n in gw_namespaces()] + [("edge", ("EXP_FAULT_FWD",))]
+    chains = [(n, ("EXP_FAULT_IN", "EXP_FAULT_FWD")) for _i, n in gw_namespaces()] + [("edge", ("EXP_FAULT_FWD",))]
+    if nsx(ISP_NS, "iptables", "-w", "-S", ISP_CHAIN, check=False).returncode == 0:      # only once cut-internet made it
+        chains.append((ISP_NS, (ISP_CHAIN,)))
+    return chains
 
 
 def cmd_restore(_a: argparse.Namespace) -> None:
@@ -237,6 +260,7 @@ def main(argv: list[str]) -> int:
     p = sub.add_parser("gateway-down")
     p.add_argument("--site", type=int, default=1)
     p.set_defaults(fn=cmd_gateway_down)
+    sub.add_parser("cut-internet").set_defaults(fn=cmd_cut_internet)
     sub.add_parser("restore").set_defaults(fn=cmd_restore)
     sub.add_parser("status").set_defaults(fn=cmd_status)
     p = sub.add_parser("canary")

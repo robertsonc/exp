@@ -78,6 +78,20 @@ def probe_usage(ctx: Context) -> tuple[str | None, dict[str, str]]:
     return mgmt, ports
 
 
+def _ns_json(ctx: Context, port_id: str, what: str, iface: str) -> list[dict[str, Any]]:
+    """`ip -n exp-<port_id> -j <what> show`, only `iface` (empty if the namespace or interface is absent)."""
+    res = ctx.runner.run(["ip", "-n", f"exp-{port_id}", "-j", what, "show"], timeout=10)
+    if res.rc != 0 or not res.stdout.strip():
+        return []
+    try:
+        doc = json.loads(res.stdout)
+    except ValueError:
+        return []
+    return (
+        [d for d in doc if isinstance(d, dict) and d.get("ifname") == iface] if isinstance(doc, list) else []
+    )
+
+
 def default_route_iface(routes: list[dict[str, Any]]) -> str | None:
     best: tuple[int, str] | None = None
     for r in routes:
@@ -103,6 +117,15 @@ def interface_facts(ctx: Context) -> tuple[list[dict[str, Any]], str | None, dic
     routes = _ip_json(ctx, "route")
     default_if = default_route_iface(routes)
     mgmt, ports = probe_usage(ctx)
+    # A running probe (netns mode) moves each test port into its own namespace `exp-<port id>`: the interface
+    # is gone from the host's namespace but is still this host's, in use by the probe. The manager validates a
+    # probe's stored `ports` against this list (`unknown_interface` otherwise: a running probe's config could
+    # not be edited at all), so report such a port from its namespace.
+    present = {link.get("ifname") for link in links}
+    for iface, port_id in ports.items():
+        if iface not in present:
+            links += _ns_json(ctx, port_id, "link", iface)
+            addrs += _ns_json(ctx, port_id, "addr", iface)
     addr_by: dict[str, list[str]] = {}
     for a in addrs:
         name = a.get("ifname")

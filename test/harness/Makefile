@@ -10,7 +10,7 @@ LAYOUT ?= all
 HOST ?=
 ARTIFACTS ?= $(ROOT)/test/e2e/.artifacts
 
-.PHONY: up down shell build status ci lanctl
+.PHONY: up down shell build status ci ci-m3 lanctl
 
 build:
 	./harness.sh build
@@ -36,3 +36,10 @@ ci: build
 	EXP_E2E_ARTIFACTS="$(ARTIFACTS)" $(PY) -m pytest $(ROOT)/test/e2e/m1 -q -rA -p no:cacheprovider \
 	    --junitxml="$(ARTIFACTS)/m1-junit.xml" || rc=$$?; \
 	./harness.sh down; exit $$rc
+
+# M3 multi-site + alerts suite (own docker prefix/subnet: expm3 / 172.30.43.0/24, see test/e2e/m3/m3lib.py)
+ci-m3: build
+	@mkdir -p "$(ARTIFACTS)"; rc=0; \
+	EXP_E2E_ARTIFACTS="$(ARTIFACTS)" $(PY) -m pytest $(ROOT)/test/e2e/m3 -q -rA -p no:cacheprovider \
+	    --junitxml="$(ARTIFACTS)/m3-junit.xml" || rc=$$?; \
+	EXP_HARNESS_PREFIX=expm3 EXP_HARNESS_SUBNET=172.30.43.0/24 ./harness.sh down; exit $$rc

@@ -64,6 +64,9 @@ class ScriptedRunner:
         self.fail: dict[tuple[str, ...], Result] = {}  # prefix of argv -> forced result
         self.show: dict[str, dict[str, str]] = {}
         self.ip: dict[str, Any] = {"link": [], "addr": [], "route": []}
+        self.netns: dict[
+            str, dict[str, Any]
+        ] = {}  # namespace name -> {"link": [...], "addr": [...]} (ip -n <ns> -j ...)
         self.journal = "line one\nline two\n"
         self.synced = "yes"
 
@@ -100,6 +103,11 @@ class ScriptedRunner:
         if exe == "useradd":
             self.users.add(args[-1])
             return Result(0)
+        if exe == "ip" and args[1] == "-n":  # ip -n <netns> -j <link|addr> show
+            ns = args[2]
+            if ns not in self.netns:
+                return Result(1, "", f'Cannot open network namespace "{ns}": No such file or directory')
+            return Result(0, json.dumps(self.netns[ns].get(args[4], [])))
         if exe == "ip":
             key = args[2]
             return Result(0, json.dumps(self.ip.get(key, [])))

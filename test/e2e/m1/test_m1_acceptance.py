@@ -97,7 +97,11 @@ def test_a1_1_all_lines_green_within_30s_and_beats_every_10s(stack: L.Stack, art
     page = board(stack, f"/probe/{stack.probe_id}", shot, "A1.1")
     assert shot.stat().st_size > 5000
     text = page["text"]
-    assert "Hall B e2e" in text and state["verdict"]["headline"] in text, text[:600]
+    # the all-good sysadmin headline rotates with a 10-minute time bucket (verdict.py seed t // 600_000): the board,
+    # rendered ~80 s after `state` was read, may legitimately show the next bucket's line. Accept the headline the API
+    # gives before the page was rendered or right after it (the page is one of the two), never an unrelated one.
+    headlines = {state["verdict"]["headline"], stack.state()["verdict"]["headline"]}
+    assert "Hall B e2e" in text and any(h in text for h in headlines), (headlines, text[:600])
     for label in ("Network", "DHCP", "DNS", "Internet", "Apps"):
         assert re.search(rf"{label}\s*\n\s*ok\b", text), f"board does not show {label} ok:\n{text[:800]}"
     assert not page["errors"], page["errors"]
