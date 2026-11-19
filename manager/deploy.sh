@@ -32,6 +32,7 @@
 # by the build that produced it (--dry-run and the offline rendering are tested). Read the output of the first run.
 set -euo pipefail
 
+CALLER_PWD="$PWD"   # relative file arguments are resolved against the directory deploy.sh was called from
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
 cd "$HERE"
@@ -103,6 +104,7 @@ if [ -n "$ORG_NAME" ]; then
   printf '%s' "$ORG_NAME" | LC_ALL=C grep -q '[[:cntrl:]]' && die "--org-name contains control characters"
 fi
 [ -n "$PUBKEY_FILE" ] || PUBKEY_FILE="$REPO_ROOT/packaging/keys/release-pub.pem"
+case "$PUBKEY_FILE" in /*) ;; *) PUBKEY_FILE="$CALLER_PWD/$PUBKEY_FILE" ;; esac
 
 # ---- prerequisites -------------------------------------------------------------------------------------
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but was not found in PATH"; }
@@ -117,7 +119,19 @@ RELEASE_PUBKEY_PEM="$(cat "$PUBKEY_FILE")"
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/exp-deploy.XXXXXX")"
 chmod 700 "$WORKDIR"
-trap 'rm -rf "$WORKDIR"' EXIT
+WORKERS_DEV_OPEN=0   # 1 between `wrangler deploy` (enables workers.dev for the smoke tests) and the step that disables it
+on_exit() {
+  local rc=$?
+  if [ "$WORKERS_DEV_OPEN" = 1 ]; then
+    # the run stopped after workers.dev was enabled: never leave a hostname that Access does not protect reachable
+    warn "stopped before the end: disabling the workers.dev route anyway (Access does not protect it)"
+    cf POST "/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME/subdomain" '{"enabled":false,"previews_enabled":false}' >/dev/null \
+      || warn "could not disable the workers.dev route: disable it in the dashboard (Workers > $WORKER_NAME > Settings > Domains & Routes)"
+  fi
+  rm -rf "$WORKDIR"
+  exit "$rc"
+}
+trap on_exit EXIT
 
 export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID" CLOUDFLARE_API_TOKEN WRANGLER_SEND_METRICS=false
 WR=(npx --no-install wrangler)
@@ -235,7 +249,7 @@ custom_domain = true
     }
     BEGIN { section = ""; extras = 0 }
     /^\[/ {
-      if (!extras) { print "workers_dev = true  # enabled for the post-deploy smoke tests; deploy.sh disables it afterwards"; print ""; extras = 1 }
+      if (!extras) { print "workers_dev = true  # enabled for the post-deploy smoke tests; deploy.sh disables it afterwards"; print "preview_urls = false  # version preview URLs live on workers.dev, outside Access"; print ""; extras = 1 }
       section = $0
       if (section == "[vars]" || (section == "[assets]" && ENVIRON["V_EMBED"] == "1")) { skip = 1; next } else { skip = 0 }
       print; next
@@ -414,6 +428,7 @@ else
     unset EXP_EMBED_UI
     node "$HERE/scripts/prepare.mjs" >&2
   fi
+  [ -n "$DOMAIN" ] && [ "$KEEP_WORKERS_DEV" = 0 ] && WORKERS_DEV_OPEN=1
   "${WR[@]}" deploy -c "$GEN" </dev/null >&2 || die "wrangler deploy failed"
 fi
 
@@ -495,7 +510,9 @@ else
       die "direct GET $DIRECT/api/admin/v1/me answered $code, expected 401 from the Worker: the Worker must refuse admin requests that carry no Access JWT"; fi; }
   if [ "$code" = 401 ]; then
     grep -q 'unauthenticated' "$body" || die "the 401 did not come from the exp Worker (body: $(head -c 120 "$body"))"
-    code="$(http "$body" -H 'Cf-Access-Jwt-Assertion: eyJhbGciOiJSUzI1NiIsImtpZCI6ImZvcmdlZCJ9.eyJlbWFpbCI6ImF0dGFja2VyQGV4YW1wbGUuY29tIn0.forged' "$DIRECT/api/admin/v1/me")"
+    # retried like the check above: workers.dev can answer a transient 404 for a while after it is enabled.
+    # Only a 401 from the Worker passes; a 200 (or anything else after ~2 min) fails the deploy.
+    code="$(retry_http "$body" 401 "$DIRECT/api/admin/v1/me" -H 'Cf-Access-Jwt-Assertion: eyJhbGciOiJSUzI1NiIsImtpZCI6ImZvcmdlZCJ9.eyJlbWFpbCI6ImF0dGFja2VyQGV4YW1wbGUuY29tIn0.forged')" || true
     [ "$code" = 401 ] && grep -q 'unauthenticated' "$body" || die "a forged Cf-Access-Jwt-Assertion was NOT refused with 401 by the Worker (got $code)"
     log "ok: the Worker refuses admin requests without a JWT and with a forged JWT (401)"
   fi
@@ -520,6 +537,7 @@ else
   if [ -n "$DOMAIN" ] && [ "$KEEP_WORKERS_DEV" = 0 ]; then
     log "disabling the workers.dev route (Access does not protect it)"
     cf_must "disabling the workers.dev route" POST "/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME/subdomain" '{"enabled":false,"previews_enabled":false}' >/dev/null
+    WORKERS_DEV_OPEN=0
   elif [ -n "$DOMAIN" ]; then
     warn "--keep-workers-dev: $WORKERS_DEV_HOST stays reachable outside Access (the Worker still enforces JWTs itself)"
   fi

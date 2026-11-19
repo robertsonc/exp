@@ -15,8 +15,9 @@ The production manager (control panel) for this organization. No secrets in this
 | Access team domain | `robertsonfamily.cloudflareaccess.com` (identity provider: one-time PIN) |
 | Access apps | `exp-manager` (allow: owner email), `exp-manager bypass /api/agent`, `… /install.sh`, `… /healthz` |
 | Release public key | `packaging/keys/release-pub.pem` (Ed25519) |
-| Releases published | `0.1.0` (agent, probe, collector amd64+arm64, dashboard) |
+| Releases published | `0.1.0`, `0.1.1` (agent, probe, collector amd64+arm64, dashboard). Use `0.1.1`: `0.1.0`'s agent refuses config edits of a running probe (`CR-m3-facts-netns-ports`) |
 | First deployed | 2026-11-18 |
+| Last redeployed | 2026-11-19: M3 (`main` 3c41605), migrations `0003` + `0004`; `workers.dev` and preview URLs disabled |
 
 Verified after deploy (`deploy.sh` step 6 and manual checks): `/healthz` → `ok`; the Worker itself answers
 401 to `/api/admin/v1/me` without a JWT and with a forged JWT (direct request, bypassing Access); `/` redirects to the
@@ -44,7 +45,8 @@ packaging/verify-release.sh dist packaging/keys/release-pub.pem
 CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=<account id> manager/scripts/publish-release.sh --dist dist \
   --pubkey packaging/keys/release-pub.pem
 ```
-Then set the version on a site (with a canary host) in the UI.
+Then set the version on a site (with a canary host) in the UI. Relative paths are fine: `deploy.sh` resolves `--release-pubkey`
+against the directory it is called from.
 
 ## Rotating keys
 
@@ -57,7 +59,7 @@ enrols you may simply `wrangler secret put` a new key, because nothing is encryp
 **Release key**
 1. `packaging/gen-release-key.sh /secure/exp-release.pem` (outside the repo; prints the public key path).
 2. Copy the new public key over `packaging/keys/release-pub.pem`, commit.
-3. Re-sign the release: `EXP_RELEASE_KEY=/secure/exp-release.pem packaging/build.sh --release 0.1.0 --out dist`
+3. Re-sign each published release from its own commit, e.g. `EXP_RELEASE_KEY=/secure/exp-release.pem packaging/build.sh --release 0.1.1 --out dist`
    (tarballs are byte-identical for the same commit; only the signature changes).
 4. Redeploy with the new key (`deploy.sh … --release-pubkey packaging/keys/release-pub.pem`), then re-publish
    (`publish-release.sh --dist dist --pubkey packaging/keys/release-pub.pem`; it upserts the signature).
@@ -102,7 +104,7 @@ Re-encryption audit events (`master_key.reencrypt`) carry counts and key ids onl
 
 1. Open https://exp-control.harnessed.cloud and sign in through Access (one-time PIN). The first sign-in of the owner
    email creates the owner account.
-2. **Sites** → create a site (name, slug, timezone, edge label) and set its release to `0.1.0`.
+2. **Sites** → create a site (name, slug, timezone, edge label) and set its release to `0.1.1`.
 3. **Hosts → Add host**: name, site, shapes. Copy the one-liner and run it on an Ubuntu 22.04/24.04 host:
    `curl -fsSL https://exp-control.harnessed.cloud/install.sh | sudo bash -s -- expe_…` (single use, 1 hour).
 4. Add the **collector** first (it must report its TLS fingerprint before probes are wired), then dashboards, then

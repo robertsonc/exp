@@ -15,6 +15,9 @@ from exp_common import tlspin
 
 from exp_collector.health import METRIC_KEYS, days_to_full, empty_metrics, evaluate
 
+# a dev tree reports the repo's VERSION file (a packed tarball its own VERSION): never a hardcoded release number
+REPO_VERSION = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
+
 EXE = str(Path(__file__).resolve().parents[1] / "bin" / "exp-collector")
 
 
@@ -52,7 +55,7 @@ def test_health_json_ok_validates_and_has_every_contract_key(env, vm):
     assert m["days_to_full"] is None                      # no growth history yet
     assert doc["facts"]["listen"] == "10.32.98.25:8443"   # the configured listen (config fixture)
     assert doc["facts"]["tls_fingerprint_sha256"] == tlspin.fingerprint_of_pem_file(env.cert)
-    assert doc["uptime_s"] >= 0 and doc["version"] == "0.1.0"
+    assert doc["uptime_s"] >= 0 and doc["version"] == REPO_VERSION
     blob = json.dumps(doc)
     for secret in (env.ingest_token, env.dash_token):
         assert secret not in blob
@@ -164,7 +167,7 @@ def test_days_to_full_is_reported_by_the_monitor(env):
 
 def test_version_and_reflector_disabled_stub(env):
     r = subprocess.run([sys.executable, EXE, "version"], capture_output=True, text=True, timeout=10)
-    assert r.stdout.strip() == "exp-collector 0.1.0" and r.returncode == 0
+    assert r.stdout.strip() == f"exp-collector {REPO_VERSION}" and r.returncode == 0
     env.cfg_doc["reflector"]["enabled"] = False
     r = cli(env, "reflector")
     assert r.returncode == 0 and r.stdout.strip() == "reflector disabled"
