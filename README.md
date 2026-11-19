@@ -11,11 +11,12 @@ Resilience drills prove the monitoring and the network's failover actually work.
 
 ## Status
 
-**v0.1.0 — milestones M0–M2 implemented and accepted** (contracts; probe, collector, dashboard; Cloudflare
-manager + admin UI; agent + one-line bootstrap; signed reproducible releases; CI). The M1 (A1.1–A1.5) and M2
-(A2.2–A2.8) acceptance suites pass in containers (`test/e2e/`), M1 also in CI. The control panel is deployed at
-https://exp-control.harnessed.cloud ([deployment record](docs/deployments/exp-control.md)).
-Next: M3 (multi-site alerts, offline operation), M4 (path quality, throughput, target ports, Wi-Fi),
+**Milestones M0–M3 implemented and accepted; v0.1.0 (M0–M2) released.** Contracts; probe, collector, dashboard; Cloudflare
+manager + admin UI; agent + one-line bootstrap; signed reproducible releases; CI. The M1 (A1.1–A1.5), M2 (A2.2–A2.8)
+and M3 (A3.1–A3.4: multi-site federation, webhook alerts, manager outage, site internet outage) acceptance suites pass
+in containers (`test/e2e/`); M1 runs in CI on every push, M1–M3 nightly (`e2e.yml`, A3.3 with the full 30-minute outage).
+The control panel is deployed at https://exp-control.harnessed.cloud ([deployment record](docs/deployments/exp-control.md)).
+Next: M4 (path quality, throughput, target ports, Wi-Fi),
 M5 (drills, correlation), M6 (speedtest analytics) — see [ROADMAP.md](ROADMAP.md).
 
 ## Documents
