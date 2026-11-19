@@ -132,6 +132,7 @@ _TABLE = {
         GET /settings/platform-webhook
         PUT /settings/platform-webhook
         POST /settings/platform-webhook/test
+        GET /settings/master-key
         GET /audit
         GET /settings
         PATCH /settings
@@ -339,9 +340,10 @@ def test_admin_role_matrix_matches_spec():
     assert role[("post", "/components/{component_id}/rotate")] == "admin"
     assert role[("post", "/releases/import")] == "admin"
     assert role[("get", "/dashboards/{dashboard_id}/users")] == "admin"
+    assert role[("get", "/settings/master-key")] == "admin"  # CR-m3-master-key-rotation
     for (m, p), r in role.items():
         admin_only = ("/audit", "/dashboards/{dashboard_id}/users", "/dashboards/{dashboard_id}/noc-tokens",
-                      "/dashboards/{dashboard_id}/tls")
+                      "/dashboards/{dashboard_id}/tls", "/settings/master-key")
         if m == "get" and p not in admin_only:
             assert r == "viewer", (m, p)
 

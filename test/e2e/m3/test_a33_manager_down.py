@@ -20,8 +20,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-import outagelib as O
 import pytest
+
+import outagelib as O
 
 pytestmark = pytest.mark.e2e
 m2lib = O.m2lib

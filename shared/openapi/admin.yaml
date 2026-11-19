@@ -2215,6 +2215,38 @@ components:
           additionalProperties: true
       additionalProperties: false
       description: Defaults from 05-manager.md section 14; any key may be omitted to keep its default.
+    MasterKeyStatus:
+      type: object
+      properties:
+        current_key_id:
+          type: string
+          pattern: ^[0-9a-f]{16}$
+          description: Id of `EXP_MASTER_KEY` (first 16 hex of sha256("exp-key-id/v1|" + key)); not secret.
+        previous_key_id:
+          type:
+          - string
+          - 'null'
+          pattern: ^[0-9a-f]{16}$
+          description: Id of `EXP_MASTER_KEY_PREVIOUS`, or null when no rotation is in progress.
+        remaining_previous:
+          type: integer
+          minimum: 0
+          description: Values still sealed by the previous key (or unstamped legacy rows), all kinds together.
+        unknown_key_rows:
+          type: integer
+          minimum: 0
+          description: Values stamped with a key id that is neither current nor previous (unreadable; fail closed).
+        safe_to_remove_previous:
+          type: boolean
+          description: True when remaining_previous and unknown_key_rows are both 0.
+      required:
+      - current_key_id
+      - previous_key_id
+      - remaining_previous
+      - unknown_key_rows
+      - safe_to_remove_previous
+      additionalProperties: false
+      description: CR-m3-master-key-rotation. 503 `unavailable` when the key ring is misconfigured.
     PlatformWebhook:
       type: object
       properties:
@@ -4997,6 +5029,28 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+  /settings/master-key:
+    get:
+      operationId: getMasterKeyStatus
+      summary: Master-key rotation status (key ids and re-encryption progress; no key material)
+      tags:
+      - settings
+      x-exp-min-role: admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasterKeyStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /settings/platform-webhook:
     get:
       operationId: getPlatformWebhook

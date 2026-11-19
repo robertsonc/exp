@@ -606,7 +606,7 @@ All mutations write an audit event. Full request/response schemas are produced i
 
 Fleet endpoints return `ETag` and `Cache-Control: private, max-age=15`; the UI polls every 30 s.
 | audit | `GET audit?from&to&actor&resource` |
-| settings | `GET/PATCH settings` (org name, drills enabled, retention defaults, owner) |
+| settings | `GET/PATCH settings` (org name, drills enabled, retention defaults, owner), `GET settings/master-key` (admin; key ids + re-encryption progress, CR-m3-master-key-rotation) |
 
 ## 14. Speedtest contracts (M6)
 

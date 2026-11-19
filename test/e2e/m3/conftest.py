@@ -61,8 +61,9 @@ def stack(release: m3lib.L.Release, artifacts: Path, tmp_path_factory: pytest.Te
 @pytest.fixture(scope="module")
 def outage_site(release: m3lib.L.Release, artifacts: Path, tmp_path_factory: pytest.TempPathFactory):
     """The M2 control-plane stack plus one agent-managed host (collector + dashboard + probe) with webhook alerts."""
-    import outagelib as O
     from expharness import dockerhost, hostsfile
+
+    import outagelib as O
     if not hostsfile.can_edit():
         pytest.skip("/etc/hosts is not writable (the Worker reaches the local Access issuer by host name)")
     if not (O.REPO / "manager" / "node_modules" / ".bin" / "wrangler").exists():

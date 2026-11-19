@@ -2322,6 +2322,47 @@
    "iface_errors"
   ]
  },
+ "MasterKeyStatus": {
+  "additionalProperties": false,
+  "description": "CR-m3-master-key-rotation. 503 `unavailable` when the key ring is misconfigured.",
+  "properties": {
+   "current_key_id": {
+    "description": "Id of `EXP_MASTER_KEY` (first 16 hex of sha256(\"exp-key-id/v1|\" + key)); not secret.",
+    "pattern": "^[0-9a-f]{16}$",
+    "type": "string"
+   },
+   "previous_key_id": {
+    "description": "Id of `EXP_MASTER_KEY_PREVIOUS`, or null when no rotation is in progress.",
+    "pattern": "^[0-9a-f]{16}$",
+    "type": [
+     "string",
+     "null"
+    ]
+   },
+   "remaining_previous": {
+    "description": "Values still sealed by the previous key (or unstamped legacy rows), all kinds together.",
+    "minimum": 0,
+    "type": "integer"
+   },
+   "safe_to_remove_previous": {
+    "description": "True when remaining_previous and unknown_key_rows are both 0.",
+    "type": "boolean"
+   },
+   "unknown_key_rows": {
+    "description": "Values stamped with a key id that is neither current nor previous (unreadable; fail closed).",
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "current_key_id",
+   "previous_key_id",
+   "remaining_previous",
+   "unknown_key_rows",
+   "safe_to_remove_previous"
+  ],
+  "type": "object"
+ },
  "Me": {
   "additionalProperties": true,
   "properties": {

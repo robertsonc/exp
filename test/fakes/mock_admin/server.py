@@ -1583,6 +1583,12 @@ def r_audit(a: MockAdmin, r: Req) -> Resp:
     return ok(paginate(r.q, items))
 
 
+def r_master_key(a: MockAdmin, r: Req) -> Resp:
+    """Steady state, no rotation in progress (CR-m3-master-key-rotation). Key ids are fixed fakes, not derived from keys."""
+    return ok({"current_key_id": "0123456789abcdef", "previous_key_id": None, "remaining_previous": 0,
+               "unknown_key_rows": 0, "safe_to_remove_previous": True})
+
+
 def r_settings_get(a: MockAdmin, r: Req) -> Resp:
     return ok(a.w["settings"])
 
@@ -1665,6 +1671,7 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("GET", "/settings/fleet-thresholds", "viewer", r_thr_get), ("PUT", "/settings/fleet-thresholds", "admin", r_thr_put),
         ("GET", "/settings/platform-webhook", "viewer", r_pw_get), ("PUT", "/settings/platform-webhook", "admin", r_pw_put),
         ("POST", "/settings/platform-webhook/test", "admin", r_pw_test),
+        ("GET", "/settings/master-key", "admin", r_master_key),
         ("GET", "/audit", "admin", r_audit),
         ("GET", "/settings", "viewer", r_settings_get), ("PATCH", "/settings", "owner", r_settings_patch),
     ]
