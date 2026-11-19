@@ -127,3 +127,15 @@ describe('storage wrapper', () => {
     expect(readJson('exp.test', 'fallback')).toBe('fallback');
   });
 });
+
+describe('issue type (CR-wp5-fleet-api-gaps item 6)', () => {
+  it('uses component_type, host for host-level issues, and the kind-derived scope when the API lacks the field', async () => {
+    const { issueType, SCOPES } = await import('../src/lib/issues');
+    expect(issueType({ kind: 'component_unhealthy', component_type: 'probe' })).toBe('probe');
+    expect(issueType({ kind: 'collector_vm', component_type: 'collector' })).toBe('collector');
+    expect(issueType({ kind: 'disk_high', component_type: null })).toBe('host');
+    expect(issueType({ kind: 'probe_spool' })).toBe('probe');
+    expect(issueType({ kind: 'disk_high' })).toBe('host');
+    expect(SCOPES).toContain('runner');
+  });
+});

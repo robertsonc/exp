@@ -39,6 +39,29 @@ ip link set gw-ev netns gw
 ns gw ip addr add 10.1.0.1/24 dev gw-ev
 ns gw ip link set gw-ev up
 
+# --- OPTIONAL second site (EXP_LAN_SITES>=2, the "multisite" layout): its own event bridge (pinned MAC), its own
+# gateway namespace gw2 (10.2.0.1/24, own dnsmasq DHCP+DNS) and its own uplink to the SAME edge/isp chain, so the
+# two sites fail independently (the fault API takes --site) while one simulated internet serves both.
+SITES=${EXP_LAN_SITES:-1}
+if [ "$SITES" -ge 2 ]; then
+    ip netns add gw2; ns gw2 ip link set lo up; sysctl_ns gw2
+    ip link add br-ev2 type bridge
+    ip link set br-ev2 address 02:e0:00:00:00:02
+    ip link set br-ev2 up
+    ip link add gw-ev2 type veth peer name gw-ev2p
+    ip link set gw-ev2 address 02:e0:00:00:10:02
+    ip link set gw-ev2p master br-ev2 up
+    ip link set gw-ev2 netns gw2
+    ns gw2 ip addr add 10.2.0.1/24 dev gw-ev2
+    ns gw2 ip link set gw-ev2 up
+    ip link add gw2-up type veth peer name edge-dn2
+    ip link set gw2-up netns gw2; ip link set edge-dn2 netns edge
+    ns gw2 ip addr add 10.255.4.1/30 dev gw2-up; ns gw2 ip link set gw2-up up
+    ns edge ip addr add 10.255.4.2/30 dev edge-dn2; ns edge ip link set edge-dn2 up
+    ns gw2 ip route add default via 10.255.4.2
+    ns edge ip route add 10.2.0.0/24 via 10.255.4.1
+fi
+
 # --- gateway <-> edge <-> isp, root <-> isp (management path)
 ip link add gw-up type veth peer name edge-dn
 ip link set gw-up netns gw; ip link set edge-dn netns edge
@@ -73,6 +96,11 @@ ns gw iptables -w -A INPUT -j EXP_FAULT_IN
 ns gw iptables -w -A FORWARD -j EXP_FAULT_FWD
 ns edge iptables -w -N EXP_FAULT_FWD
 ns edge iptables -w -A FORWARD -j EXP_FAULT_FWD
+if [ "$SITES" -ge 2 ]; then
+    for c in EXP_FAULT_IN EXP_FAULT_FWD; do ns gw2 iptables -w -N "$c"; done
+    ns gw2 iptables -w -A INPUT -j EXP_FAULT_IN
+    ns gw2 iptables -w -A FORWARD -j EXP_FAULT_FWD
+fi
 
 # --- DHCP + DNS for the event VLAN (the gateway). No upstream: nothing can leave the simulation.
 cat > "$RUN/gw-dnsmasq.conf" <<CONF
@@ -95,6 +123,11 @@ pid-file=$RUN/gw-dnsmasq.pid
 conf-file=$LAN/names.conf
 CONF
 ns gw dnsmasq --conf-file="$RUN/gw-dnsmasq.conf"
+if [ "$SITES" -ge 2 ]; then
+    sed -e 's/gw-ev/gw-ev2/; s/10\.1\.0\./10.2.0./g; s/gw\.leases/gw2.leases/; s/gw-dnsmasq/gw2-dnsmasq/g' \
+        "$RUN/gw-dnsmasq.conf" > "$RUN/gw2-dnsmasq.conf"
+    ns gw2 dnsmasq --conf-file="$RUN/gw2-dnsmasq.conf"
+fi
 
 # --- the "public" resolvers 1.1.1.1 / 8.8.8.8 (alternate resolver), in the isp namespace
 cat > "$RUN/isp-dnsmasq.conf" <<CONF
@@ -127,10 +160,29 @@ chmod 644 "$PKI/ca.pem"
 ns isp python3 -u "$LAN/targets.py" --cert "$PKI/srv.pem" --key "$PKI/srv.key" > "$LOG/targets.log" 2>&1 &
 echo $! > "$RUN/targets.pid"
 
+# --- multisite: the local webhook receiver the collectors' webhooks.json points at (https, certificate from the
+# throwaway CA, bound to this container's management address; every POST is recorded in /var/lib/lan/webhooks.jsonl)
+HOOKS_IP=
+if [ "$SITES" -ge 2 ]; then
+    HOOKS_IP=$(ip -4 -o addr show dev eth0 | awk '{print $4}' | cut -d/ -f1 | head -1)
+    openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=exp harness webhooks" \
+        -keyout "$PKI/hooks.key" -out "$PKI/hooks.csr" 2>/dev/null
+    printf 'subjectAltName=IP:%s,DNS:hooks.exp.test\nextendedKeyUsage=serverAuth\n' "$HOOKS_IP" > "$PKI/hooks.cnf"
+    openssl x509 -req -in "$PKI/hooks.csr" -CA "$PKI/ca.pem" -CAkey "$PKI/ca.key" -CAcreateserial -days 30 \
+        -extfile "$PKI/hooks.cnf" -out "$PKI/hooks.pem" 2>/dev/null
+    : > /var/lib/lan/webhooks.jsonl
+    python3 -u "$LAN/webhook_receiver.py" --cert "$PKI/hooks.pem" --key "$PKI/hooks.key" --bind "$HOOKS_IP" \
+        --port 9443 --log /var/lib/lan/webhooks.jsonl --mode-file "$RUN/hooks.mode" > "$LOG/webhooks.log" 2>&1 &
+    echo $! > "$RUN/hooks.pid"
+fi
+
 # wait until the things the tests depend on really answer (known-good before any fault is injected)
 for _ in $(seq 40); do
     if ns gw ping -c1 -W1 -q 8.8.8.8 >/dev/null 2>&1 && ns gw python3 "$LAN/lanctl" _canary 10.1.0.1 >/dev/null 2>&1 \
-       && ns gw curl -sf -m 2 -o /dev/null http://142.250.80.46/; then
+       && ns gw curl -sf -m 2 -o /dev/null http://142.250.80.46/ \
+       && { [ "$SITES" -lt 2 ] || { ns gw2 ping -c1 -W1 -q 8.8.8.8 >/dev/null 2>&1 \
+            && ns gw2 python3 "$LAN/lanctl" _canary 10.2.0.1 >/dev/null 2>&1 \
+            && curl -sf -m 2 -o /dev/null --cacert "$PKI/ca.pem" "https://$HOOKS_IP:9443/_health"; }; }; then
         touch "$RUN/ready"
         break
     fi

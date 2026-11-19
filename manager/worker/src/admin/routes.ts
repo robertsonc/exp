@@ -7,14 +7,16 @@ import { z } from "zod";
 import { accessAuth, adminOf, requireRole } from "../auth/access";
 import { csrfGuard } from "../auth/csrf";
 import type { AppBindings, Env } from "../env";
-import { ApiError, invalidRequest, notFound } from "../errors";
-import { componentMetrics, fleetHosts, fleetSites, fleetSummary, fleetTop, hostMetrics, mgmtIpOf, overview } from "../fleet/query";
+import { ApiError, ConfigError, invalidRequest, notFound, unavailable } from "../errors";
+import { componentMetrics, componentProbes, fleetHosts, fleetSites, fleetSummary, fleetTop, hostMetrics, interfaceMetrics, mgmtIpOf, overview } from "../fleet/query";
 import { listIssues, snoozeIssue, unsnoozeIssue } from "../issues/store";
 import { importFromGithub, importFromUpload } from "../releases/verify";
+import { masterKeyStatus } from "../secrets/rekey";
 import { readJson } from "../util/body";
 import { sha256Hex } from "../util/encoding";
 import { HOST_ID_RE, SEMVER_RE, SLUG_RE } from "../util/ids";
 import { isoNow, isoPlusSeconds } from "../util/time";
+import { getDashboardTls, putDashboardTls } from "./dashboard-tls";
 import * as intent from "./intent";
 import * as read from "./read";
 import * as svc from "./service";
@@ -262,6 +264,16 @@ adminRoutes.delete("/dashboards/:did/noc-tokens/:noc", requireRole("admin"), asy
   await svc.revokeNocToken(c.env, actorOf(c), noc);
   return c.body(null, 204);
 });
+adminRoutes.get("/dashboards/:did/tls", requireRole("admin"), async (c) => {
+  const d = await read.dashboardSlug(c.env, c.req.param("did"));
+  return c.json(await getDashboardTls(c.env, d));
+});
+adminRoutes.put("/dashboards/:did/tls", requireRole("admin"), async (c) => {
+  const d = await read.dashboardSlug(c.env, c.req.param("did"));
+  const raw = await readJson(c.req.raw, MAX_BODY);
+  if (raw === undefined) throw invalidRequest("a JSON body is required");
+  return c.json(await putDashboardTls(c.env, actorOf(c), d, raw));
+});
 const ssoResponse = (page: { html: string; csp: string }): Response =>
   new Response(page.html, {
     status: 200,
@@ -331,6 +343,10 @@ adminRoutes.get("/fleet/hosts", requireRole("viewer"), async (c) =>
   fleetJson(c, await fleetHosts(c.env, { site: q(c, "site"), type: q(c, "type"), health: q(c, "health"), state: q(c, "state"), version: q(c, "version"), q: q(c, "q"), sort: q(c, "sort"), limit: limitQ(c), cursor: q(c, "cursor") })),
 );
 adminRoutes.get("/fleet/hosts/:id/metrics", requireRole("viewer"), async (c) => fleetJson(c, await hostMetrics(c.env, c.req.param("id"), q(c, "range") ?? "24h", q(c, "keys"))));
+adminRoutes.get("/fleet/hosts/:id/interfaces/:iface/metrics", requireRole("viewer"), async (c) =>
+  fleetJson(c, await interfaceMetrics(c.env, c.req.param("id"), c.req.param("iface"), q(c, "range"), q(c, "keys"))),
+);
+adminRoutes.get("/fleet/components/:cid/probes", requireRole("viewer"), async (c) => fleetJson(c, await componentProbes(c.env, c.req.param("cid"))));
 adminRoutes.get("/fleet/components/:cid/metrics", requireRole("viewer"), async (c) => fleetJson(c, await componentMetrics(c.env, c.req.param("cid"), q(c, "range") ?? "24h", q(c, "keys"))));
 adminRoutes.get("/fleet/top", requireRole("viewer"), async (c) => {
   const lim = q(c, "limit");
@@ -359,6 +375,14 @@ adminRoutes.put("/settings/platform-webhook", requireRole("admin"), async (c) =>
 adminRoutes.post("/settings/platform-webhook/test", requireRole("admin"), async (c) => {
   await emptyBody(c);
   return c.json(await intent.testPlatformWebhook(c.env, actorOf(c)));
+});
+adminRoutes.get("/settings/master-key", requireRole("admin"), async (c) => {
+  try {
+    return c.json(await masterKeyStatus(c.env));
+  } catch (e) {
+    if (e instanceof ConfigError) throw unavailable(e.message);
+    throw e;
+  }
 });
 adminRoutes.get("/settings", requireRole("viewer"), async (c) => c.json(await intent.getSettings(c.env)));
 adminRoutes.patch("/settings", requireRole("owner"), async (c) => c.json(await intent.patchSettings(c.env, actorOf(c), await readJson(c.req.raw, MAX_BODY))));

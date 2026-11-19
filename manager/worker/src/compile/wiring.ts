@@ -84,6 +84,8 @@ export const INGEST_KIND = "ingest_token";
 export const DASH_TOKEN_KIND = "dashboard_token";
 export const SSO_KIND = "sso_secret";
 export const WEBHOOK_KIND = "webhook_url";
+/** admin-provided dashboard TLS: JSON {cert_pem, key_pem}, owner = the dashboard component id (write-only) */
+export const TLS_KIND = "dashboard_tls";
 export const pairOwner = (dashCmp: string, colCmp: string): string => `${dashCmp}:${colCmp}`;
 
 export interface RequiredSecret {

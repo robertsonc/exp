@@ -1,10 +1,11 @@
 # The "fresh Ubuntu systemd host" of the end-to-end suites: the agent acceptance image
 # (agent/tests/container/Dockerfile: systemd as PID 1, curl, openssl, python3, iproute2, sudo) plus
-# dnsmasq-base, which only the TEST uses (a small DHCP/DNS "LAN" in a network namespace for the probe port),
+# dnsmasq-base and iptables, which only the TEST uses (a small DHCP/DNS "LAN" in a network namespace for the probe port;
+# iptables drops the management traffic to the manager and the LAN's DNS to inject faults),
 # and fresh apt lists (a cloud VM has them; the agent installs allow-listed packages with apt).
 ARG BASE=exp-agent-systemd:24.04
 FROM ${BASE}
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq \
- && apt-get install -y -qq --no-install-recommends dnsmasq-base >/dev/null \
+ && apt-get install -y -qq --no-install-recommends dnsmasq-base iptables >/dev/null \
  && systemctl mask dnsmasq.service >/dev/null 2>&1 || true

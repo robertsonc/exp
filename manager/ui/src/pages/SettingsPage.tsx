@@ -6,6 +6,7 @@ import type { AdminEntry, FleetThresholds, Me, OrgSettings, PlatformWebhook, Rol
 import { mutate, useResource } from '../data/hooks';
 import { Badge, Button, ErrorBanner, Panel, SkeletonBlock, StatusPill } from '../components/atoms';
 import { CheckField, FormError, SecretField, SelectField, TextField, failText } from '../components/forms';
+import { MasterKeyCard } from '../components/MasterKeyCard';
 import { notify } from '../components/Toasts';
 import { PageHeader } from './common';
 import { formatAbsolute } from '../lib/format';
@@ -321,6 +322,7 @@ export function SettingsPage({ me }: { me: Me | undefined }): JSX.Element {
           <fieldset class="bare" disabled={!admin}><PlatformWebhookForm key={`${pw.data.format}${pw.data.url.updated_at ?? ''}`} cur={pw.data} /></fieldset>
         )}
       </Panel>
+      <MasterKeyCard admin={admin} />
     </>
   );
 }

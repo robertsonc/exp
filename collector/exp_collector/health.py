@@ -46,13 +46,14 @@ METRIC_KEYS = (
     "ingest_records_per_s", "ingest_rejected_per_min", "ingest_duplicates_per_min", "ingest_bytes_per_s",
     "probes_total", "probes_reporting", "vm_up", "vm_backlog_points", "vm_series", "vm_storage_gb",
     "records_db_gb", "storage_free_gb", "days_to_full", "sse_clients", "open_incidents",
-    "webhook_failures_1h", "rules_eval_ms_p95",
+    "webhook_failures_1h", "rules_eval_ms_p95", "probes",
 )
 
 
 def empty_metrics() -> dict[str, Any]:
     m: dict[str, Any] = dict.fromkeys(METRIC_KEYS, 0)
     m["days_to_full"] = None
+    m["probes"] = []
     return m
 
 
@@ -142,6 +143,7 @@ class Monitor:
         m["ingest_bytes_per_s"] = round(w["bytes"] / win, 1)
         m["probes_total"] = len(app.config.probes)
         m["probes_reporting"] = app.ingestor.reporting_probes()
+        m["probes"] = app.ingestor.probe_rows()
         m["vm_up"] = 1 if app.vm.up else 0
         m["vm_backlog_points"] = app.vm.backlog_points
         self._poll_vm(now)
@@ -272,6 +274,8 @@ def build_health(config: CollectorConfig, paths: Paths, now: float | None = None
         for k in METRIC_KEYS:
             if k in snap["metrics"]:
                 metrics[k] = snap["metrics"][k]
+        if not isinstance(metrics.get("probes"), list):
+            metrics["probes"] = []
         extra = {k: v for k, v in snap["metrics"].items() if k not in metrics and isinstance(v, (int, float))}
         metrics.update(extra)
         uptime = max(0.0, t - float(snap.get("started_at", t)))

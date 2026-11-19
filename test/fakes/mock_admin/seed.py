@@ -37,6 +37,14 @@ COMPONENT_KEYS = {
     "speedtest": ("cpu_pct", "rss_mb"),
 }
 PCT_KEYS = {"cpu_pct", "mem_pct", "disk_pct"}
+# CR-wp5-fleet-api-gaps item 5: per-test measurements per minute (test names of 01-contracts section 3), chartable
+# for probes on request (not part of the default key list of a metrics response).
+BY_TEST_NAMES = ("gateway", "dhcp_hb", "dns_hb", "trace", "ping", "dhcp", "dns", "app", "throughput", "path",
+                 "wifi_hb", "wifi_join", "target_access", "probe_self")
+PROBE_BY_TEST_KEYS = tuple(f"by_test_{n}" for n in BY_TEST_NAMES)
+# CR-wp5-fleet-api-gaps item 3: per-interface history (5-minute buckets, 48 h).
+IFACE_RANGES = {"1h": (300, 12), "6h": (300, 72), "24h": (300, 288), "48h": (300, 576)}
+IFACE_KEYS = ("rx_pps", "tx_pps", "rx_bps", "tx_bps", "errors", "drops")
 
 
 def iso(sec: float) -> str:
@@ -87,6 +95,32 @@ def series_points(entity: str, key: str, profile: dict[str, tuple[float, float, 
     return pts
 
 
+def iface_profile(host_id: str, iface: str, mgmt: bool, role: str) -> dict[str, tuple[float, float, float]]:
+    """Per-interface profile: the management interface follows the host `net_*` figures; others are quieter and the
+    interface name decides whether it shows a few errors / drops (for the error charts)."""
+    host = host_profile(role)
+    scale = 1.0 if mgmt else 0.35
+    lossy = int(hashlib.sha256(f"lossy:{host_id}:{iface}".encode()).hexdigest()[:2], 16) % 4 == 0
+    return {"rx_pps": tuple(v * scale for v in host["net_rx_pps"]), "tx_pps": tuple(v * scale for v in host["net_tx_pps"]),
+            "rx_bps": tuple(v * scale for v in host["net_rx_bps"]), "tx_bps": tuple(v * scale for v in host["net_tx_bps"]),
+            "errors": (0.6, 0.4, 0.8) if lossy else (0.0, 0.0, 0.0),
+            "drops": (1.2, 0.8, 1.5) if lossy else (0.0, 0.0, 0.0)}  # type: ignore[dict-item]
+
+
+def iface_series(entity: str, key: str, profile: dict[str, tuple[float, float, float]], range_: str,
+                 as_of: float, until: float | None) -> list[dict[str, Any]]:
+    """Like series_points but over IFACE_RANGES and with a null max (interface roll-ups keep averages only)."""
+    step, n = IFACE_RANGES[range_]
+    end = int(as_of // step) * step
+    pts = []
+    for i in range(n):
+        t = end - (n - 1 - i) * step
+        if until is not None and t > until:
+            continue          # buckets without samples are absent (the real API never returns null points here)
+        pts.append({"t": t, "avg": metric_value(entity, key, profile, t + step / 2), "max": None})
+    return pts
+
+
 def host_profile(role: str, hot: str | None = None) -> dict[str, tuple[float, float, float]]:
     """(base, daily amplitude, noise) per host key. `hot` pushes one resource over its issue threshold."""
     cpu = {"collector": 35.0, "probe": 12.0, "runner": 8.0}.get(role, 10.0)
@@ -111,6 +145,10 @@ def component_profile(ctype: str, bad: bool = False) -> dict[str, tuple[float, f
     if ctype == "probe":
         p.update(measurements_per_min=(140.0, 10.0, 6.0), fail_per_min=(0.5, 0.3, 0.4),
                  push_lag_s=(0.6, 0.2, 0.2), spool_depth=(0.0, 0.0, 0.0))
+        p.update(by_test_gateway=(12.0, 0.0, 0.0), by_test_dhcp_hb=(6.0, 0.0, 0.0), by_test_dns_hb=(12.0, 0.0, 0.0),
+                 by_test_trace=(6.0, 0.0, 0.0), by_test_ping=(12.0, 0.0, 0.0), by_test_wifi_hb=(6.0, 0.0, 0.0),
+                 by_test_app=(2.0, 1.0, 0.5), by_test_dns=(0.5, 0.3, 0.2), by_test_path=(0.2, 0.1, 0.1),
+                 by_test_probe_self=(1.0, 0.0, 0.0))
         if bad:
             p.update(fail_per_min=(12.0, 3.0, 2.0), push_lag_s=(150.0, 20.0, 30.0), spool_depth=(2400.0, 200.0, 100.0))
     elif ctype == "collector":
@@ -357,7 +395,19 @@ def collector_metrics(host: dict[str, Any], comp: dict[str, Any], at: float) -> 
         "ingest_duplicates_per_min": 1.4, "ingest_bytes_per_s": 182000.0,
         "probes_total": 6, "probes_reporting": 6, "vm_up": 1, "vm_backlog_points": 0, "vm_series": 5200,
         "vm_storage_gb": 1.2, "records_db_gb": 0.4, "storage_free_gb": free_gb, "days_to_full": days,
-        "sse_clients": 2, "open_incidents": 0, "webhook_failures_1h": 0, "rules_eval_ms_p95": 3.2}
+        "sse_clients": 2, "open_incidents": 0, "webhook_failures_1h": 0, "rules_eval_ms_p95": 3.2,
+        "probes": probe_rows(comp, at)}
+
+
+def probe_rows(comp: dict[str, Any], at: float) -> list[dict[str, Any]]:
+    """Per-probe rows of the collector's `probes[]` health metric (CR-wp5-fleet-api-gaps item 2): the probes of its
+    configuration, one of them behind on its clock."""
+    rows = []
+    for i, p in enumerate(comp.get("config", {}).get("probes", [])[:500]):
+        rows.append({"probe_id": p["probe_id"], "last_seen": iso(at - (3 + 4 * i)),
+                     "records_per_min": round(120.0 + 6 * ((i * 7) % 5), 1),
+                     "clock_offset_ms": 1450.0 if i == 2 else round(0.4 + 0.3 * i, 1)})
+    return rows
 
 
 def make_report(host: dict[str, Any], comps: list[dict[str, Any]], at: float) -> dict[str, Any]:
@@ -386,7 +436,10 @@ def make_report(host: dict[str, Any], comps: list[dict[str, Any]], at: float) ->
         if c["type"] == "collector":
             tpl["facts"] = dict(c["facts"])
             tpl["metrics"] = collector_metrics(host, c, at)
-        elif c["type"] != "probe":
+        elif c["type"] == "probe":
+            tpl["metrics"]["by_test_per_min"] = {t: round(metric_value(c["component_id"], f"by_test_{t}", c["_profile"], at))
+                                                 for t in BY_TEST_NAMES if f"by_test_{t}" in c["_profile"]}
+        else:
             tpl["metrics"], tpl["facts"] = {}, {}
         out.append(tpl)
     r["components"] = out
@@ -445,7 +498,8 @@ def _seed_rest(world: dict[str, Any], now: float) -> None:
         h = hosts[hid(hname)]
         issues.append({
             "issue_id": "iss_" + fc.det_id("", f"issue:{i}:{kind}:{hname}"), "kind": kind, "severity": sev,
-            "host_id": h["host_id"], "component_id": cid_of(hname, ctype) if ctype else None, "site": h["site"],
+            "host_id": h["host_id"], "component_id": cid_of(hname, ctype) if ctype else None,
+            "component_type": ctype if ctype else None, "site": h["site"],
             "opened_at": iso(now - opened_ago), "resolved_at": iso(now - resolved_ago) if resolved_ago else None,
             "last_value": val, "detail": detail, "snoozed_until": None})
     issues[7]["snoozed_until"] = iso(now + 50 * 60)           # mem_low snoozed

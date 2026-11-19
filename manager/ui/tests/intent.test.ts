@@ -110,16 +110,15 @@ describe('collector and dashboard editor models', () => {
     f.boardUrl = 'http://nope';
     expect(Object.keys(applyCollectorForm(c, f).problems)).toEqual(expect.arrayContaining(['metricsDays', 'boardUrl']));
   });
-  it('dashboard: title, collectors and TLS mode', () => {
+  it('dashboard: title and collectors; config.tls is not edited here (own endpoint)', () => {
     const d = fixture('dashboard');
     expect(sameConfig(applyDashboardForm(d, dashboardFormFrom(d)).config, d)).toBe(true);
     const f = dashboardFormFrom(d);
     f.title = 'Hall B wall';
-    f.tlsMode = 'provided';
     f.collectorIds = [];
     const r = applyDashboardForm(d, f);
     expect(r.config['title']).toBe('Hall B wall');
-    expect((r.config['tls'] as Cfg)['mode']).toBe('provided');
+    expect(r.config['tls']).toEqual(d['tls']);
     expect(r.config['collector_ids']).toEqual([]);
     expect(r.config['collectors']).toEqual([]);
     f.title = '';

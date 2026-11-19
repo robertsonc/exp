@@ -30,6 +30,8 @@ export interface Issue {
   severity: Severity;
   host_id: string;
   component_id: string | null;
+  /** Type of the component the issue is about; null for host-level issues. Absent on an API that predates the field. */
+  component_type?: string | null;
   site: string;
   opened_at: string;
   resolved_at: string | null;
@@ -85,7 +87,12 @@ export interface MetricSeries {
   series: Record<string, MetricPoint[]>;
   host_id?: string;
   component_id?: string;
+  iface?: string;
 }
+
+/** GET fleet/components/{id}/probes: the collector's latest per-probe rows (CR-wp5-fleet-api-gaps item 2). */
+export interface ProbeRow { probe_id: string; last_seen: string; records_per_min: number; clock_offset_ms: number | null }
+export interface ProbeRows { component_id: string; as_of: string; reported_at: string | null; items: ProbeRow[] }
 
 export interface FleetTop {
   metric: 'cpu' | 'mem' | 'disk' | 'net';
@@ -196,6 +203,9 @@ export interface AlertTestResult { results: { webhook_id: string; ok: boolean; h
 
 export interface DashboardUser { usr_id: string; username: string; role: 'viewer' | 'operator' | 'admin'; created_at: string }
 export interface NocToken { noc_id: string; label: string; role: 'viewer'; expires_at: string | null; revoked_at: string | null; created_at: string }
+export interface DashboardTlsCert { subject: string; issuer: string; not_before: string; not_after: string; sha256: string; san: string[] }
+/** Write-only: the key and the PEM are never returned. */
+export interface DashboardTls { mode: 'self_signed' | 'provided'; set: boolean; updated_at: string | null; cert: DashboardTlsCert | null }
 export interface NocTokenCreated { noc: NocToken; token: string; url?: string | null }
 
 export interface AdminEntry { email: string; role: Role; disabled?: boolean; last_seen?: string | null }

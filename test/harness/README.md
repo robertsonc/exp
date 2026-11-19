@@ -24,15 +24,34 @@ internet. Design ported from `reference/exm/test/harness.sh` (bridge with a **pi
   config (ping 1.1.1.1/8.8.8.8, trace to 8.8.8.8, `google.com` ...) therefore works unchanged.
 * **Two paths:** the event LAN goes gw -> edge -> isp; the management path (the probe's *control-path* trace)
   goes host eth0 -> net container -> isp, so "the edge is down but the ISP answers around it" is expressible.
-* **Layouts** (`harness.sh up all|split`): `all` = one host `h1` (docker name `expm1-h1`, 172.30.41.11, three ports);
+* **Layouts** (`harness.sh up all|split|multisite`): `all` = one host `h1` (docker name `expm1-h1`, 172.30.41.11, three ports);
   `split` = `hc` (172.30.41.12, no ports; collector + dashboard) and `hp` (172.30.41.13, three ports; probe).
   Docker resources are prefixed `expm1-` (`EXP_HARNESS_PREFIX`) on `172.30.41.0/24` (`EXP_HARNESS_SUBNET`).
+
+### Layout `multisite` (M3: A3.1 federation, A3.2 webhooks)
+
+Two event LANs in one net container, three collectors, one dashboard, one webhook receiver (own docker prefix `expm3` and
+subnet `172.30.43.0/24` when driven by `test/e2e/m3`, so it runs beside the M1 suite):
+
+```
+ site 1 (hall-b)  br-ev  + gw  10.1.0.1  (dnsmasq)  --\
+                                                      >-- edge (NAT) -- isp (1.1.1.1 8.8.8.8 apps)
+ site 2 (hall-c)  br-ev2 + gw2 10.2.0.1  (dnsmasq)  --/     hosts: hb1 (.21) hb2 (.22) -> site 1, hc1 (.23) -> site 2,
+                                                                   each collector + probe with 3 ports;  hd (.24) dashboard
+ net container 9443/tcp: webhook receiver (https, harness CA), every POST -> /var/lib/lan/webhooks.jsonl
+```
+
+The fault API takes the site where it matters: `plug ... --site N`, `cut-egress --site N`, `gateway-down --site N` (the
+gateway drops everything from its LAN: the "Network down" fault), `canary IP --site N`; `block-dns` follows the port's
+site; `restore` clears every site. `hooks-mode CODE|ok` makes the receiver answer an error status (retry tests),
+`hooks-clear` truncates its log. Host names/addresses: see `layout_hosts` in `harness.sh`.
 
 ## Commands
 
 ```
 make -C test/harness up [LAYOUT=all|split]     down | status | shell [HOST=h1] | build
 make -C test/harness ci                        build + run test/e2e/m1 (A1.1-A1.5) + always clean up
+make -C test/harness ci-m3                     build + run test/e2e/m3 (A3.1-A3.4, multisite layout) + clean up
 test/harness/harness.sh lanctl <cmd>           the fault API
 ```
 
@@ -43,7 +62,8 @@ test/harness/harness.sh lanctl <cmd>           the fault API
 | `plug LABEL --pid P --ifname IF --mac MAC` / `unplug LABEL` / `ports` | manage the veth test ports (`harness.sh up` plugs `<host>-tp0..2`) |
 | `block-dns LABEL\|all [--resolver-only]` | drop UDP+TCP/53 from that port's MAC at the gateway: both the DHCP-given resolver 10.1.0.1 and the public ones (`--resolver-only`: only 10.1.0.1) |
 | `cut-egress [--at gateway\|edge]` | that router stops forwarding (it still answers TTL-exceeded: traceroute names the last hop) |
-| `restore` | remove every fault (flushes the `EXP_FAULT_*` chains) |
+| `cut-internet` | the whole simulated internet goes away on every path (the `isp` namespace drops all non-loopback traffic: event LANs via the edge AND the management network); A3.4 |
+| `restore` | remove every fault (flushes the `EXP_FAULT_*` chains, `cut-internet` included) |
 | `status` | JSON of the faults in place |
 | `canary IP` | exit 0 when the resolver answers `canary.exp.test` (known-good control before/after a fault) |
 
@@ -67,3 +87,6 @@ test/harness/harness.sh lanctl <cmd>           the fault API
   install resolvable via `NODE_PATH` also works), and a non-root user in the `docker` group is enough (no sudo needed
   for M1). The M2 suite additionally needs a writable `/etc/hosts` (`sudo chmod o+w /etc/hosts` on a non-root runner).
   CI (`.github/workflows/ci.yml`, job `harness`) does all of this explicitly; the images are built, never pre-pulled.
+
+`pktwatch.py OUT.json SUBNET...` (stdlib AF_PACKET, run inside a host; there is no tcpdump in the image) records every packet with an
+endpoint outside the given subnets; A3.4 runs it on the dashboard host while `cut-internet` is in force.

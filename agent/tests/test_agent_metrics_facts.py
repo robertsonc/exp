@@ -259,6 +259,58 @@ def test_interfaces_facts_and_in_use_by_from_the_current_config(env):
     ]
 
 
+def test_a_probe_port_inside_its_netns_is_still_reported_as_an_interface_in_use(env):
+    """Regression (found by the A3.3 e2e): once the probe runs, its test port lives in netns exp-<id> and vanished from the
+    facts, so the manager refused every edit of the running probe's config with `unknown_interface`."""
+    env.runner.ip = {"link": IP_LINK[:2], "addr": IP_ADDR, "route": IP_ROUTE}
+    env.runner.netns = {
+        "exp-c01": {
+            "link": [
+                {"ifname": "vp0", "operstate": "UP", "address": "aa:bb:cc:dd:ee:09"},
+                {"ifname": "other", "operstate": "UP"},
+            ],
+            "addr": [
+                {"ifname": "vp0", "addr_info": [{"local": "10.99.0.50", "prefixlen": 24, "scope": "global"}]}
+            ],
+        }
+    }
+    put(
+        env,
+        "/etc/exp/probe/config.json",
+        json.dumps(
+            {
+                "mgmt_iface": "eno1",
+                "ports": [
+                    {"id": "c01", "iface": "vp0", "role": "client"},
+                    {"id": "c02", "iface": "vp1", "role": "client"},
+                ],
+            }
+        ),
+    )
+    ifaces, _default_if, roles = interface_facts(env.ctx)
+    by = {i["name"]: i for i in ifaces}
+    assert sorted(by) == ["eno1", "vp0"], (
+        "vp0 (in exp-c01) is reported; vp1 (no such namespace) is not invented"
+    )
+    assert (
+        by["vp0"]["in_use_by"] == "probe:c01"
+        and by["vp0"]["state"] == "up"
+        and by["vp0"]["default_route"] is False
+    )
+    assert by["vp0"]["mac"] == "aa:bb:cc:dd:ee:09" and by["vp0"]["addrs"] == ["10.99.0.50/24"]
+    assert roles["vp0"] == "probe:c01"
+    assert ["ip", "-n", "exp-c01", "-j", "link", "show"] in env.runner.calls
+    # an interface that IS in the host namespace is never looked up in a namespace
+    env.runner.calls.clear()
+    env.runner.ip = {
+        "link": IP_LINK[:2] + [{"ifname": "vp0", "operstate": "UP"}],
+        "addr": [],
+        "route": IP_ROUTE,
+    }
+    interface_facts(env.ctx)
+    assert not [c for c in env.runner.calls if c[:3] == ["ip", "-n", "exp-c01"]]
+
+
 def test_in_use_by_rules():
     assert in_use_by("eth0", None, {}, "eth0") == "mgmt"
     assert in_use_by("eth1", "eth0", {"eth1": "c01"}, "eth0") == "probe:c01"

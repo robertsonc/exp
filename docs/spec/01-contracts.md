@@ -595,7 +595,7 @@ All mutations write an audit event. Full request/response schemas are produced i
 | probe ports | `PUT components/{component_id}/ports` (choose test interfaces from host facts; the mgmt interface is refused) |
 | releases | `GET releases`, `POST releases/import` (`{version, source: "github"\|"upload"}`), `POST releases/upload` (multipart), `PATCH sites/{site}/release` (`{version, canary_host_id?}`) |
 | secrets | `POST components/{component_id}/rotate` (ingest/API tokens), `POST hosts/{id}/rotate-agent` |
-| dashboards | `GET/POST dashboards/{dashboard_id}/users`, `DELETE …/users/{usr}`, `GET/POST dashboards/{dashboard_id}/noc-tokens` (token shown once), `DELETE …/noc-tokens/{noc}`, `POST dashboards/{dashboard_id}/sso` → handoff form |
+| dashboards | `GET/POST dashboards/{dashboard_id}/users`, `DELETE …/users/{usr}`, `GET/POST dashboards/{dashboard_id}/noc-tokens` (token shown once), `DELETE …/noc-tokens/{noc}`, `GET/PUT dashboards/{dashboard_id}/tls` (write-only provided certificate + key; never returned), `POST dashboards/{dashboard_id}/sso` → handoff form |
 | alerts | `GET/PUT sites/{site}/alerts` (webhooks, voice, holds) , `POST sites/{site}/alerts/test` |
 | integrations | `GET/PUT integrations/{ec\|mist}` (credentials write-only), `POST integrations/{x}/test` |
 | drills | `GET/POST drills`, `POST drills/{id}/approve`, `POST drills/{id}/start`, `POST drills/abort-all`, `GET drills/{id}/runs/{run}` |
@@ -606,7 +606,7 @@ All mutations write an audit event. Full request/response schemas are produced i
 
 Fleet endpoints return `ETag` and `Cache-Control: private, max-age=15`; the UI polls every 30 s.
 | audit | `GET audit?from&to&actor&resource` |
-| settings | `GET/PATCH settings` (org name, drills enabled, retention defaults, owner) |
+| settings | `GET/PATCH settings` (org name, drills enabled, retention defaults, owner), `GET settings/master-key` (admin; key ids + re-encryption progress, CR-m3-master-key-rotation) |
 
 ## 14. Speedtest contracts (M6)
 

@@ -125,6 +125,23 @@ describe("wiring", () => {
     expect(JSON.parse(creds(d, "dashboard", "noc_tokens.json"))[0]).toMatchObject({ label: "wall display", role: "viewer", sha256: sha("expn_x") });
   });
 
+  it("dashboard TLS: provided pair -> tls.mode provided + tls.crt/tls.key (dashboard host only); no pair -> self_signed", () => {
+    const w = baseWorld();
+    expect(cfg(build(w, H_DASH), "dashboard").tls).toEqual({ mode: "self_signed" });
+    w.secrets[secretKey(C_DASH, "dashboard_tls")] = { plaintext: JSON.stringify({ cert_pem: "CERT-PEM", key_pem: "KEY-PEM" }), hash: null, previous_hash: null };
+    const d = build(w, H_DASH);
+    expect(validateAgainst("desired.schema.json", d)).toEqual([]);
+    expect(cfg(d, "dashboard").tls).toEqual({ mode: "provided" });
+    expect(creds(d, "dashboard", "tls.crt")).toBe("CERT-PEM");
+    expect(creds(d, "dashboard", "tls.key")).toBe("KEY-PEM");
+    for (const h of [H_COL, H_PROBE]) expect(JSON.stringify(build(w, h))).not.toMatch(/KEY-PEM|CERT-PEM|tls\.key/);
+    // an unreadable stored value degrades to self_signed with a warning instead of a broken provided config
+    w.secrets[secretKey(C_DASH, "dashboard_tls")] = { plaintext: "{oops", hash: null, previous_hash: null };
+    const r = compile(w, H_DASH);
+    expect(r.warnings.join(" ")).toMatch(/unreadable/);
+    expect((r.doc!.components.find((c) => c.type === "dashboard")!.config as any).tls.mode).toBe("self_signed");
+  });
+
   it("a dashboard leaves out collectors that have not reported listen + pin yet", () => {
     const w = baseWorld();
     w.components.find((c) => c.component_id === C_COL)!.facts = {};

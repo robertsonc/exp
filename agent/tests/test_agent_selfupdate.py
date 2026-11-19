@@ -263,3 +263,41 @@ def test_checker_does_nothing_when_the_previous_tree_is_gone_or_the_marker_is_ba
     assert os.readlink(env.ctx.paths.current("agent")) == "0.2.0" and not (env.root / "ctl.log").exists()
     pend.write_text(json.dumps({"from": "../../etc", "to": "0.2.0", "started": 0}))
     assert _run_checker(env).returncode == 0 and not (env.root / "ctl.log").exists()
+
+
+def test_confirmed_update_keeps_only_current_and_previous_agent_trees(env):
+    p = env.ctx.paths
+    env.add_agent_release("0.3.0")
+    env.sign_release("0.3.0")
+    # an older tree left from a previous update chain, and the first update 0.1.0 -> 0.2.0
+    os.makedirs(p.version_dir("agent", "0.0.5") / "bin")
+    Reconciler(env.ctx).run(desired_with_agent(env))
+    env.ctx.agent_version = "0.2.0"
+    assert selfupdate.prune_agent_trees(env.ctx) == []  # unconfirmed: both trees are needed
+    assert p.version_dir("agent", "0.0.5").exists()
+    assert selfupdate.confirm_if_pending(env.ctx)
+    assert sorted(os.listdir(p.comp_opt("agent")))[:3] == ["0.1.0", "0.2.0", "current"]
+    assert not p.version_dir("agent", "0.0.5").exists()
+    assert (
+        os.readlink(p.comp_opt("agent") / "previous") == "0.1.0"
+        and (p.comp_opt("agent") / "rollback-check").exists()
+    )
+    # second update 0.2.0 -> 0.3.0: once confirmed, 0.1.0 goes
+    env.release_version = "0.3.0"
+    Reconciler(env.ctx).run(desired_with_agent(env, "0.3.0"))
+    env.ctx.agent_version = "0.3.0"
+    assert selfupdate.confirm_if_pending(env.ctx)
+    names = sorted(os.listdir(p.comp_opt("agent")))
+    assert "0.1.0" not in names and {"0.2.0", "0.3.0"} <= set(names)
+
+
+def test_rolled_back_agent_tree_is_removed_when_the_old_agent_is_back(env):
+    p = env.ctx.paths
+    Reconciler(env.ctx).run(desired_with_agent(env))
+    env.ctx.agent_version = "0.2.0"
+    env.clock.sleep(301)
+    assert selfupdate.rollback_check(env.ctx) == "rolled-back"
+    env.ctx.agent_version = "0.1.0"
+    Agent(env.ctx).startup()
+    assert not p.version_dir("agent", "0.2.0").exists() and p.version_dir("agent", "0.1.0").exists()
+    assert os.readlink(p.current("agent")) == "0.1.0"

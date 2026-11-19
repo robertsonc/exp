@@ -22,6 +22,8 @@ export interface ChartProps {
   stepS: number;
   asOfMs: number;
   range: RangeKey;
+  /** Overrides the span of `range` (per-interface history spans 48 h, which is not a page range). */
+  rangeSeconds?: number;
   tz?: string | null;
   fmt: (v: number | null) => string;
   /** Draw the max band (single-series charts only by default). */
@@ -55,6 +57,7 @@ function withAlpha(color: string, a: number): string {
 /** uPlot time series: avg line + max band, gaps drawn as gaps, tooltip in site timezone and UTC, table view. */
 export function TimeSeriesChart(props: ChartProps): JSX.Element {
   const { title, series, stepS, asOfMs, range, fmt, yMax, height = 190 } = props;
+  const spanS = props.rangeSeconds ?? RANGE_SECONDS[range];
   const tz = validTz(props.tz);
   const band = props.band ?? series.length === 1;
   const theme = useTheme();
@@ -63,8 +66,8 @@ export function TimeSeriesChart(props: ChartProps): JSX.Element {
   const tip = useRef<HTMLDivElement>(null);
 
   const aligned = useMemo(
-    () => alignSeries(series.map((s) => s.points), stepS, Math.floor(asOfMs / 1000), RANGE_SECONDS[range]),
-    [series, stepS, asOfMs, range],
+    () => alignSeries(series.map((s) => s.points), stepS, Math.floor(asOfMs / 1000), spanS),
+    [series, stepS, asOfMs, spanS],
   );
 
   const summaries = useMemo(() => series.map((s, i) => ({ s, sum: summarize(aligned.series[i]?.avg ?? []) })), [series, aligned]);

@@ -367,3 +367,31 @@ def test_tls_needs_the_service_user_and_a_usable_address(fs):
         tls.ensure_tls(fs, r, "collector", {"collector_id": "c", "listen": "10.0.0.1:8443"}, lambda n: None)
     with pytest.raises(Refused):
         tls.san_for("collector", {"listen": "0.0.0.0:8443"})
+
+
+def test_prune_never_touches_current_previous_symlinks_or_foreign_names(fs):
+    base = fs.paths.comp_opt("agent")
+    for v in ("0.1.0", "0.2.0", "0.3.0", "0.4.0"):
+        fs.mkdir(base / v)
+    fs.mkdir(base / ".staging-x")
+    fs.write(base / "rollback-check", "#!/bin/sh\n", 0o755)
+    fs.mkdir(base / "notes")
+    outside = fs.paths.root / "victim"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("precious")
+    os.symlink(str(outside), base / "0.0.9")  # a symlink named like a version: never followed or removed
+    fs.symlink("0.3.0", base / "current")
+    fs.symlink("0.2.0", base / "previous")
+    assert install.prune_versions(fs, "agent", set()) == ["0.1.0", "0.4.0"]
+    assert sorted(os.listdir(base)) == [
+        "0.0.9",
+        "0.2.0",
+        "0.3.0",
+        "current",
+        "notes",
+        "previous",
+        "rollback-check",
+    ]
+    assert (outside / "keep.txt").read_text() == "precious"
+    # the explicit keep set protects too
+    assert install.prune_versions(fs, "agent", {"0.2.0"}) == []

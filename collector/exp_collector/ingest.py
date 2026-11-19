@@ -146,6 +146,7 @@ class Ingestor:
         self.last_agent_ver: dict[str, str] = {}
         self.clock_offset_ms: dict[str, float] = {}
         self.newest_ts_ms: dict[str, int] = {}
+        self._rate: dict[str, collections.deque[tuple[int, int]]] = {}   # probe -> (second, accepted) for 60 s
 
     # --- observers ----------------------------------------------------------------------------
     def subscribe(self, callback: Observer) -> None:
@@ -259,6 +260,15 @@ class Ingestor:
         with self._seen_lock:
             if accepted or duplicates:
                 self.last_seen[identity] = self._now()
+            if accepted:
+                sec = int(self._now())
+                dq = self._rate.setdefault(identity, collections.deque())
+                if dq and dq[-1][0] == sec:
+                    dq[-1] = (sec, dq[-1][1] + len(accepted))
+                else:
+                    dq.append((sec, len(accepted)))
+                while dq and dq[0][0] <= sec - 60:
+                    dq.popleft()
             for m in accepted:
                 ts = exp_schema.iso_to_ms(m.ts)
                 if ts > self.newest_ts_ms.get(identity, 0):
@@ -267,6 +277,30 @@ class Ingestor:
                     self.last_agent_ver[identity] = m.agent_ver[:64]
                 if m.test == "probe_self" and "clock_offset_ms" in m.metrics:
                     self.clock_offset_ms[identity] = float(m.metrics["clock_offset_ms"])
+
+    def probe_rows(self, limit: int = 500, max_bytes: int = 52000) -> list[dict[str, Any]]:
+        """Per-probe latest figures for the collector health metrics (`probes[]`, 01 section 8.1): configured
+        probes that delivered since this process started, sorted by id, at most `limit` rows and `max_bytes`
+        of JSON (the health document is capped at 64 KiB by the agent)."""
+        now = self._now()
+        sec = int(now)
+        rows: list[dict[str, Any]] = []
+        used = 2
+        with self._seen_lock:
+            for pid in sorted(self.config.probes):
+                seen = self.last_seen.get(pid)
+                if seen is None:
+                    continue
+                dq = self._rate.get(pid)
+                rpm = sum(n for t, n in dq if t > sec - 60) if dq else 0
+                off = self.clock_offset_ms.get(pid)
+                row = {"probe_id": pid, "last_seen": exp_schema_iso(seen), "records_per_min": rpm,
+                       "clock_offset_ms": round(off, 1) if off is not None else None}
+                used += len(json.dumps(row, separators=(",", ":"))) + 1
+                if len(rows) >= limit or used > max_bytes:
+                    break
+                rows.append(row)
+        return rows
 
     def reporting_probes(self, within_s: float = 90.0) -> int:
         now = self._now()

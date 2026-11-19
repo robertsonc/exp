@@ -21,6 +21,8 @@ export interface Env {
   MANAGER_URL?: string;
   // secrets
   EXP_MASTER_KEY?: string;
+  /** set only while a master-key rotation is being re-encrypted (05-manager.md section 6) */
+  EXP_MASTER_KEY_PREVIOUS?: string;
   GITHUB_TOKEN?: string;
   /** optional var: days to keep audit events (default 365, minimum 30) */
   AUDIT_RETENTION_DAYS?: string;

@@ -1,6 +1,6 @@
 // Scheduled handlers (05-manager.md section 11). Each job is isolated: one failing job never blocks the rest.
 //   */5 * * * *  expire enrol tokens, staleness/offline issues, canary promotion, drop previous_* secrets
-//                past grace, prune status_history, retire consumed restart actions
+//                past grace, re-encrypt values sealed by EXP_MASTER_KEY_PREVIOUS (200 rows/run), prune status_history, retire consumed restart actions
 //   0 * * * *    compact completed 5-minute roll-ups into 1-hour buckets, prune roll-ups and resolved issues
 //   0 3 * * *    prune the audit log, report orphaned R2 objects
 import { auditStmt } from "../audit/audit";
@@ -10,6 +10,7 @@ import type { Env } from "../env";
 import { compactHours, pruneRollups } from "../fleet/rollup";
 import { evaluateStaleness, pruneIssues } from "../issues/engine";
 import { evaluateCanaries } from "../releases/rollout";
+import { rekeyBatch } from "../secrets/rekey";
 import { dropExpiredPrevious } from "../secrets/store";
 import { ulidTimeMs } from "../util/ids";
 import { isoAt, nowMs } from "../util/time";
@@ -58,6 +59,8 @@ export async function runEveryFiveMinutes(env: Env, now: number = nowMs()): Prom
     // token would stay valid at the collector until some unrelated change recompiled (found by the A2.6 e2e)
     if (dropped > 0) await recompile(env, { all: true });
   });
+  // master-key rotation: re-seal values still under EXP_MASTER_KEY_PREVIOUS (or unstamped legacy rows), 200 rows per run
+  await job("rekey", () => rekeyBatch(env));
   await job("staleness", () => evaluateStaleness(env, now));
   await job("canary", () => evaluateCanaries(env, now));
   await job("status_history", () =>

@@ -97,6 +97,14 @@ verdict), flap window 10 min.
 - `state_of(beats, line, at)` → `fail` when ≥ half the beats in the state window failed; `warn` on
   degraded beats; `unknown` when no beat in the window (stale); otherwise `ok`.
 - `since_of`, `last_outage(…, 15 min)`, `flaps(…, 10 min)`.
+- **Per-port rotation of `dns_hb` (A1.2 decision, no behaviour change; owner decision point).** With N client
+  ports the probe rotates `dns_hb` one port per beat, so each beat covers a single port's namespace. A DNS
+  failure confined to ONE port's namespace therefore fails only about 1/N of the beats in the 30 s window:
+  fewer than half, so the `dns` line is `warn`, not `fail` (the rotation makes "some ports" visible as
+  degraded beats). A site-wide DNS failure fails every beat and is `fail`. The `where_of` verdict is
+  unaffected (it reads the per-port records). Alternatives if the owner wants a single broken port to read
+  as `fail` (probe every port each beat, or count a window as `fail` when any port's last beat failed)
+  change alert noise and probe load; they are deliberately NOT done here. Pinned by the M1 e2e A1.2.
 - `where_of(records, at, states)` → the path segment and its explanation. Must reproduce every EXM
   verdict: `link, switch, gateway, lan, edge, isp, wan, resolver, dns_path, apps, dhcp, ssid, wifi`,
   plus `path`. Rules carried over:

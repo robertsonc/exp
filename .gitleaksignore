@@ -1,0 +1,8 @@
+# Exact historical findings (commit:file:rule:line) that are fake test values, not secrets. The source no longer contains
+# either pattern; these entries exist only because gitleaks scans every commit of a PR. Never add a path or a live finding here:
+# fix the source (or extend the narrow allowlist in .gitleaks.toml with a reason) instead.
+#
+# mock admin: a fake 16-hex master-key id (key ids are not secret); now derived at runtime from a fixed fake string
+74e4893b294b3e9ce2f9428be546ea7f99418e9b:test/fakes/mock_admin/server.py:generic-api-key:1588
+# manager UI e2e: a PEM "PRIVATE KEY" wrapper around random bytes for the provided-TLS upload test; the label is now assembled
+277b62f758689b020b4a5f130cbfcc91ea0a5622:manager/ui/e2e/admin-tests.mjs:private-key:264

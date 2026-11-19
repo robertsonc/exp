@@ -18,6 +18,7 @@ import {
   DASH_TOKEN_KIND,
   INGEST_KIND,
   SSO_KIND,
+  TLS_KIND,
   WEBHOOK_KIND,
   collectorEndpoint,
   collectorFor,
@@ -265,6 +266,22 @@ function buildDashboard(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
     noc_tokens: typeof authCfg.noc_tokens === "boolean" ? authCfg.noc_tokens : true,
   };
   if (!w.manager_url) ctx.warnings.push(`dashboard ${c.slug}: manager URL unknown, SSO handoff not configured`);
+  // Provided TLS (CR p2): the admin-uploaded pair is the only thing that selects tls.mode = provided. A config
+  // that merely says "provided" without a stored pair would leave the dashboard without a certificate, so it
+  // stays self_signed (with a warning) until a pair is uploaded.
+  const tlsSecret = w.secrets[secretKey(c.component_id, TLS_KIND)];
+  let provided: { cert_pem: string; key_pem: string } | null = null;
+  if (tlsSecret) {
+    try {
+      const j = JSON.parse(tlsSecret.plaintext) as { cert_pem?: unknown; key_pem?: unknown };
+      if (typeof j.cert_pem === "string" && typeof j.key_pem === "string") provided = { cert_pem: j.cert_pem, key_pem: j.key_pem };
+    } catch {
+      /* fall through to the warning */
+    }
+    if (!provided) ctx.warnings.push(`dashboard ${c.slug}: stored TLS pair is unreadable; using a self-signed certificate`);
+  } else if (isObj(cfg.tls) && cfg.tls.mode === "provided") {
+    ctx.warnings.push(`dashboard ${c.slug}: tls.mode is provided but no certificate was uploaded; using a self-signed certificate`);
+  }
   const config: Obj = {
     schema: "exp.dashboard.config/1",
     dashboard_id: c.slug,
@@ -275,7 +292,7 @@ function buildDashboard(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
     ...(typeof cfg.voice === "string" ? { voice: cfg.voice } : {}),
     timezone: typeof cfg.timezone === "string" ? cfg.timezone : site.timezone,
     auth,
-    tls: isObj(cfg.tls) && typeof cfg.tls.mode === "string" ? { mode: cfg.tls.mode } : { mode: "self_signed" },
+    tls: { mode: provided ? "provided" : "self_signed" },
   };
   const users = w.dashboard_users
     .filter((u) => u.dashboard_slug === c.slug)
@@ -292,6 +309,7 @@ function buildDashboard(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
       sso_secret: sso.plaintext,
       "local_users.json": canonicalJson(users),
       "noc_tokens.json": canonicalJson(nocs),
+      ...(provided ? { "tls.crt": provided.cert_pem, "tls.key": provided.key_pem } : {}),
     },
   };
 }

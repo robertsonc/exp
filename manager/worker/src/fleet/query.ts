@@ -5,7 +5,7 @@ import { invalidRequest, notFound } from "../errors";
 import { parseJson } from "../compile/load";
 import { HOST_ID_RE, COMPONENT_ID_RE } from "../util/ids";
 import { nowMs, isoNow } from "../util/time";
-import { COMPONENT_KEYS, STEP_1H, STEP_5M, bucketOf } from "./rollup";
+import { COMPONENT_KEYS, STEP_1H, STEP_5M, bucketOf, componentKeysAllowed } from "./rollup";
 import { VISIBLE_OPEN_SQL } from "../issues/visibility";
 import { issueOut } from "../issues/store";
 import { decodeCursor, encodeCursor } from "../util/cursor";
@@ -172,8 +172,8 @@ export const HOST_KEYS: Record<string, KeyDef> = {
   disk_write_kbps: { n: "dio_n", sum: "disk_write_kbps_sum", max: "disk_write_kbps_max" },
 };
 
-export function parseKeys(raw: string | undefined, allowed: readonly string[]): string[] {
-  if (!raw) return [...allowed];
+export function parseKeys(raw: string | undefined, allowed: readonly string[], defaults: readonly string[] = allowed): string[] {
+  if (!raw) return [...defaults];
   const keys = raw.split(",").map((s) => s.trim()).filter(Boolean);
   if (keys.length === 0 || keys.length > 32) throw invalidRequest("keys must list 1..32 metric keys");
   for (const k of keys) if (!allowed.includes(k)) throw invalidRequest(`unknown metric key: ${k.slice(0, 64)}`);
@@ -242,8 +242,86 @@ export async function componentMetrics(env: Env, componentId: string, rangeName:
   const row = await env.DB.prepare("SELECT type FROM components WHERE component_id = ?1").bind(componentId).first<{ type: string }>();
   if (!row) throw notFound("no such component");
   const r = parseRange(rangeName);
-  const keys = parseKeys(keysRaw, COMPONENT_KEYS[row.type] ?? []);
+  const keys = parseKeys(keysRaw, componentKeysAllowed(row.type), COMPONENT_KEYS[row.type] ?? []);
   return { component_id: componentId, range: r.name, step_s: r.step, as_of: isoNow(), series: keys.length ? await componentSeries(env, componentId, r.name, keys) : {} };
+}
+
+// ---- per-interface history (CR-wp5-fleet-api-gaps item 3) ----------------------------------------------------
+/** Interface ranges: only 5-minute roll-ups are kept per interface, for 48 h. */
+const IFACE_RANGES: Record<string, number> = { "1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600, "48h": 48 * 3600 };
+const IFACE_RE = /^[A-Za-z0-9_.:-]{1,15}$/;
+const IFACE_KEYS: Record<string, { sum: string }> = {
+  rx_pps: { sum: "rx_pps_sum" },
+  tx_pps: { sum: "tx_pps_sum" },
+  rx_bps: { sum: "rx_bps_sum" },
+  tx_bps: { sum: "tx_bps_sum" },
+  errors: { sum: "errors_sum" },
+  drops: { sum: "drops_sum" },
+};
+
+export async function interfaceMetrics(env: Env, hostId: string, iface: string, rangeName: string | undefined, keysRaw: string | undefined) {
+  if (!HOST_ID_RE.test(hostId)) throw notFound("no such host");
+  const exists = await env.DB.prepare("SELECT 1 AS x FROM hosts WHERE host_id = ?1").bind(hostId).first();
+  if (!exists) throw notFound("no such host");
+  if (!IFACE_RE.test(iface)) throw notFound("no such interface");
+  const name = rangeName ?? "24h";
+  const seconds = IFACE_RANGES[name];
+  if (seconds === undefined) throw invalidRequest("range must be one of 1h, 6h, 24h, 48h");
+  const keys = parseKeys(keysRaw, Object.keys(IFACE_KEYS));
+  const from = bucketOf(nowMs(), STEP_5M) - seconds;
+  const rows = await env.DB.prepare(
+    `SELECT bucket, samples, rx_pps_sum, tx_pps_sum, rx_bps_sum, tx_bps_sum, errors_sum, drops_sum
+     FROM fleet_iface_5m WHERE host_id = ?1 AND iface = ?2 AND bucket >= ?3 ORDER BY bucket`,
+  )
+    .bind(hostId, iface, from)
+    .all<Record<string, number>>();
+  const out: Record<string, Point[]> = {};
+  for (const k of keys) out[k] = [];
+  for (const row of rows.results ?? []) {
+    const n = row.samples ?? 0;
+    if (n <= 0) continue;
+    for (const k of keys) (out[k] as Point[]).push({ t: row.bucket as number, avg: (row[(IFACE_KEYS[k] as { sum: string }).sum] as number) / n, max: null });
+  }
+  return { host_id: hostId, iface, range: name, step_s: STEP_5M, as_of: isoNow(), series: out };
+}
+
+// ---- per-probe rows of a collector (CR-wp5-fleet-api-gaps item 2) -----------------------------------------------
+export interface ProbeRow {
+  probe_id: string;
+  last_seen: string;
+  records_per_min: number;
+  clock_offset_ms: number | null;
+}
+export const MAX_PROBE_ROWS = 500;
+const PROBE_ID_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
+
+/** The bounded, validated probe rows of a collector report; null when the report carries no `probes` array. Invalid rows are dropped. */
+export function sanitizeProbeRows(raw: unknown): ProbeRow[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: ProbeRow[] = [];
+  for (const r of raw) {
+    if (out.length >= MAX_PROBE_ROWS) break;
+    if (!r || typeof r !== "object") continue;
+    const o = r as Record<string, unknown>;
+    const id = o.probe_id;
+    const seen = o.last_seen;
+    const rpm = nn(o.records_per_min);
+    if (typeof id !== "string" || !PROBE_ID_RE.test(id) || typeof seen !== "string" || !ISO_RE.test(seen) || rpm === null || rpm < 0) continue;
+    out.push({ probe_id: id, last_seen: seen, records_per_min: rpm, clock_offset_ms: nn(o.clock_offset_ms) });
+  }
+  return out;
+}
+
+export async function componentProbes(env: Env, componentId: string) {
+  if (!COMPONENT_ID_RE.test(componentId)) throw notFound("no such component");
+  const comp = await env.DB.prepare("SELECT type FROM components WHERE component_id = ?1").bind(componentId).first<{ type: string }>();
+  if (!comp) throw notFound("no such component");
+  const row = comp.type === "collector"
+    ? await env.DB.prepare("SELECT reported_at, probes_json FROM component_probes_latest WHERE component_id = ?1").bind(componentId).first<{ reported_at: string; probes_json: string }>()
+    : null;
+  const items = row ? (sanitizeProbeRows(parseJson<unknown>(row.probes_json, [])) ?? []) : [];
+  return { component_id: componentId, as_of: isoNow(), reported_at: row?.reported_at ?? null, items };
 }
 
 // ---- summary / sites / hosts / top ---------------------------------------------------------------------

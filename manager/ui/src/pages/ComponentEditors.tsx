@@ -4,7 +4,7 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import { ep } from '../api/endpoints';
-import type { Component, DashboardUser, Me, NocToken, NocTokenCreated, Overview, Page } from '../api/types';
+import type { Component, DashboardTls, DashboardUser, Me, NocToken, NocTokenCreated, Overview, Page } from '../api/types';
 import { mutate, useNow, useResource } from '../data/hooks';
 import { Badge, Button, ConfirmDialog, CopyField, Dialog, EmptyState, ErrorBanner, Panel, SkeletonBlock } from '../components/atoms';
 import { CheckField, Fieldset, FormError, SelectField, TextArea, TextField, failText } from '../components/forms';
@@ -17,6 +17,7 @@ import {
   type AppRow, type Cfg, type CollectorForm, type DashboardForm, type LabelRow, type PeerRow, type ProbeForm,
 } from '../lib/intent';
 import { nocUrl } from '../lib/sso';
+import { MAX_CERT_PEM, MAX_KEY_PEM, certExpiry, fingerprintPending, tlsPemProblems } from '../lib/tls';
 import { MIN_PASSWORD_CHARS, hashPassword, passwordProblem } from '../lib/pbkdf2';
 import { RE } from '../lib/validate';
 import { safeHttpsUrl } from '../lib/redact';
@@ -442,6 +443,121 @@ function NocPanel({ comp, allowed, dashUrl }: { comp: Component; allowed: boolea
   );
 }
 
+const PEM_FILE_MAX = 64 * 1024;
+
+/** Chooses a PEM file and hands its text to `onText` (the text only ever goes into the textarea next to it). */
+function PemFile({ label, onText, disabled }: { label: string; onText: (t: string) => void; disabled: boolean }): JSX.Element {
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div class="field">
+      <label>{label}<input type="file" accept=".pem,.crt,.cer,.key,text/plain" disabled={disabled} onChange={(e) => {
+        const input = e.currentTarget as HTMLInputElement;
+        const file = input.files?.[0];
+        input.value = '';
+        if (!file) return;
+        if (file.size > PEM_FILE_MAX) { setErr('That file is too large to be a certificate or key.'); return; }
+        setErr(null);
+        void file.text().then(onText, () => setErr('The file could not be read.'));
+      }} /></label>
+      {err ? <p class="hint" role="alert">{err}</p> : null}
+    </div>
+  );
+}
+
+function TlsPanel({ comp, allowed, reportedFp, dashUrl }: { comp: Component; allowed: boolean; reportedFp: string | null; dashUrl: string | null }): JSX.Element {
+  const now = useNow(60000);
+  const res = useResource<DashboardTls>(ep.dashTls(comp.id));
+  const [mode, setMode] = useState<'self_signed' | 'provided'>('provided');
+  const [certPem, setCertPem] = useState('');
+  const [keyPem, setKeyPem] = useState('');
+  const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const cur = res.data;
+  const probs = tlsPemProblems(certPem, keyPem);
+  const bad = !!(probs.cert || probs.key);
+  const cert = cur?.cert ?? null;
+  const exp = cert ? certExpiry(cert.not_after, now) : null;
+
+  const put = async (body: Record<string, unknown>): Promise<boolean> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await mutate<DashboardTls>('PUT', ep.dashTls(comp.id), body);
+      // never keep the key (or the certificate text) in the page once it was accepted
+      setCertPem('');
+      setKeyPem('');
+      setTouched(false);
+      res.refresh();
+      notify('ok', body['mode'] === 'provided' ? 'Certificate saved. The dashboard picks it up on its next sync.' : 'Switched to a self-signed certificate.');
+      return true;
+    } catch (e) {
+      setError(failText(e));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = (e: Event) => {
+    e.preventDefault();
+    setTouched(true);
+    if (!allowed || busy) return;
+    if (mode === 'self_signed') { setConfirm(true); return; }
+    if (bad) return;
+    void put({ mode: 'provided', cert_pem: certPem, key_pem: keyPem });
+  };
+  return (
+    <Panel title="TLS" id="de-tls">
+      <dl class="facts">
+        <div><dt>Certificate fingerprint reported by the dashboard (SHA-256)</dt><dd class="mono" data-testid="tls-fp">{reportedFp ?? DASH}</dd></div>
+        <div><dt>Reported address</dt><dd>{dashUrl ?? DASH}</dd></div>
+        <div><dt>Certificate source</dt><dd data-testid="tls-mode">{res.loading ? 'Loading…' : cur?.mode === 'provided' ? 'Provided certificate' : 'Self-signed (generated on the host)'}</dd></div>
+      </dl>
+      {res.error && !cur ? <ErrorBanner what="Could not load the certificate state." message={res.error.message} onRetry={res.refresh} /> : null}
+      {cur?.mode === 'provided' && cert ? (
+        <>
+          {exp?.state === 'expired' ? <div class="banner banner-fail" role="alert" data-testid="tls-expiry"><span>This certificate expired on {formatAbsolute(cert.not_after)}. Browsers will refuse the dashboard until a new one is uploaded.</span></div> : null}
+          {exp?.state === 'soon' ? <div class="banner banner-warn" role="status" data-testid="tls-expiry"><span>This certificate expires in {exp.days} day{exp.days === 1 ? '' : 's'} ({formatAbsolute(cert.not_after)}). Upload a renewed one before then.</span></div> : null}
+          {fingerprintPending(cert.sha256, reportedFp) ? <div class="banner banner-info" role="status"><span>The dashboard still reports a different fingerprint; it switches to this certificate on its next sync.</span></div> : null}
+          <h3 class="h3">Stored certificate</h3>
+          <dl class="facts" data-testid="tls-cert">
+            <div><dt>Subject</dt><dd>{cert.subject}</dd></div>
+            <div><dt>Issuer</dt><dd>{cert.issuer}</dd></div>
+            <div><dt>Valid from</dt><dd>{formatAbsolute(cert.not_before)}</dd></div>
+            <div><dt>Valid until</dt><dd>{formatAbsolute(cert.not_after)}</dd></div>
+            <div><dt>Fingerprint (SHA-256)</dt><dd class="mono" data-testid="tls-provided-fp">{cert.sha256}</dd></div>
+            <div><dt>Names (SAN)</dt><dd>{cert.san.length ? cert.san.join(', ') : DASH}</dd></div>
+            <div><dt>Private key</dt><dd>Stored encrypted. It is never shown again.</dd></div>
+          </dl>
+        </>
+      ) : null}
+      <form onSubmit={save} aria-label="Dashboard certificate" noValidate>
+        <h3 class="h3">Change the certificate</h3>
+        <SelectField label="Certificate mode" value={mode} onChange={(v) => { setMode(v === 'self_signed' ? 'self_signed' : 'provided'); setTouched(false); setError(null); }} disabled={!allowed}
+          options={[{ value: 'self_signed', label: 'Self-signed (generated on the host)' }, { value: 'provided', label: 'Provided certificate' }]}
+          hint="Collectors and probes pin the dashboard's fingerprint, so a certificate change is announced here first." />
+        {mode === 'provided' ? (
+          <>
+            <TextArea label="Certificate (PEM, leaf first, then any chain)" value={certPem} onInput={setCertPem} rows={6} wide disabled={!allowed} error={touched ? probs.cert : undefined} hint={`At most ${MAX_CERT_PEM / 1024} KiB.`} />
+            <PemFile label="Or choose a certificate file" onText={setCertPem} disabled={!allowed} />
+            <TextArea label="Private key (PEM, not passphrase-protected)" value={keyPem} onInput={setKeyPem} rows={6} wide disabled={!allowed} error={touched ? probs.key : undefined} hint={`Write-only: sent once over TLS, stored encrypted, never displayed again. At most ${MAX_KEY_PEM / 1024} KiB.`} />
+            <PemFile label="Or choose a key file" onText={setKeyPem} disabled={!allowed} />
+          </>
+        ) : <p class="dim">The dashboard host generates its own self-signed certificate. Any stored provided certificate and key are deleted.</p>}
+        <FormError error={error} />
+        <div class="dialog-actions">
+          <Button type="submit" variant="primary" disabled={!allowed || busy || (mode === 'self_signed' && cur?.mode !== 'provided')}>{busy ? 'Saving…' : mode === 'provided' ? 'Save certificate' : 'Switch to self-signed'}</Button>
+        </div>
+      </form>
+      {confirm ? (
+        <ConfirmDialog title="Switch to a self-signed certificate?" body={<p>The stored certificate and key are deleted and the dashboard generates its own certificate, which changes its fingerprint. Browsers that trusted the provided certificate will warn.</p>}
+          confirmText="Switch to self-signed" busy={busy} error={error} onConfirm={() => void put({ mode: 'self_signed' }).then((ok) => { if (ok) setConfirm(false); })} onCancel={() => { setConfirm(false); setError(null); }} />
+      ) : null}
+    </Panel>
+  );
+}
+
 export function DashboardEditor({ comp, me, tlsFingerprint, factsUrl }: { comp: Component; me: Me | undefined; tlsFingerprint: string | null; factsUrl: string | null }): JSX.Element {
   const [f, setF] = useState<DashboardForm>(() => dashboardFormFrom(comp.config));
   const { busy, error, save } = useSaver(comp);
@@ -467,18 +583,9 @@ export function DashboardEditor({ comp, me, tlsFingerprint, factsUrl }: { comp: 
           </div>
           <CollectorPicker selected={f.collectorIds} onChange={(ids) => set({ collectorIds: ids })} disabled={!allowed} />
         </Panel>
-        <Panel title="TLS" id="de-tls">
-          <SelectField label="Certificate mode" value={f.tlsMode} onChange={(v) => set({ tlsMode: v === 'provided' ? 'provided' : 'self_signed' })} disabled={!allowed}
-            options={[{ value: 'self_signed', label: 'Self-signed (generated on the host)' }, { value: 'provided', label: 'Provided certificate' }]}
-            hint={f.tlsMode === 'provided' ? 'A provided certificate and key are write-only secrets; this version of the admin API has no upload for them, so install them on the host out of band.' : undefined} />
-          <dl class="facts">
-            <div><dt>Certificate fingerprint (SHA-256)</dt><dd class="mono" data-testid="tls-fp">{tlsFingerprint ?? DASH}</dd></div>
-            <div><dt>Reported address</dt><dd>{dashUrl ?? DASH}</dd></div>
-          </dl>
-          <p class="dim">Collectors and probes pin this fingerprint, so a certificate change is announced here first.</p>
-        </Panel>
         <SaveBar dirty={dirty} problems={Object.keys(p).length} busy={busy} error={error} allowed={allowed} onSave={() => void save(res.config)} onReset={() => setF(dashboardFormFrom(comp.config))} />
       </form>
+      <TlsPanel comp={comp} allowed={allowed} reportedFp={tlsFingerprint} dashUrl={dashUrl} />
       <UsersPanel comp={comp} allowed={allowed} />
       <NocPanel comp={comp} allowed={allowed} dashUrl={dashUrl} />
     </>

@@ -64,3 +64,22 @@ describe('csv', () => {
     expect(toCsv(['x'], [['=1']])).toBe("x\r\n'=1\r\n");
   });
 });
+
+describe('per-probe rows and interface sparklines (CR-wp5-fleet-api-gaps items 2 and 3)', () => {
+  it('probeLines prefers the manager rows, falls back to the report rows, lists unreported configured probes with dashes, bounds at 500', async () => {
+    const { probeLines } = await import('../src/pages/ComponentPage');
+    const items = [{ probe_id: 'b', last_seen: '2026-01-01T00:00:00Z', records_per_min: 3, clock_offset_ms: null }];
+    const cfg = [{ probe_id: 'a' }, { probe_id: 'b' }];
+    expect(probeLines(items, [{ probe_id: 'zzz' }], cfg).map((r) => [r.id, r.reported, r.rpm, r.clk])).toEqual([['a', false, null, null], ['b', true, 3, null]]);
+    expect(probeLines(null, [{ probe_id: 'r1', last_seen: 'x', records_per_min: 'nope', clock_offset_ms: 4 }], undefined)).toEqual([{ id: 'r1', seen: 'x', rpm: null, clk: 4, reported: true }]);
+    expect(probeLines(null, undefined, undefined)).toEqual([]);
+    const many = Array.from({ length: 700 }, (_, i) => ({ probe_id: `p${i}`, last_seen: '', records_per_min: 1, clock_offset_ms: 0 }));
+    expect(probeLines(many, null, null)).toHaveLength(500);
+  });
+  it('ifaceBpsSpark adds in and out per bucket and leaves gaps as null', async () => {
+    const { ifaceBpsSpark } = await import('../src/pages/HostPage');
+    const m = { series: { rx_bps: [{ t: 1, avg: 10 }, { t: 2, avg: null }, { t: 3, avg: 5 }], tx_bps: [{ t: 1, avg: 1 }, { t: 2, avg: 2 }] } };
+    expect(ifaceBpsSpark(m)).toEqual([11, null, null]);
+    expect(ifaceBpsSpark(undefined)).toEqual([]);
+  });
+});

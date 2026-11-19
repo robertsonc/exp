@@ -457,6 +457,129 @@
    "speedtest"
   ]
  },
+ "DashboardTls": {
+  "additionalProperties": false,
+  "description": "Dashboard TLS state (05-manager.md section 8). Write-only: the key (and the PEM) is never returned; `cert` is parsed from the stored leaf certificate.",
+  "properties": {
+   "cert": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "additionalProperties": false,
+      "properties": {
+       "issuer": {
+        "maxLength": 1024,
+        "type": "string"
+       },
+       "not_after": {
+        "$ref": "common.schema.json#/$defs/ts"
+       },
+       "not_before": {
+        "$ref": "common.schema.json#/$defs/ts"
+       },
+       "san": {
+        "items": {
+         "maxLength": 256,
+         "type": "string"
+        },
+        "maxItems": 64,
+        "type": "array"
+       },
+       "sha256": {
+        "description": "Upper-case colon-separated SHA-256 of the leaf certificate DER (the dashboard's `tls_fingerprint_sha256`).",
+        "pattern": "^([0-9A-F]{2}:){31}[0-9A-F]{2}$",
+        "type": "string"
+       },
+       "subject": {
+        "maxLength": 1024,
+        "type": "string"
+       }
+      },
+      "required": [
+       "subject",
+       "issuer",
+       "not_before",
+       "not_after",
+       "sha256",
+       "san"
+      ],
+      "type": "object"
+     }
+    ]
+   },
+   "mode": {
+    "enum": [
+     "self_signed",
+     "provided"
+    ]
+   },
+   "set": {
+    "type": "boolean"
+   },
+   "updated_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   }
+  },
+  "required": [
+   "mode",
+   "set",
+   "updated_at",
+   "cert"
+  ],
+  "type": "object"
+ },
+ "DashboardTlsPut": {
+  "oneOf": [
+   {
+    "additionalProperties": false,
+    "description": "Delete any provided pair; the agent generates a self-signed certificate.",
+    "properties": {
+     "mode": {
+      "const": "self_signed"
+     }
+    },
+    "required": [
+     "mode"
+    ],
+    "type": "object"
+   },
+   {
+    "additionalProperties": false,
+    "properties": {
+     "cert_pem": {
+      "description": "PEM certificate (leaf first, at most 5 certificates). Must be a parsable X.509, not expired.",
+      "maxLength": 32768,
+      "minLength": 1,
+      "type": "string"
+     },
+     "key_pem": {
+      "description": "Unencrypted PKCS#8 / PKCS#1 RSA / SEC1 EC PEM whose public key matches the leaf certificate.",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+     },
+     "mode": {
+      "const": "provided"
+     }
+    },
+    "required": [
+     "mode",
+     "cert_pem",
+     "key_pem"
+    ],
+    "type": "object"
+   }
+  ]
+ },
  "DashboardUser": {
   "additionalProperties": true,
   "description": "The password hash is never returned.",
@@ -2023,6 +2146,52 @@
   ],
   "type": "object"
  },
+ "InterfaceMetrics": {
+  "additionalProperties": true,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   },
+   "iface": {
+    "$ref": "common.schema.json#/$defs/iface"
+   },
+   "range": {
+    "enum": [
+     "1h",
+     "6h",
+     "24h",
+     "48h"
+    ]
+   },
+   "series": {
+    "additionalProperties": {
+     "items": {
+      "$ref": "#/$defs/MetricPoint"
+     },
+     "maxItems": 10000,
+     "type": "array"
+    },
+    "description": "Map key -> points for `rx_pps tx_pps rx_bps tx_bps errors drops` (`errors` = rx + tx errors and `drops` = rx + tx drops per status report, averaged per bucket). 5-minute buckets only, kept 48 h; `max` is always null; every `t` is epoch SECONDS; buckets without samples are absent.",
+    "properties": {},
+    "type": "object"
+   },
+   "step_s": {
+    "const": 300
+   }
+  },
+  "required": [
+   "host_id",
+   "iface",
+   "range",
+   "step_s",
+   "as_of",
+   "series"
+  ],
+  "type": "object"
+ },
  "Issue": {
   "additionalProperties": true,
   "properties": {
@@ -2035,6 +2204,23 @@
       "$ref": "common.schema.json#/$defs/cmp_id"
      }
     ]
+   },
+   "component_type": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "enum": [
+       "probe",
+       "collector",
+       "dashboard",
+       "runner",
+       "speedtest"
+      ]
+     }
+    ],
+    "description": "Type of the component the issue is about (null for host-level issues and for issues that predate the field and whose component is gone). Stored with the issue, so it survives deletion of the component (CR-wp5-fleet-api-gaps item 6)."
    },
    "detail": {
     "maxLength": 512,
@@ -2136,6 +2322,47 @@
    "iface_errors"
   ]
  },
+ "MasterKeyStatus": {
+  "additionalProperties": false,
+  "description": "CR-m3-master-key-rotation. 503 `unavailable` when the key ring is misconfigured.",
+  "properties": {
+   "current_key_id": {
+    "description": "Id of `EXP_MASTER_KEY` (first 16 hex of sha256(\"exp-key-id/v1|\" + key)); not secret.",
+    "pattern": "^[0-9a-f]{16}$",
+    "type": "string"
+   },
+   "previous_key_id": {
+    "description": "Id of `EXP_MASTER_KEY_PREVIOUS`, or null when no rotation is in progress.",
+    "pattern": "^[0-9a-f]{16}$",
+    "type": [
+     "string",
+     "null"
+    ]
+   },
+   "remaining_previous": {
+    "description": "Values still sealed by the previous key (or unstamped legacy rows), all kinds together.",
+    "minimum": 0,
+    "type": "integer"
+   },
+   "safe_to_remove_previous": {
+    "description": "True when remaining_previous and unknown_key_rows are both 0.",
+    "type": "boolean"
+   },
+   "unknown_key_rows": {
+    "description": "Values stamped with a key id that is neither current nor previous (unreadable; fail closed).",
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "current_key_id",
+   "previous_key_id",
+   "remaining_previous",
+   "unknown_key_rows",
+   "safe_to_remove_previous"
+  ],
+  "type": "object"
+ },
  "Me": {
   "additionalProperties": true,
   "properties": {
@@ -2213,7 +2440,7 @@
      "maxItems": 10000,
      "type": "array"
     },
-    "description": "Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour buckets. Every `t` is epoch SECONDS. Host keys are `cpu_pct mem_pct disk_pct load1 net_rx_pps net_tx_pps net_rx_bps net_tx_bps net_errors net_drops disk_write_kbps` (`net_*` come from the management interface and carry a null max). Component keys are the chartable keys of 05-manager.md section 13.",
+    "description": "Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour buckets. Every `t` is epoch SECONDS. Host keys are `cpu_pct mem_pct disk_pct load1 net_rx_pps net_tx_pps net_rx_bps net_tx_bps net_errors net_drops disk_write_kbps` (`net_*` come from the management interface and carry a null max). Component keys are the chartable keys of 05-manager.md section 13; probe components also accept `by_test_<name>` for each test of the catalog (01-contracts.md section 3), the per-test measurements per minute (CR-wp5-fleet-api-gaps item 5). `by_test_*` keys are only returned when asked for in `keys`.",
     "properties": {},
     "type": "object"
    },
@@ -2590,6 +2817,71 @@
   },
   "required": [
    "ports"
+  ],
+  "type": "object"
+ },
+ "ProbeRows": {
+  "additionalProperties": true,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "component_id": {
+    "$ref": "common.schema.json#/$defs/cmp_id"
+   },
+   "items": {
+    "items": {
+     "additionalProperties": true,
+     "properties": {
+      "clock_offset_ms": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "type": "number"
+        }
+       ]
+      },
+      "last_seen": {
+       "$ref": "common.schema.json#/$defs/ts"
+      },
+      "probe_id": {
+       "$ref": "common.schema.json#/$defs/slug"
+      },
+      "records_per_min": {
+       "minimum": 0,
+       "type": "number"
+      }
+     },
+     "required": [
+      "probe_id",
+      "last_seen",
+      "records_per_min",
+      "clock_offset_ms"
+     ],
+     "type": "object"
+    },
+    "maxItems": 500,
+    "type": "array"
+   },
+   "reported_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ],
+    "description": "When the collector last reported the rows; null when none are held (not a collector, no report yet, or a collector version that does not report `probes[]`)."
+   }
+  },
+  "required": [
+   "component_id",
+   "as_of",
+   "reported_at",
+   "items"
   ],
   "type": "object"
  },

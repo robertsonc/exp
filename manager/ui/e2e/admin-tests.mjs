@@ -247,13 +247,60 @@ export async function adminTests(ctx) {
     await page.getByLabel('Title', { exact: true }).fill('Hall B wall board');
     assert.equal(await page.locator('[data-testid="tls-fp"]').innerText(), fp, 'the reported TLS fingerprint is shown');
     assert.match(fp, FP);
-    await page.getByLabel('Certificate mode').selectOption('provided');
-    assert.match(await page.locator('.hint').filter({ hasText: 'write-only' }).first().innerText(), /no upload/);
-    await page.getByLabel('Certificate mode').selectOption('self_signed');
     await page.getByRole('button', { name: 'Save configuration' }).click();
     await toast(page, /Saved/);
     const after = (await getJson(`/hosts/${dh.host_id}/components`)).items.find((x) => x.component_id === dc.component_id);
     assert.equal(after.config.title, 'Hall B wall board');
+    await page.context().close();
+  });
+
+  await test('dashboard TLS: provided certificate upload is validated, write-only, and warns before expiry', async () => {
+    const page = await newPage();
+    const { dh, dc } = await seededDashboard();
+    await page.goto(`${BASE}/hosts/${dh.host_id}/components/${dc.component_id}?view=configure`);
+    await page.locator('[data-testid="tls-mode"]', { hasText: /Self-signed/ }).waitFor();
+    const KEYBODY = `K${randomBytes(9).toString('hex')}`;
+    const cert = (extra = '') => `${extra}-----BEGIN CERTIFICATE-----\nQUJDREVGR0g=\n-----END CERTIFICATE-----\n`;
+    // a PEM wrapper around random bytes (not a key); the label is assembled so secret scanners do not flag this file
+    const PEM_LABEL = ['PRIVATE', 'KEY'].join(' ');
+    const key = `-----BEGIN ${PEM_LABEL}-----\n${Buffer.from(KEYBODY).toString('base64')}\n-----END ${PEM_LABEL}-----\n`;
+    const form = page.getByRole('form', { name: 'Dashboard certificate' });
+    await page.getByLabel('Certificate mode').selectOption('provided');
+    // client-side: garbage is refused before any request is sent
+    let puts = 0;
+    page.on('request', (r) => { if (r.method() === 'PUT' && r.url().endsWith('/tls')) puts += 1; });
+    await page.getByLabel(/^Certificate \(PEM/).fill('hello');
+    await page.getByLabel(/^Private key \(PEM/).fill('world');
+    await form.getByRole('button', { name: 'Save certificate' }).click();
+    await page.getByText(/does not look like a PEM certificate/).waitFor();
+    assert.equal(puts, 0);
+    // server-side refusal is shown (the mock refuses a past expiry)
+    await page.getByLabel(/^Certificate \(PEM/).fill(cert('# mock-not-after: 2020-01-01T00:00:00Z\n'));
+    await page.getByLabel(/^Private key \(PEM/).fill(key);
+    await form.getByRole('button', { name: 'Save certificate' }).click();
+    await page.getByText(/expired on 2020-01-01/).waitFor();
+    // a certificate that expires soon: accepted, parsed details shown, expiry warning, key cleared from the page
+    const soon = new Date(Date.now() + 10 * 86400_000).toISOString().replace(/\.\d+Z$/, 'Z');
+    await page.getByLabel(/^Certificate \(PEM/).fill(cert(`# mock-not-after: ${soon}\n`));
+    await form.getByRole('button', { name: 'Save certificate' }).click();
+    await toast(page, /Certificate saved/);
+    await page.locator('[data-testid="tls-mode"]', { hasText: /Provided/ }).waitFor();
+    assert.match(await page.locator('[data-testid="tls-provided-fp"]').innerText(), FP);
+    assert.match(await page.locator('[data-testid="tls-cert"]').innerText(), /Subject[\s\S]*Issuer[\s\S]*Valid until/);
+    assert.match(await page.locator('[data-testid="tls-expiry"]').innerText(), /expires in (9|10) days/);
+    assert.equal(await page.getByLabel(/^Private key \(PEM/).inputValue(), '', 'the key text is cleared once accepted');
+    const html = await page.content();
+    assert.ok(!html.includes(KEYBODY) && !html.includes(Buffer.from(KEYBODY).toString('base64')), 'the key never reappears in the page');
+    const slug = (await getJson(`/hosts/${dh.host_id}/components`)).items.find((x) => x.component_id === dc.component_id).id;
+    const read = await getJson(`/dashboards/${slug}/tls`);
+    assert.equal(read.mode, 'provided');
+    assert.ok(!JSON.stringify(read).includes('PRIVATE'), 'GET never returns the key');
+    // back to self-signed (confirmed)
+    await page.getByLabel('Certificate mode').selectOption('self_signed');
+    await form.getByRole('button', { name: 'Switch to self-signed' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Switch to self-signed' }).click();
+    await toast(page, /self-signed/);
+    assert.equal((await getJson(`/dashboards/${slug}/tls`)).mode, 'self_signed');
     await page.context().close();
   });
 

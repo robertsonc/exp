@@ -294,3 +294,63 @@ def test_run_refuses_to_start_without_tls_material(env):
 def test_unit_fakevm_fixture_sanity():
     v = FakeVM()
     v.stop()
+
+
+# ------------------------------------------------------------ per-probe rows (CR-wp5-fleet-api-gaps item 2)
+def test_health_reports_per_probe_rows(env, vm):
+    app = env.start()
+    port = app.address[1]
+    ingest(port, env.ingest_token, [rec(), rec(), rec(test="probe_self", metrics={"clock_offset_ms": 3.25})])
+    assert wait_for(lambda: app.vm.up and vm.count() >= 3, 10)
+    app.monitor.stop()
+    app.monitor.write_snapshot()
+    code, doc = health(env)
+    check_schema_file("health.schema.json", doc)
+    rows = doc["metrics"]["probes"]
+    assert [r["probe_id"] for r in rows] == ["probe-a1"]            # only probes that delivered
+    r = rows[0]
+    assert r["records_per_min"] == 3 and r["clock_offset_ms"] in (3.2, 3.3)
+    assert r["last_seen"].endswith("Z")
+    assert set(r) == {"probe_id", "last_seen", "records_per_min", "clock_offset_ms"}
+
+
+def test_probe_rows_window_and_bounds(env):
+    from exp_collector.config import ProbeEntry
+    app = env.start()
+    ing = app.ingestor
+    clock = [1_000_000.0]
+    ing._now = lambda: clock[0]
+    ing._note_seen("probe-a1", [type("M", (), {"ts": "2026-01-01T00:00:00.000Z", "agent_ver": None,
+                                              "test": "ping", "metrics": {}})()] * 5, 0)
+    assert ing.probe_rows()[0]["records_per_min"] == 5
+    assert ing.probe_rows()[0]["clock_offset_ms"] is None
+    clock[0] += 61
+    assert ing.probe_rows()[0]["records_per_min"] == 0               # the 60 s window moved on
+    # bounds: <= limit rows and <= max_bytes of JSON, sorted by id
+    probes = {f"p{i:04d}": ProbeEntry(f"p{i:04d}", "hall-b", "") for i in range(600)}
+    object.__setattr__(ing.config, "probes", probes)
+    for pid in probes:
+        ing.last_seen[pid] = clock[0]
+    rows = ing.probe_rows()
+    assert len(rows) == 500 and rows[0]["probe_id"] == "p0000"
+    assert len(json.dumps(rows, separators=(",", ":"))) < 52000
+    assert len(ing.probe_rows(limit=3)) == 3
+    assert len(ing.probe_rows(max_bytes=1000)) < 12
+
+
+def test_health_document_with_500_probes_stays_under_64kib(env):
+    from exp_collector.config import ProbeEntry
+    app = env.start()
+    app.monitor.stop()                                    # no background snapshot may overwrite ours
+    ing = app.ingestor
+    probes = {f"probe-{i:03d}-long-name-x": ProbeEntry(f"probe-{i:03d}-long-name-x", "hall-b", "") for i in range(500)}
+    object.__setattr__(ing.config, "probes", probes)
+    now = time.time()
+    for pid in probes:
+        ing.last_seen[pid] = now
+        ing.clock_offset_ms[pid] = -12.3456
+    app.monitor.write_snapshot()
+    code, doc = health(env)
+    assert len(json.dumps(doc)) < 64 * 1024
+    assert 400 <= len(doc["metrics"]["probes"]) <= 500
+    check_schema_file("health.schema.json", doc)

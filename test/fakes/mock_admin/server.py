@@ -948,6 +948,61 @@ def r_dash_user_delete(a: MockAdmin, r: Req) -> Resp:
     return Resp(204)
 
 
+_PEM_CERT = re.compile(r"-----BEGIN CERTIFICATE-----\s*([A-Za-z0-9+/=\s]+?)\s*-----END CERTIFICATE-----")
+_PEM_KEY = re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----\s*[A-Za-z0-9+/=\s]+?\s*-----END (?:RSA |EC )?PRIVATE KEY-----")
+
+
+def _tls_view(t: dict[str, Any] | None) -> dict[str, Any]:
+    if not t:
+        return {"mode": "self_signed", "set": False, "updated_at": None, "cert": None}
+    return {"mode": "provided", "set": True, "updated_at": t["updated_at"], "cert": t["cert"]}
+
+
+def r_dash_tls_get(a: MockAdmin, r: Req) -> Resp:
+    d = dashboard(a, r.params["dashboard_id"])
+    return ok(_tls_view(a.w.setdefault("dash_tls", {}).get(d["id"])))
+
+
+def r_dash_tls_put(a: MockAdmin, r: Req) -> Resp:
+    """Mock of PUT dashboards/{id}/tls: structure checks only (the real Worker parses X.509 and proves key possession).
+    The key is never stored. Test directives inside cert_pem (PEM parsers ignore text outside the blocks):
+    `# mock-not-after: <iso>` sets the expiry (in the past: 422 expired); `# mock-mismatch` simulates a key mismatch."""
+    d = dashboard(a, r.params["dashboard_id"])
+    body = r.json("DashboardTlsPut")
+    store = a.w.setdefault("dash_tls", {})
+    if body["mode"] == "self_signed":
+        store.pop(d["id"], None)
+        a.audit(r.email, "dashboard.tls", f"dashboard:{d['id']}", {"mode": "self_signed", "secret_set": False})
+        a.mutated()
+        return ok(_tls_view(None))
+    m = _PEM_CERT.search(body["cert_pem"])
+    if m is None:
+        raise ApiError(422, "invalid_config", "cert_pem holds no PEM CERTIFICATE")
+    if _PEM_KEY.search(body["key_pem"]) is None:
+        raise ApiError(422, "invalid_config", "exactly one PEM private key (PRIVATE KEY, RSA PRIVATE KEY or EC PRIVATE KEY) is required")
+    if "# mock-mismatch" in body["cert_pem"]:
+        raise ApiError(422, "invalid_config", "the private key does not match the certificate")
+    now = a.now()
+    na = re.search(r"# mock-not-after:\s*(\S+)", body["cert_pem"])
+    not_after = na.group(1) if na else seed.iso(now + 365 * 86400)
+    if not_after <= seed.iso(now):
+        raise ApiError(422, "invalid_config", f"the certificate expired on {not_after}")
+    try:
+        der = base64.b64decode("".join(m.group(1).split()), validate=True)
+    except ValueError:
+        raise ApiError(422, "invalid_config", "malformed CERTIFICATE PEM") from None
+    fp = hashlib.sha256(der).hexdigest().upper()
+    cn = (d["config"].get("title") or d["id"]).replace(" ", "-")
+    cert = {"subject": "O=Mock Events, CN=" + cn, "issuer": "O=Mock Events CA, CN=Mock Issuing CA",
+            "not_before": seed.iso(now - 86400), "not_after": not_after, "sha256": ":".join(fp[i:i + 2] for i in range(0, 64, 2)),
+            "san": ["dash.example.test"]}
+    store[d["id"]] = {"updated_at": seed.iso(now), "cert": cert}
+    a.audit(r.email, "dashboard.tls", f"dashboard:{d['id']}",
+            {"mode": "provided", "sha256": cert["sha256"], "not_after": not_after, "secret_set": True})
+    a.mutated()
+    return ok(_tls_view(store[d["id"]]))
+
+
 def r_noc_list(a: MockAdmin, r: Req) -> Resp:
     d = dashboard(a, r.params["dashboard_id"])
     return ok(paginate(r.q, list(a.w["noc_tokens"].get(d["id"], []))))
@@ -1379,11 +1434,53 @@ def r_fleet_host_metrics(a: MockAdmin, r: Req) -> Resp:
                             {"host_id": h["host_id"], "_pending": not online})
 
 
+def r_fleet_iface_metrics(a: MockAdmin, r: Req) -> Resp:
+    h = a.host(r.params["id"])
+    iface = r.params["iface"]
+    if h["state"] == "removed":
+        raise ApiError(404, "not_found", "no such host")
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", iface):
+        raise ApiError(404, "not_found", "no such interface")
+    rng = r.q.enum("range", tuple(seed.IFACE_RANGES), "24h")
+    kq = r.q.one("keys")
+    if kq is not None and (len(kq) > 512 or not re.fullmatch(r"[a-z0-9_]+(,[a-z0-9_]+)*", kq)):
+        raise ApiError(400, "invalid_request", "bad keys")
+    keys = list(dict.fromkeys(kq.split(",") if kq else seed.IFACE_KEYS))
+    if any(k not in seed.IFACE_KEYS for k in keys):
+        raise ApiError(400, "invalid_request", "unknown metric key")
+    snap = a.snap()
+    known = {i["name"]: i for i in h["facts"].get("interfaces", [])}
+    online = h["state"] in ("enrolled", "stale", "offline")
+    until = h.get("_last_seen") if h["state"] in ("stale", "offline") else None
+    # an interface the host does not have has no roll-up rows: empty series (the real API answers the same)
+    if not online or iface not in known:
+        series: dict[str, Any] = {k: [] for k in keys}
+    else:
+        prof = seed.iface_profile(h["host_id"], iface, is_mgmt(known[iface]), h["_role"])
+        series = {k: seed.iface_series(f"{h['host_id']}:{iface}", k, prof, rng, snap, until) for k in keys}
+    return Resp(200, {"host_id": h["host_id"], "iface": iface, "range": rng, "step_s": 300, "as_of": seed.iso(snap),
+                      "series": series}, fleet=True)
+
+
+def r_fleet_comp_probes(a: MockAdmin, r: Req) -> Resp:
+    c = a.comp(r.params["component_id"])
+    h = a.w["hosts"][c["host_id"]]
+    at = a.at_of(h, a.snap())
+    if c["type"] != "collector" or at is None:
+        return Resp(200, {"component_id": c["component_id"], "as_of": seed.iso(a.snap()), "reported_at": None, "items": []},
+                    fleet=True)
+    return Resp(200, {"component_id": c["component_id"], "as_of": seed.iso(a.snap()), "reported_at": seed.iso(at),
+                      "items": seed.probe_rows(c, at)}, fleet=True)
+
+
 def r_fleet_comp_metrics(a: MockAdmin, r: Req) -> Resp:
     c = a.comp(r.params["component_id"])
     h = a.w["hosts"][c["host_id"]]
     online = h["state"] in ("enrolled", "stale", "offline")
-    return metrics_response(a, r, c["component_id"], c["_profile"], seed.COMPONENT_KEYS.get(c["type"], ("cpu_pct",)),
+    keys_all = seed.COMPONENT_KEYS.get(c["type"], ("cpu_pct",))
+    if c["type"] == "probe" and r.q.one("keys") is not None:
+        keys_all = keys_all + seed.PROBE_BY_TEST_KEYS          # on request only, never in the default key list
+    return metrics_response(a, r, c["component_id"], c["_profile"], keys_all,
                             h.get("_last_seen") if h["state"] in ("stale", "offline") else None,
                             {"component_id": c["component_id"], "_pending": not online})
 
@@ -1486,6 +1583,16 @@ def r_audit(a: MockAdmin, r: Req) -> Resp:
     return ok(paginate(r.q, items))
 
 
+# Same derivation as the Worker (secrets/crypto.ts keyId), over a fixed fake "key": the id is not secret and no real key exists here.
+_MOCK_KEY_ID = hashlib.sha256(b"exp-key-id/v1|mock-admin: no real master key").hexdigest()[:16]
+
+
+def r_master_key(a: MockAdmin, r: Req) -> Resp:
+    """Steady state, no rotation in progress (CR-m3-master-key-rotation)."""
+    return ok({"current_key_id": _MOCK_KEY_ID, "previous_key_id": None, "remaining_previous": 0,
+               "unknown_key_rows": 0, "safe_to_remove_previous": True})
+
+
 def r_settings_get(a: MockAdmin, r: Req) -> Resp:
     return ok(a.w["settings"])
 
@@ -1539,6 +1646,8 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("GET", "/dashboards/{dashboard_id}/users", "admin", r_dash_users),
         ("POST", "/dashboards/{dashboard_id}/users", "admin", r_dash_user_create),
         ("DELETE", "/dashboards/{dashboard_id}/users/{usr}", "admin", r_dash_user_delete),
+        ("GET", "/dashboards/{dashboard_id}/tls", "admin", r_dash_tls_get),
+        ("PUT", "/dashboards/{dashboard_id}/tls", "admin", r_dash_tls_put),
         ("GET", "/dashboards/{dashboard_id}/noc-tokens", "admin", r_noc_list),
         ("POST", "/dashboards/{dashboard_id}/noc-tokens", "admin", r_noc_create),
         ("DELETE", "/dashboards/{dashboard_id}/noc-tokens/{noc}", "admin", r_noc_revoke),
@@ -1557,6 +1666,8 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("GET", "/fleet/summary", "viewer", r_fleet_summary), ("GET", "/fleet/sites", "viewer", r_fleet_sites),
         ("GET", "/fleet/hosts", "viewer", r_fleet_hosts),
         ("GET", "/fleet/hosts/{id}/metrics", "viewer", r_fleet_host_metrics),
+        ("GET", "/fleet/hosts/{id}/interfaces/{iface}/metrics", "viewer", r_fleet_iface_metrics),
+        ("GET", "/fleet/components/{component_id}/probes", "viewer", r_fleet_comp_probes),
         ("GET", "/fleet/components/{component_id}/metrics", "viewer", r_fleet_comp_metrics),
         ("GET", "/fleet/top", "viewer", r_fleet_top),
         ("GET", "/issues", "viewer", r_issues), ("POST", "/issues/{id}/snooze", "admin", r_snooze),
@@ -1564,6 +1675,7 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("GET", "/settings/fleet-thresholds", "viewer", r_thr_get), ("PUT", "/settings/fleet-thresholds", "admin", r_thr_put),
         ("GET", "/settings/platform-webhook", "viewer", r_pw_get), ("PUT", "/settings/platform-webhook", "admin", r_pw_put),
         ("POST", "/settings/platform-webhook/test", "admin", r_pw_test),
+        ("GET", "/settings/master-key", "admin", r_master_key),
         ("GET", "/audit", "admin", r_audit),
         ("GET", "/settings", "viewer", r_settings_get), ("PATCH", "/settings", "owner", r_settings_patch),
     ]

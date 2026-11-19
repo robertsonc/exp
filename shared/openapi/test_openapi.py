@@ -99,6 +99,8 @@ _TABLE = {
         GET /dashboards/{dashboard_id}/noc-tokens
         POST /dashboards/{dashboard_id}/noc-tokens
         DELETE /dashboards/{dashboard_id}/noc-tokens/{noc}
+        GET /dashboards/{dashboard_id}/tls
+        PUT /dashboards/{dashboard_id}/tls
         POST /dashboards/{dashboard_id}/sso
         GET /sites/{site}/alerts
         PUT /sites/{site}/alerts
@@ -118,6 +120,8 @@ _TABLE = {
         GET /fleet/sites
         GET /fleet/hosts
         GET /fleet/hosts/{id}/metrics
+        GET /fleet/hosts/{id}/interfaces/{iface}/metrics
+        GET /fleet/components/{component_id}/probes
         GET /fleet/components/{component_id}/metrics
         GET /fleet/top
         GET /issues
@@ -128,6 +132,7 @@ _TABLE = {
         GET /settings/platform-webhook
         PUT /settings/platform-webhook
         POST /settings/platform-webhook/test
+        GET /settings/master-key
         GET /audit
         GET /settings
         PATCH /settings
@@ -335,8 +340,10 @@ def test_admin_role_matrix_matches_spec():
     assert role[("post", "/components/{component_id}/rotate")] == "admin"
     assert role[("post", "/releases/import")] == "admin"
     assert role[("get", "/dashboards/{dashboard_id}/users")] == "admin"
+    assert role[("get", "/settings/master-key")] == "admin"  # CR-m3-master-key-rotation
     for (m, p), r in role.items():
-        admin_only = ("/audit", "/dashboards/{dashboard_id}/users", "/dashboards/{dashboard_id}/noc-tokens")
+        admin_only = ("/audit", "/dashboards/{dashboard_id}/users", "/dashboards/{dashboard_id}/noc-tokens",
+                      "/dashboards/{dashboard_id}/tls", "/settings/master-key")
         if m == "get" and p not in admin_only:
             assert r == "viewer", (m, p)
 
@@ -352,7 +359,7 @@ def test_fleet_endpoints_document_etag_and_cache():
             assert r200["headers"]["Cache-Control"]["schema"]["const"] == "private, max-age=15"
             assert "304" in o["responses"], p
             assert any(prm.get("name") == "If-None-Match" for prm in o["parameters"]), p
-    assert n == 6
+    assert n == 8
 
 
 def test_agent_desired_documents_etag_and_304():

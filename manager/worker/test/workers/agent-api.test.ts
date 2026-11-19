@@ -74,7 +74,7 @@ describe("GET desired", () => {
     expect(probe.creds.ingest_token).toMatch(/^expi_[A-Za-z0-9_-]{43}$/);
     const stored = await env.DB.prepare("SELECT doc_json FROM desired_docs WHERE host_id = ?1").bind(h.host_id).first<{ doc_json: string }>();
     expect(stored!.doc_json).not.toContain(probe.creds.ingest_token);
-    expect(stored!.doc_json).toContain("enc1:");
+    expect(stored!.doc_json).toContain("enc2:");
   });
 });
 

@@ -114,8 +114,8 @@ async function reconcile(env: Env, r: Reconcile): Promise<{ stmts: D1PreparedSta
     const row: IssueRow = { issue_id: id, kind: c.kind, severity: c.severity, host_id: r.hostId, component_id: c.component_id, site: r.site, opened_at: nowIso, resolved_at: null, last_value: c.value, detail: c.detail.slice(0, 512) };
     stmts.push(
       env.DB.prepare(
-        `INSERT OR IGNORE INTO issues (issue_id, org_id, kind, severity, host_id, component_id, site, opened_at, resolved_at, clean_reports, last_value, detail, created_at, updated_at, notified)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, 0, ?9, ?10, ?8, ?8, 0)`,
+        `INSERT OR IGNORE INTO issues (issue_id, org_id, kind, severity, host_id, component_id, component_type, site, opened_at, resolved_at, clean_reports, last_value, detail, created_at, updated_at, notified)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT type FROM components WHERE component_id = ?6), ?7, ?8, NULL, 0, ?9, ?10, ?8, ?8, 0)`,
       ).bind(id, DEFAULT_ORG, c.kind, c.severity, r.hostId, c.component_id, r.site, nowIso, c.value, row.detail),
     );
     if (c.severity === "crit" && !r.snoozed.has(c.kind) && !r.suppressed) events.push({ type: "open", issue: row });
