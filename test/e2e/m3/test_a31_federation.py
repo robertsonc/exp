@@ -65,6 +65,8 @@ def test_a3_1_overview_shows_every_probe_of_both_sites_grouped_by_site(stack: M.
         assert sec, f"no '{site}' group with '{count}' in the overview:\n{text[:900]}"
         assert all(lb in sec.group(0) for lb in labels), (site, sec.group(0)[:400])
     assert "unreachable" not in text
+    # a probe label with markup is text on the board (textContent), never an element
+    assert M.HOSTILE_LABEL in text, text[:900]
 
 
 def test_a3_1_probe_scoped_calls_route_to_the_owning_collector(stack: M.Multi) -> None:

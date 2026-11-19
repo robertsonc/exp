@@ -48,13 +48,17 @@ PORT_IDS = L.PORT_IDS
 LINES = L.LINES
 SITE_A, SITE_B = "hall-b", "hall-c"
 
+# probe-supplied text that must never become markup in a chat message or on the board (A3.2 payload hygiene, 04 section 7.4)
+HOSTILE_LABEL = "Hall B west <!channel> @here [a](http://x.test) <img>"
+assert len(HOSTILE_LABEL) <= 64            # the alert text keeps at most 64 characters of a probe's label
+
 # per collector: (host, ip octet, collector id, site, probe id, probe label, alerts overrides)
 NODES: list[dict[str, Any]] = [
     {"host": "hb1", "oct": 21, "cid": "col-b1", "site": SITE_A, "probe": "probe-b1", "label": "Hall B east",
      "lan": 1, "alerts": {}},
     # col-b2 pages flapping: its hold_back_s/calm_s are shortened so that "quiet until calm" is observable in a few
     # minutes instead of the spec's 10 (documented in test_a32_alerts.py; the other collectors keep the defaults)
-    {"host": "hb2", "oct": 22, "cid": "col-b2", "site": SITE_A, "probe": "probe-b2", "label": "Hall B west",
+    {"host": "hb2", "oct": 22, "cid": "col-b2", "site": SITE_A, "probe": "probe-b2", "label": HOSTILE_LABEL,
      "lan": 1, "alerts": {"hold_back_s": 30, "calm_s": 90}},
     {"host": "hc1", "oct": 23, "cid": "col-c1", "site": SITE_B, "probe": "probe-c1", "label": "Hall C main",
      "lan": 2, "alerts": {}},
