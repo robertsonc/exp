@@ -7,7 +7,8 @@ import { useHostData } from '../data/hostData';
 import { useDirectory } from '../data/directory';
 import { Badge, Button, ConfirmDialog, CopyField, Countdown, Dialog, EmptyState, ErrorBanner, Missing, Panel, ShapeBadges, SkeletonBlock, StatusPill, Tabs, healthPill } from '../components/atoms';
 import { IssueRow, canAdmin } from '../components/Issues';
-import { MetricChart, RangePicker, rangeFrom, useMetrics } from '../components/MetricChart';
+import { MetricChart, RangePicker, rangeFrom, useIfaceMetrics, useMetrics } from '../components/MetricChart';
+import type { RangeKey } from '../charts/align';
 import { notify } from '../components/Toasts';
 import { Link, MetricTile, Sparkline } from '../components/viz';
 import { PageHeader } from './common';
@@ -81,7 +82,7 @@ function OverviewTab({ id, hostName, tz, row, status }: { id: string; hostName: 
         <MetricChart m={m} title="Disk" range={range} tz={tz} fmt={pctFmt} yMax={100} keys={[{ key: 'disk_pct', label: 'Disk (max)', color: '--exp-line-dhcp' }]} />
         <MetricChart m={m} title="Management network, packets/s" range={range} tz={tz} fmt={ppsFmt} keys={[{ key: 'net_rx_pps', label: 'in', color: '--exp-line-network' }, { key: 'net_tx_pps', label: 'out', color: '--exp-line-apps' }]} />
         <MetricChart m={m} title="Management network, bits/s" range={range} tz={tz} fmt={bpsFmt} keys={[{ key: 'net_rx_bps', label: 'in', color: '--exp-line-network' }, { key: 'net_tx_bps', label: 'out', color: '--exp-line-apps' }]} />
-        <MetricChart m={m} title="Network errors and drops" range={range} tz={tz} fmt={numFmt} keys={[{ key: 'net_rx_errors', label: 'rx errors', color: '--exp-line-apps' }, { key: 'net_tx_errors', label: 'tx errors', color: '--exp-line-dhcp' }, { key: 'net_rx_drops', label: 'rx drops', color: '--exp-line-wifi' }, { key: 'net_tx_drops', label: 'tx drops', color: '--exp-line-dns' }]} />
+        <MetricChart m={m} title="Management network, errors and drops" range={range} tz={tz} fmt={numFmt} keys={[{ key: 'net_errors', label: 'errors', color: '--exp-line-apps' }, { key: 'net_drops', label: 'drops', color: '--exp-line-wifi' }]} />
         <MetricChart m={m} title="Disk write" range={range} tz={tz} fmt={numFmt} keys={[{ key: 'disk_write_kbps', label: 'write kB/s', color: '--exp-line-internet' }]} />
       </div>
       <div class="grid-2">
@@ -138,11 +139,39 @@ function ComponentsTab({ hostId, report, comps }: { hostId: string; report: Stat
   );
 }
 
-function InterfacesTab({ report, spark }: { report: StatusReport | undefined; spark: (number | null)[] | undefined }): JSX.Element {
+/** Sum of in + out bits/s per bucket of one interface (null where either side is missing). */
+export function ifaceBpsSpark(m: { series: Record<string, { t: number; avg: number | null }[]> } | undefined): (number | null)[] {
+  const rx = m?.series['rx_bps'] ?? [];
+  const tx = new Map((m?.series['tx_bps'] ?? []).map((p) => [p.t, p.avg]));
+  return rx.slice(-48).map((p) => (p.avg === null || tx.get(p.t) == null ? null : p.avg + (tx.get(p.t) as number)));
+}
+
+function IfaceSpark({ hostId, iface, range }: { hostId: string; iface: string; range: RangeKey }): JSX.Element {
+  const m = useIfaceMetrics(hostId, iface, range);
+  if (m.loading) return <span class="dim">{DASH}</span>;
+  return <Sparkline values={ifaceBpsSpark(m.data)} width={64} height={18} label={`${iface} traffic`} />;
+}
+
+function IfaceCharts({ hostId, iface, range, tz }: { hostId: string; iface: string; range: RangeKey; tz: string | null }): JSX.Element {
+  const m = useIfaceMetrics(hostId, iface, range);
+  return (
+    <Panel title={`Interface ${iface}`} id={`iface-${iface}`}>
+      <div class="charts" data-testid="iface-charts" data-iface={iface}>
+        <MetricChart m={m} title={`${iface} traffic, bits/s`} range={range} tz={tz} fmt={bpsFmt} keys={[{ key: 'rx_bps', label: 'in', color: '--exp-line-network' }, { key: 'tx_bps', label: 'out', color: '--exp-line-apps' }]} />
+        <MetricChart m={m} title={`${iface} packets/s`} range={range} tz={tz} fmt={ppsFmt} keys={[{ key: 'rx_pps', label: 'in', color: '--exp-line-network' }, { key: 'tx_pps', label: 'out', color: '--exp-line-apps' }]} />
+        <MetricChart m={m} title={`${iface} errors and drops`} range={range} tz={tz} fmt={numFmt} keys={[{ key: 'errors', label: 'errors', color: '--exp-line-apps' }, { key: 'drops', label: 'drops', color: '--exp-line-wifi' }]} />
+      </div>
+    </Panel>
+  );
+}
+
+function InterfacesTab({ hostId, report, range, tz }: { hostId: string; report: StatusReport | undefined; range: RangeKey; tz: string | null }): JSX.Element {
   const ifs = report?.facts.interfaces ?? [];
   const net = new Map((report?.metrics.net ?? []).map((n) => [n.iface, n]));
   if (ifs.length === 0) return <EmptyState title="No interfaces reported" />;
+  const withData = ifs.filter((i) => net.has(i.name));
   return (
+    <>
     <div class="table-scroll">
       <table class="plain">
         <caption class="sr-only">Network interfaces</caption>
@@ -161,13 +190,16 @@ function InterfacesTab({ report, spark }: { report: StatusReport | undefined; sp
                 <td>{n ? `${formatPps(n.rx_pps)} · ${formatBps(n.rx_bps)}` : <Missing why="not a host-namespace interface or no data" />}</td>
                 <td>{n ? `${formatPps(n.tx_pps)} · ${formatBps(n.tx_bps)}` : DASH}</td>
                 <td>{n ? `${(n.rx_errors ?? 0) + (n.tx_errors ?? 0)} / ${(n.rx_drops ?? 0) + (n.tx_drops ?? 0)}` : DASH}</td>
-                <td>{i.in_use_by === 'mgmt' ? <Sparkline values={spark} width={64} height={18} /> : DASH}</td>
+                <td>{n ? <IfaceSpark hostId={hostId} iface={i.name} range={range} /> : DASH}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
+    {withData.length ? <div class="range-bar"><h2 class="h2">Interface history</h2><RangePicker value={range} /></div> : null}
+    {withData.map((i) => <IfaceCharts key={i.name} hostId={hostId} iface={i.name} range={range} tz={tz} />)}
+    </>
   );
 }
 
@@ -300,6 +332,7 @@ function ActionsTab({ hostId, hostName, comps, me }: { hostId: string; hostName:
 
 export function HostPage({ id, me }: { id: string; me: Me | undefined }): JSX.Element {
   const { query } = useLocation();
+  const range = rangeFrom(query);
   const d = useHostData(id);
   const dir = useDirectory();
   const tab = TABS.some((t) => t.id === query.get('tab')) ? (query.get('tab') as string) : 'overview';
@@ -348,7 +381,7 @@ export function HostPage({ id, me }: { id: string; me: Me | undefined }): JSX.El
         {d.status.loading && tab !== 'actions' ? <SkeletonBlock rows={5} label="Loading status" /> : null}
         {tab === 'overview' ? <OverviewTab id={id} hostName={h.name} tz={d.tz} row={row} status={report} /> : null}
         {tab === 'components' ? <ComponentsTab hostId={id} report={report} comps={comps} /> : null}
-        {tab === 'interfaces' ? <InterfacesTab report={report} spark={row?.net_spark} /> : null}
+        {tab === 'interfaces' ? <InterfacesTab hostId={id} report={report} range={range} tz={d.tz} /> : null}
         {tab === 'config' ? <ConfigTab comps={comps} host={h} /> : null}
         {tab === 'activity' ? <ActivityTab id={id} report={report} /> : null}
         {tab === 'actions' ? <ActionsTab hostId={id} hostName={h.name} comps={comps} me={me} /> : null}

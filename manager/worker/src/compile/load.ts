@@ -1,7 +1,7 @@
 // Loads the World (rows -> plain objects, secrets decrypted in memory) for the compiler.
 import type { Env } from "../env";
 import { DEFAULT_ORG } from "../env";
-import { masterKey, open, secretAad } from "../secrets/crypto";
+import { keyRing, openWithRing, secretAad } from "../secrets/crypto";
 import { type SecretRow, prepareCreateSecret } from "../secrets/store";
 import { newSsoSecret, newToken } from "../secrets/tokens";
 import { isoNow, nowMs } from "../util/time";
@@ -169,11 +169,11 @@ function buildWorld(env: Env, rows: Rows, secrets: Record<string, WSecret>): Wor
 }
 
 async function decryptAll(env: Env, rows: SecretRow[]): Promise<Record<string, WSecret>> {
-  const key = await masterKey(env.EXP_MASTER_KEY);
+  const ring = await keyRing(env);
   const out: Record<string, WSecret> = {};
   const now = nowMs();
   for (const r of rows) {
-    const plaintext = await open(key, { nonce: r.nonce, ciphertext: r.ciphertext }, secretAad(r.secret_id, r.kind, r.version));
+    const { plaintext } = await openWithRing(ring, { nonce: r.nonce, ciphertext: r.ciphertext }, secretAad(r.secret_id, r.kind, r.version), r.key_id);
     const prevValid = r.previous_hash && r.previous_valid_until && Date.parse(r.previous_valid_until) > now;
     out[secretKey(r.owner_ref, r.kind)] = { plaintext, hash: r.hash, previous_hash: prevValid ? r.previous_hash : null };
   }

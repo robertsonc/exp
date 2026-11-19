@@ -46,12 +46,13 @@ CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=<account id> manager/scripts/publ
 ```
 Then set the version on a site (with a canary host) in the UI.
 
-## Rotating the initial keys BEFORE the first host enrols
+## Rotating keys
 
-Both rotations are free now because nothing depends on them yet: no host has pinned the release key, and no secret
-is encrypted with the master key. **After the first host enrols this changes** — the release key then rotates only
-through a release signed by the current key (SR-10), and the master key needs a re-encryption of every stored secret
-(not built yet; tracked for M3). Do both rotations before adding hosts.
+**Release key.** Free before the first host enrols (no host has pinned it yet). After that it rotates only through a
+release signed by the current key (SR-10).
+
+**EXP_MASTER_KEY** rotates at any time, with re-encryption (see "Master key rotation" below); before the first host
+enrols you may simply `wrangler secret put` a new key, because nothing is encrypted with it yet.
 
 **Release key**
 1. `packaging/gen-release-key.sh /secure/exp-release.pem` (outside the repo; prints the public key path).
@@ -62,14 +63,40 @@ through a release signed by the current key (SR-10), and the master key needs a 
    (`publish-release.sh --dist dist --pubkey packaging/keys/release-pub.pem`; it upserts the signature).
 5. Check: `curl -fsSL https://exp-control.harnessed.cloud/install.sh | grep -A1 'BEGIN PUBLIC KEY'` shows the new key.
 
-**EXP_MASTER_KEY**
-```bash
-NEWKEY="$(openssl rand -base64 32)"      # record it offline FIRST
-printf '%s' "$NEWKEY" | CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=<account id> \
-  npx --prefix manager wrangler secret put EXP_MASTER_KEY --name exp-manager
-unset NEWKEY
-```
-(stdin, never argv). Then discard the old key.
+## Master key rotation (with re-encryption)
+
+Every stored secret (SSO secrets, ingest/dashboard tokens, webhook URLs, credentials inside compiled desired state) is
+sealed with AES-256-GCM and stamped with the **key id** of the key that sealed it (`key_id` = first 16 hex of
+`sha256("exp-key-id/v1|" + key)`; not secret). The Worker takes two secrets:
+
+- `EXP_MASTER_KEY`: the current key. Everything is written with it.
+- `EXP_MASTER_KEY_PREVIOUS`: optional, only while a rotation is being re-encrypted. Values stamped with its id still decrypt.
+
+A value stamped with any other key id fails closed (`unknown_key_id`, 503 on the operations that need it); nothing tries keys
+by guessing. Rows written before migration `0003_master_key_rotation.sql` carry no key id and are defined as "sealed by the key
+that was current when the migration was applied": they are read with `EXP_MASTER_KEY` (then `EXP_MASTER_KEY_PREVIOUS`, the
+only other key ever tried) and the cron stamps them. **Deploy (apply migrations) before the first rotation.**
+
+Procedure:
+
+1. Have the OLD key at hand (your offline backup). The script cannot read it back from Cloudflare.
+2. Rehearse: `manager/scripts/rotate-master-key.sh --old-key-file /secure/old.key --dry-run`.
+3. Rotate (the new key is generated and shown ONCE on the terminal, or supply `--new-key-file` / `--new-key-stdin`):
+   ```bash
+   export CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=<account id>
+   manager/scripts/rotate-master-key.sh --old-key-file /secure/old.key -c manager/.deploy/wrangler.generated.toml
+   ```
+   It sets `EXP_MASTER_KEY_PREVIOUS` = old, then `EXP_MASTER_KEY` = new, both over stdin (never argv), refuses identical keys and
+   never logs key material. Write the new key into your offline backup now; keep the old one until step 5.
+4. Watch the progress: admin UI **Settings -> Master key**, or `GET /api/admin/v1/settings/master-key`
+   (`{current_key_id, previous_key_id, remaining_previous, unknown_key_rows, safe_to_remove_previous}`). The 5-minute cron re-seals
+   up to 200 rows per run (secrets, their rotation-grace `previous_*` values, and the credentials inside desired documents; each
+   update is guarded per row) until `remaining_previous` is 0. Agents see no change: served desired documents are identical.
+5. When `safe_to_remove_previous` is `true`: `npx --prefix manager wrangler secret delete EXP_MASTER_KEY_PREVIOUS --name exp-manager`,
+   then retire the old key from the backup. **Never delete it earlier**: values still sealed by it become unreadable.
+
+The dashboard launch nonce (30 s) stays valid across a rotation (the previous key is also accepted while it is configured).
+Re-encryption audit events (`master_key.reencrypt`) carry counts and key ids only.
 
 ## First hosts
 

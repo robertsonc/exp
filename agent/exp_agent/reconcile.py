@@ -295,18 +295,22 @@ class Reconciler:
         if rec and (diff.version or diff.config or diff.creds):
             self._save_previous(c, rec)
         try:
-            self._activate(plan, rec, diff, force=False)
+            try:
+                self._activate(plan, rec, diff, force=False)
+            except RolledBack:
+                raise
+            except AgentError as exc:
+                self._rollback(plan, rec, f"activation failed: {exc}")  # raises RolledBack
+            health = wait_healthy(ctx, c, ver)
+            if not health.passed:
+                self._rollback(
+                    plan,
+                    rec,
+                    f"health check failed after {ctx.health_wait_s:.0f}s: {health.detail or health.status}",
+                )  # raises RolledBack
         except RolledBack:
+            self._prune_after_rollback(c, rec)
             raise
-        except AgentError as exc:
-            self._rollback(plan, rec, f"activation failed: {exc}")  # raises RolledBack
-        health = wait_healthy(ctx, c, ver)
-        if not health.passed:
-            self._rollback(
-                plan,
-                rec,
-                f"health check failed after {ctx.health_wait_s:.0f}s: {health.detail or health.status}",
-            )  # raises RolledBack
         self._record(plan, comp)
         if rec and rec.get("version") != ver:
             keep = {ver, str(rec.get("version"))}
@@ -315,6 +319,16 @@ class Reconciler:
         install.prune_versions(fs, c, keep)
         st.event("info", f"{c} {ver} is healthy")
         return True
+
+    def _prune_after_rollback(self, c: str, rec: dict[str, Any] | None) -> None:
+        """A version that was installed and then rolled back is removed. With a restored previous version
+        `current` points at it (kept); a first install that failed has no rollback target and its tree is
+        left alone while `current` still points there (the component is stopped)."""
+        try:
+            keep = {str(rec["version"])} if rec else set()
+            install.prune_versions(self.ctx.fs, c, keep)
+        except (AgentError, OSError) as exc:
+            log.warning("pruning %s versions after a rollback failed: %s", c, exc)
 
     def _rmdir_if_empty(self, path) -> None:
         try:

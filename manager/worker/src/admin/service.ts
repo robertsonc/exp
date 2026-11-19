@@ -152,10 +152,23 @@ export async function deleteComponent(env: Env, actor: Actor, componentId: strin
   const row = await env.DB.prepare("SELECT type, slug FROM components WHERE component_id = ?1").bind(componentId).first<{ type: string; slug: string }>();
   if (!row) throw notFound("no such component");
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM component_probes_latest WHERE component_id = ?1").bind(componentId),
     env.DB.prepare("DELETE FROM components WHERE component_id = ?1").bind(componentId),
     auditStmt(env.DB, { actor: actor.email, action: "component.delete", resource: `component:${componentId}`, details: { type: row.type, id: row.slug }, ip: actor.ip }),
   ]);
   await recompile(env, { all: true });
+}
+
+function cmpSemver(a: string, b: string): number {
+  const [ac = "", ap] = a.split(/-(.*)/s);
+  const [bc = "", bp] = b.split(/-(.*)/s);
+  const x = ac.split(".").map(Number);
+  const y = bc.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0) ? -1 : 1;
+  if (ap === undefined && bp === undefined) return 0;
+  if (ap === undefined) return 1; // a release is newer than its own pre-release
+  if (bp === undefined) return -1;
+  return ap < bp ? -1 : ap > bp ? 1 : 0;
 }
 
 /** Release target: with a canary host the new version goes to that host first (target_version). */
@@ -166,15 +179,30 @@ export async function setSiteRelease(
   r: { version: string; canary_host_id?: string | null },
 ): Promise<void> {
   if (!SEMVER_RE.test(r.version)) throw invalidRequest("version must be semver");
-  const rel = await env.DB.prepare("SELECT 1 AS x FROM releases WHERE version = ?1").bind(r.version).first();
-  if (!rel) throw notFound("no such release (import it first)");
-  const row = await env.DB.prepare("SELECT site FROM sites WHERE site = ?1").bind(site).first();
+  const row = await env.DB.prepare("SELECT site, canary_state FROM sites WHERE site = ?1").bind(site).first<{ site: string; canary_state: string }>();
   if (!row) throw notFound("no such site");
-  const now = isoNow();
-  let stmt: D1PreparedStatement;
+  const rel = await env.DB.prepare("SELECT min_agent_version FROM releases WHERE version = ?1").bind(r.version).first<{ min_agent_version: string | null }>();
+  if (!rel) throw new ApiError(422, "release_not_imported", "release not imported (import it first)", { version: r.version });
   if (r.canary_host_id) {
     const h = await env.DB.prepare("SELECT 1 AS x FROM hosts WHERE host_id = ?1 AND site = ?2").bind(r.canary_host_id, site).first();
     if (!h) throw invalidRequest("canary host must belong to the site");
+    // a new canary rollout never overlaps a running one, nor silently replaces a failed one (a plain PATCH = rollback clears it)
+    if (row.canary_state === "canary") throw new ApiError(409, "rollout_in_progress", "a canary rollout is already in progress", { site });
+    if (row.canary_state === "failed") throw new ApiError(409, "canary_failed", "the previous canary failed: set the previous version (rollback) first", { site });
+  }
+  const min = rel.min_agent_version;
+  if (min && SEMVER_RE.test(min)) {
+    const hosts = (
+      await env.DB.prepare("SELECT host_id, agent_version FROM hosts WHERE site = ?1 AND state NOT IN ('removed', 'pending') AND agent_version IS NOT NULL" + (r.canary_host_id ? " AND host_id = ?2" : ""))
+        .bind(...(r.canary_host_id ? [site, r.canary_host_id] : [site]))
+        .all<{ host_id: string; agent_version: string }>()
+    ).results ?? [];
+    const old = hosts.filter((h) => SEMVER_RE.test(h.agent_version) && cmpSemver(h.agent_version, min) < 0);
+    if (old.length) throw new ApiError(422, "min_agent_version", `release ${r.version} needs agent >= ${min}`, { min_agent_version: min, host_ids: old.map((h) => h.host_id) });
+  }
+  const now = isoNow();
+  let stmt: D1PreparedStatement;
+  if (r.canary_host_id) {
     stmt = env.DB.prepare(
       `UPDATE sites SET target_version = ?2, canary_host_id = ?3, canary_state = 'canary', canary_started_at = ?4, canary_healthy_since = NULL, updated_at = ?4 WHERE site = ?1`,
     ).bind(site, r.version, r.canary_host_id, now);

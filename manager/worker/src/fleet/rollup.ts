@@ -28,6 +28,18 @@ export const COMPONENT_KEYS: Record<string, readonly string[]> = {
   runner: ["drills_active"],
 };
 
+/** Test names of the catalog (01-contracts.md section 3) whose `by_test_per_min` counts are rolled up (item 5 of
+ *  CR-wp5-fleet-api-gaps). A fixed set bounds the number of stored keys whatever a probe reports; the series keys are
+ *  `by_test_<name>`. They are chartable on request but not part of the default key list of a metrics response. */
+export const BY_TEST_NAMES = [
+  "gateway", "dhcp_hb", "dns_hb", "trace", "ping", "dhcp", "dns", "app", "throughput", "path", "wifi_hb", "wifi_join",
+  "target_access", "probe_self",
+] as const;
+export const BY_TEST_KEY_PREFIX = "by_test_";
+export const PROBE_BY_TEST_KEYS: readonly string[] = BY_TEST_NAMES.map((n) => BY_TEST_KEY_PREFIX + n);
+/** Every key a component metrics query may ask for. */
+export const componentKeysAllowed = (type: string): readonly string[] => [...(COMPONENT_KEYS[type] ?? []), ...(type === "probe" ? PROBE_BY_TEST_KEYS : [])];
+
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 export interface HostSample {
@@ -102,6 +114,15 @@ export function componentMetricsOf(type: string, metrics: Record<string, unknown
   for (const k of COMPONENT_KEYS[type] ?? []) {
     const v = num(metrics?.[k]);
     if (v !== null) out.push([k, v]);
+  }
+  if (type === "probe") {
+    const bt = metrics?.by_test_per_min;
+    if (bt && typeof bt === "object" && !Array.isArray(bt)) {
+      for (const name of BY_TEST_NAMES) {
+        const v = num((bt as Record<string, unknown>)[name]);
+        if (v !== null && v >= 0) out.push([BY_TEST_KEY_PREFIX + name, v]); // a test not in the map adds no sample (never a fabricated zero)
+      }
+    }
   }
   return out;
 }

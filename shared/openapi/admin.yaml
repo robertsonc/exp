@@ -1736,7 +1736,9 @@ components:
             buckets. Every `t` is epoch SECONDS. Host keys are `cpu_pct mem_pct
             disk_pct load1 net_rx_pps net_tx_pps net_rx_bps net_tx_bps net_errors net_drops disk_write_kbps`
             (`net_*` come from the management interface and carry a null max). Component keys are the
-            chartable keys of 05-manager.md section 13.
+            chartable keys of 05-manager.md section 13; probe components also accept `by_test_<name>` for
+            each test of the catalog (01-contracts.md section 3), the per-test measurements per minute
+            (CR-wp5-fleet-api-gaps item 5). `by_test_*` keys are only returned when asked for in `keys`.
       required:
       - range
       - step_s
@@ -1763,6 +1765,84 @@ components:
         required:
         - component_id
         additionalProperties: true
+    InterfaceMetrics:
+      type: object
+      properties:
+        host_id:
+          $ref: ../schemas/common.schema.json#/$defs/h_id
+        iface:
+          $ref: ../schemas/common.schema.json#/$defs/iface
+        range:
+          enum:
+          - 1h
+          - 6h
+          - 24h
+          - 48h
+        step_s:
+          const: 300
+        as_of:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        series:
+          type: object
+          properties: {}
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/MetricPoint'
+            maxItems: 10000
+          description: Map key -> points for `rx_pps tx_pps rx_bps tx_bps errors drops` (`errors` = rx + tx errors
+            and `drops` = rx + tx drops per status report, averaged per bucket). 5-minute buckets only, kept
+            48 h; `max` is always null; every `t` is epoch SECONDS; buckets without samples are absent.
+      required:
+      - host_id
+      - iface
+      - range
+      - step_s
+      - as_of
+      - series
+      additionalProperties: true
+    ProbeRows:
+      type: object
+      properties:
+        component_id:
+          $ref: ../schemas/common.schema.json#/$defs/cmp_id
+        as_of:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        reported_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+          description: When the collector last reported the rows; null when none are held (not a collector, no
+            report yet, or a collector version that does not report `probes[]`).
+        items:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            properties:
+              probe_id:
+                $ref: ../schemas/common.schema.json#/$defs/slug
+              last_seen:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              records_per_min:
+                type: number
+                minimum: 0
+              clock_offset_ms:
+                anyOf:
+                - type: 'null'
+                - type: number
+            required:
+            - probe_id
+            - last_seen
+            - records_per_min
+            - clock_offset_ms
+            additionalProperties: true
+      required:
+      - component_id
+      - as_of
+      - reported_at
+      - items
+      additionalProperties: true
     FleetTop:
       type: object
       properties:
@@ -1855,6 +1935,18 @@ components:
           anyOf:
           - type: 'null'
           - $ref: ../schemas/common.schema.json#/$defs/cmp_id
+        component_type:
+          anyOf:
+          - type: 'null'
+          - enum:
+            - probe
+            - collector
+            - dashboard
+            - runner
+            - speedtest
+          description: Type of the component the issue is about (null for host-level issues and for issues
+            that predate the field and whose component is gone). Stored with the issue, so it survives deletion
+            of the component (CR-wp5-fleet-api-gaps item 6).
         site:
           $ref: ../schemas/common.schema.json#/$defs/slug
         opened_at:
@@ -4384,6 +4476,104 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+  /fleet/hosts/{id}/interfaces/{iface}/metrics:
+    get:
+      operationId: getFleetInterfaceMetrics
+      summary: Per-interface metric series (roll-ups)
+      tags:
+      - fleet
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: ETag from a previous response.
+        schema:
+          type: string
+          maxLength: 160
+      - *id008
+      - name: iface
+        in: path
+        required: true
+        description: Interface name as reported by the agent (host namespace interfaces).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/iface
+      - name: range
+        in: query
+        required: false
+        description: Time range (default 24h); 5-minute buckets are kept 48 h.
+        schema:
+          enum:
+          - 1h
+          - 6h
+          - 24h
+          - 48h
+      - name: keys
+        in: query
+        required: false
+        description: 'Comma-separated keys: rx_pps, tx_pps, rx_bps, tx_bps, errors, drops (default all).'
+        schema:
+          type: string
+          maxLength: 512
+          pattern: ^[a-z0-9_]+(,[a-z0-9_]+)*$
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: Snapshot (cacheable 15 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterfaceMetrics'
+          headers: *id017
+        '304':
+          description: Not modified (`If-None-Match` matched `ETag`).
+          headers: *id017
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /fleet/components/{component_id}/probes:
+    get:
+      operationId: getFleetComponentProbes
+      summary: Latest per-probe rows of a collector
+      description: The collector's last reported `probes[]` (probe, last seen, records per minute, clock offset). Latest
+        values only, no history. Empty `items` and a null `reported_at` for other component types.
+      tags:
+      - fleet
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        description: ETag from a previous response.
+        schema:
+          type: string
+          maxLength: 160
+      - *id010
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: Snapshot (cacheable 15 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeRows'
+          headers: *id017
+        '304':
+          description: Not modified (`If-None-Match` matched `ETag`).
+          headers: *id017
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /fleet/components/{component_id}/metrics:
     get:
       operationId: getFleetComponentMetrics
@@ -4407,7 +4597,8 @@ paths:
       - name: keys
         in: query
         required: false
-        description: Comma-separated chartable keys for the component type (05-manager.md section 13).
+        description: Comma-separated chartable keys for the component type (05-manager.md section 13); probes also
+          accept `by_test_<name>` (name from the test catalog), which are not part of the default set.
         schema:
           type: string
           maxLength: 512

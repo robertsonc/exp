@@ -30,6 +30,8 @@ export interface Issue {
   severity: Severity;
   host_id: string;
   component_id: string | null;
+  /** Type of the component the issue is about; null for host-level issues. Absent on an API that predates the field. */
+  component_type?: string | null;
   site: string;
   opened_at: string;
   resolved_at: string | null;
@@ -85,7 +87,12 @@ export interface MetricSeries {
   series: Record<string, MetricPoint[]>;
   host_id?: string;
   component_id?: string;
+  iface?: string;
 }
+
+/** GET fleet/components/{id}/probes: the collector's latest per-probe rows (CR-wp5-fleet-api-gaps item 2). */
+export interface ProbeRow { probe_id: string; last_seen: string; records_per_min: number; clock_offset_ms: number | null }
+export interface ProbeRows { component_id: string; as_of: string; reported_at: string | null; items: ProbeRow[] }
 
 export interface FleetTop {
   metric: 'cpu' | 'mem' | 'disk' | 'net';

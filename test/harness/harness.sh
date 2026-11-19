@@ -4,9 +4,14 @@
 # see test/harness/README.md. Nothing here touches the docker host's network or needs the internet.
 #
 #   harness.sh build             build the two images (net, host)
-#   harness.sh up [all|split]    start the LAN and the hosts of a layout
+#   harness.sh up [all|split|multisite]
+#                                start the LAN and the hosts of a layout
 #                                  all   : one host (h1: probe + collector + dashboard), 3 test ports
 #                                  split : hc (collector + dashboard, no ports) and hp (probe, 3 test ports)
+#                                  multisite : TWO event LANs (site 1 = 10.1.0.0/24, site 2 = 10.2.0.0/24, own
+#                                          gateway + dnsmasq each) and 4 hosts: hb1, hb2 (site 1) and hc1 (site 2),
+#                                          each with 3 test ports (collector + probe), and hd (dashboard, no ports);
+#                                          plus a webhook receiver (https, 9443) in the net container
 #   harness.sh down              remove every container and the management network
 #   harness.sh status            what is running, as JSON
 #   harness.sh shell [name]      interactive shell in a host (default: first host) or `net`
@@ -36,14 +41,16 @@ ensure_images() {
     docker image inspect "$NET_IMG" >/dev/null 2>&1 && docker image inspect "$HOST_IMG" >/dev/null 2>&1 || image_build
 }
 
-# host_spec NAME -> "ip-last-octet ports"
+# layout -> "name:ip-last-octet:ports[:site]" per host (site = which event LAN the test ports plug into, default 1)
 layout_hosts() {
     case "$1" in
         all)   echo "h1:11:3" ;;
         split) echo "hc:12:0 hp:13:3" ;;
-        *) die "unknown layout '$1' (all|split)" ;;
+        multisite) echo "hb1:21:3:1 hb2:22:3:1 hc1:23:3:2 hd:24:0" ;;
+        *) die "unknown layout '$1' (all|split|multisite)" ;;
     esac
 }
+layout_sites() { case "$1" in multisite) echo 2 ;; *) echo 1 ;; esac; }
 
 wait_systemd() {
     local c=$1 st=""
@@ -57,8 +64,8 @@ wait_systemd() {
     die "systemd in $c did not reach running/degraded (state=$st)"
 }
 
-start_host() {          # name last-octet nports idx
-    local name=$1 oct=$2 nports=$3 idx=$4 c="$P-$1"
+start_host() {          # name last-octet nports idx [site]
+    local name=$1 oct=$2 nports=$3 idx=$4 site=${5:-1} c="$P-$1"
     docker run -d --name "$c" --hostname "$name" --privileged --cgroupns=host \
         -v /sys/fs/cgroup:/sys/fs/cgroup:rw --tmpfs /run --tmpfs /run/lock \
         --network "$MGMT" --ip "$BASE.$oct" "$HOST_IMG" >/dev/null
@@ -76,7 +83,7 @@ start_host() {          # name last-octet nports idx
     pid=$(docker inspect -f '{{.State.Pid}}' "$c")
     for ((i = 0; i < nports; i++)); do
         docker exec "$NETC" /opt/lan/lanctl plug "$name-tp$i" --pid "$pid" --ifname "tp$i" \
-            --mac "$(printf '02:ee:%02x:00:00:%02x' "$idx" "$i")"
+            --mac "$(printf '02:ee:%02x:00:00:%02x' "$idx" "$i")" --site "$site"
     done
 }
 
@@ -90,7 +97,7 @@ cmd_up() {
     # which would block the management path to the simulated internet; masquerade off = no NAT to the real one
     docker network create -o com.docker.network.bridge.enable_ip_masquerade=false --subnet "$SUBNET" --gateway "$BASE.1" "$MGMT" >/dev/null
     docker run -d --name "$NETC" --hostname "$NETC" --privileged --pid=host --network "$MGMT" --ip "$NET_IP" \
-        -v "$HERE/net:/opt/lan:ro" "$NET_IMG" >/dev/null
+        -e "EXP_LAN_SITES=$(layout_sites "$layout")" -v "$HERE/net:/opt/lan:ro" "$NET_IMG" >/dev/null
     for _ in $(seq 120); do
         docker exec "$NETC" test -e /run/lan/ready 2>/dev/null && break
         [ "$(docker inspect -f '{{.State.Running}}' "$NETC")" = true ] || { docker logs "$NETC" >&2; die "net container exited"; }
@@ -98,9 +105,9 @@ cmd_up() {
     done
     docker exec "$NETC" test -e /run/lan/ready || { docker logs "$NETC" >&2; die "LAN did not become ready"; }
     for spec in $(layout_hosts "$layout"); do
-        IFS=: read -r name oct nports <<<"$spec"
-        say "starting host $name ($BASE.$oct, $nports test ports)"
-        start_host "$name" "$oct" "$nports" "$idx"
+        IFS=: read -r name oct nports site <<<"$spec"
+        say "starting host $name ($BASE.$oct, $nports test ports, site ${site:-1})"
+        start_host "$name" "$oct" "$nports" "$idx" "${site:-1}"
         idx=$((idx + 1))
     done
     say "up: layout=$layout (docker prefix $P)"

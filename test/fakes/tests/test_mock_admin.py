@@ -1034,3 +1034,71 @@ def test_metric_t_is_epoch_seconds_and_collectors_report_the_full_health_metric_
         assert full <= set(col["metrics"]), name
         days[name] = col["metrics"]["days_to_full"]
     assert sorted(days.values())[0] < 2 <= sorted(days.values())[1] < 7 < sorted(days.values())[2]
+
+
+# ------------------------------------------------------------------ CR-wp5-fleet-api-gaps items 2, 3, 5, 6
+def test_collector_probe_rows_in_the_status_report_and_endpoint(adm):
+    col = comp_of(adm, "hb-col-01", "collector")
+    host = host_by_name(adm, "hb-col-01")
+    st = A(adm, "GET", f"/hosts/{host['host_id']}/status").json()
+    rows = next(c for c in st["report"]["components"] if c["type"] == "collector")["metrics"]["probes"]
+    assert 0 < len(rows) <= 500 and set(rows[0]) == {"probe_id", "last_seen", "records_per_min", "clock_offset_ms"}
+    d = get_ok(adm, "/fleet/components/{component_id}/probes", f"/fleet/components/{col['component_id']}/probes")
+    assert [r["probe_id"] for r in d["items"]] == [r["probe_id"] for r in rows] and d["reported_at"]
+    assert any(abs(r["clock_offset_ms"]) > 1000 for r in d["items"])          # one probe is behind on its clock
+    pr = comp_of(adm, "hb-probe-01", "probe")
+    e = get_ok(adm, "/fleet/components/{component_id}/probes", f"/fleet/components/{pr['component_id']}/probes")
+    assert e["items"] == [] and e["reported_at"] is None
+    assert A(adm, "GET", "/fleet/components/cmp_00000000000000000000000000/probes").status == 404
+    from fakes_support import check_schema_file
+    check_schema_file("health.schema.json", {"schema": "exp.health/1", "status": "ok", "detail": "", "version": "0.1.0",
+                                             "uptime_s": 1, "metrics": {"probes": rows}, "facts": {}})
+
+
+def test_interface_series_ranges_keys_and_validation(adm):
+    h = host_by_name(adm, "hb-col-01")
+    base = f"/fleet/hosts/{h['host_id']}/interfaces"
+    tmpl = "/fleet/hosts/{id}/interfaces/{iface}/metrics"
+    for rng, n in (("1h", 12), ("24h", 288), ("48h", 576)):
+        d = get_ok(adm, tmpl, f"{base}/eno1/metrics?range={rng}")
+        assert d["iface"] == "eno1" and d["step_s"] == 300 and set(d["series"]) == set(seed.IFACE_KEYS)
+        assert all(len(v) == n and all(p["max"] is None for p in v) for v in d["series"].values())
+    only = get_ok(adm, tmpl, f"{base}/eno1/metrics?range=1h&keys=errors,drops")
+    assert set(only["series"]) == {"errors", "drops"}
+    assert A(adm, "GET", f"{base}/eno1/metrics?range=7d").status == 400
+    assert A(adm, "GET", f"{base}/eno1/metrics?keys=cpu_pct").status == 400
+    assert get_ok(adm, tmpl, f"{base}/nosuch0/metrics")["series"]["rx_pps"] == []
+    assert A(adm, "GET", "/fleet/hosts/h_00000000000000000000000000/interfaces/eno1/metrics").status == 404
+    # some interface somewhere shows errors, so the error charts are demonstrable
+    lossy = 0
+    for host in A(adm, "GET", "/hosts?limit=1000").json()["items"]:
+        if host["state"] != "enrolled":
+            continue
+        for itf in A(adm, "GET", f"/hosts/{host['host_id']}").json()["facts"].get("interfaces", [])[:3]:
+            s = A(adm, "GET", f"/fleet/hosts/{host['host_id']}/interfaces/{itf['name']}/metrics?range=1h&keys=errors").json()
+            lossy += any(p["avg"] > 0 for p in s["series"]["errors"])
+    assert lossy > 0
+
+
+def test_probe_by_test_series_only_on_request(adm):
+    pr = comp_of(adm, "hb-probe-01", "probe")
+    cid = pr["component_id"]
+    tmpl = "/fleet/components/{component_id}/metrics"
+    default = get_ok(adm, tmpl, f"/fleet/components/{cid}/metrics?range=1h")
+    assert not any(k.startswith("by_test_") for k in default["series"])
+    d = get_ok(adm, tmpl, f"/fleet/components/{cid}/metrics?range=1h&keys=by_test_ping,by_test_app")
+    assert set(d["series"]) == {"by_test_ping", "by_test_app"} and len(d["series"]["by_test_ping"]) == 12
+    col = comp_of(adm, "hb-col-01", "collector")["component_id"]
+    assert not get_ok(adm, tmpl, f"/fleet/components/{col}/metrics?range=1h&keys=by_test_ping")["series"]
+    host = host_by_name(adm, "hb-probe-01")
+    st = A(adm, "GET", f"/hosts/{host['host_id']}/status").json()
+    bt = next(c for c in st["report"]["components"] if c["type"] == "probe")["metrics"]["by_test_per_min"]
+    assert {"ping", "dns_hb", "gateway"} <= set(bt) and all(k in seed.BY_TEST_NAMES for k in bt)
+
+
+def test_issues_carry_component_type(adm):
+    items = A(adm, "GET", "/issues?limit=1000").json()["items"]
+    assert items and all("component_type" in i for i in items)
+    for i in items:
+        assert (i["component_type"] is None) == (i["component_id"] is None)
+    assert {i["component_type"] for i in items} >= {"probe", "collector", "dashboard", None}

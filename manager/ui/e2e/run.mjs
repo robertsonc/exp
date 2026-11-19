@@ -344,6 +344,51 @@ await test('probe ports grid and collector days-to-full', async () => {
   await page.context().close();
 });
 
+await test('fleet gaps: collector probe rows, probe per-test history, interface history, issue component type', async () => {
+  const page = await newPage();
+  const all = await hostsAll();
+  const col = all.find((x) => x.name === 'hb-col-01');
+  const pr = all.find((x) => x.name === 'hb-probe-05');
+  const cc = (await getJson(`/hosts/${col.host_id}/components`)).items.find((c) => c.type === 'collector');
+  const pc = (await getJson(`/hosts/${pr.host_id}/components`)).items.find((c) => c.type === 'probe');
+  // item 2: the collector's per-probe rows come from fleet/components/{id}/probes
+  const rows = (await getJson(`/fleet/components/${cc.component_id}/probes`)).items;
+  assert.ok(rows.length > 0);
+  await page.goto(`${BASE}/hosts/${col.host_id}/components/${cc.component_id}`);
+  await page.waitForSelector('[data-testid="probe-rows"] tbody tr');
+  assert.equal(await page.locator('[data-testid="probe-rows"] tbody tr').count(), rows.length);
+  const first = await page.locator('[data-testid="probe-rows"] tbody tr').first().innerText();
+  assert.ok(first.includes(rows[0].probe_id));
+  assert.match(first, /ms/);
+  assert.ok(await page.locator('[data-testid="probe-rows"] td.sev-warn').count() >= 1, 'a clock offset of 1 s or more is flagged');
+  await page.context().close();
+  // item 5: per-test history charts in the probe view
+  const p2 = await newPage();
+  await p2.goto(`${BASE}/hosts/${pr.host_id}/components/${pc.component_id}`);
+  await p2.waitForSelector('[data-testid="bytest-history"] .chart .uplot');
+  assert.ok(await p2.locator('[data-testid="bytest-history"] .chart').count() >= 1);
+  const legend = await p2.locator('[data-testid="bytest-history"]').innerText();
+  assert.match(legend, /gateway/);
+  assert.match(legend, /dns_hb/);
+  await p2.context().close();
+  // item 3: interface sparkline and per-interface charts (traffic, packets, errors and drops)
+  const p3 = await newPage();
+  await p3.goto(`${BASE}/hosts/${col.host_id}?tab=interfaces`);
+  await p3.waitForSelector('[data-testid="iface-charts"] .chart .uplot');
+  assert.equal(await p3.locator('[data-testid="iface-charts"]').first().getAttribute('data-iface'), 'eno1');
+  assert.ok(await p3.locator('[data-testid="iface-charts"] .chart').count() >= 3);
+  assert.match(await p3.locator('[data-testid="iface-charts"]').first().innerText(), /errors and drops/);
+  assert.ok(await p3.locator('table.plain svg').count() >= 1, 'the interface table row has a sparkline');
+  await p3.context().close();
+  // item 6: Issue.component_type shown and used by the type filter
+  const p4 = await newPage();
+  await p4.goto(`${BASE}/issues?type=collector`);
+  await p4.waitForSelector('[data-testid="issue-component-type"]');
+  const types = await p4.locator('[data-testid="issue-component-type"]').allInnerTexts();
+  assert.ok(types.length >= 1 && types.every((t) => t.trim() === '(collector)'), types.join(','));
+  await p4.context().close();
+});
+
 // Visual regression: overview, hosts, host detail, collector and probe views (baselines in tests/__snapshots__).
 await test('visual snapshots: overview, hosts, host detail, collector, probe', async () => {
   const col = PAGES.find((p) => p.name === 'host-overview');

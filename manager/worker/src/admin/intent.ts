@@ -203,6 +203,7 @@ export async function deleteHost(env: Env, actor: Actor, hostId: string): Promis
   }
   await env.DB.batch([
     ...stmts,
+    env.DB.prepare("DELETE FROM component_probes_latest WHERE component_id IN (SELECT component_id FROM components WHERE host_id = ?1)").bind(hostId),
     env.DB.prepare("DELETE FROM components WHERE host_id = ?1").bind(hostId),
     env.DB.prepare("DELETE FROM enrol_tokens WHERE host_id = ?1").bind(hostId),
     env.DB.prepare("DELETE FROM agent_creds WHERE host_id = ?1").bind(hostId),

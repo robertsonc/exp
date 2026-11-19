@@ -4,7 +4,7 @@ import { DEFAULT_ORG } from "../env";
 import { newId } from "../util/ids";
 import { isoAt, isoNow, nowMs } from "../util/time";
 import { sha256Hex } from "../util/encoding";
-import { masterKey, open, seal, secretAad } from "./crypto";
+import { keyRing, openWithRing, seal, secretAad } from "./crypto";
 
 export const ROTATION_GRACE_S = 600; // previous value stays valid for 10 min (05-manager.md section 6)
 
@@ -21,6 +21,9 @@ export interface SecretRow {
   previous_version: number | null;
   previous_hash: string | null;
   previous_valid_until: string | null;
+  /** master key that sealed ciphertext / previous_ciphertext (null: legacy row, see migration 0003) */
+  key_id?: string | null;
+  previous_key_id?: string | null;
 }
 
 export interface CreateSecretOptions {
@@ -38,16 +41,16 @@ export async function prepareCreateSecret(
   o: CreateSecretOptions,
   ignoreExisting = false,
 ): Promise<{ secretId: string; stmt: D1PreparedStatement }> {
-  const key = await masterKey(env.EXP_MASTER_KEY);
+  const ring = await keyRing(env);
   const secretId = o.secretId ?? newId("sec_");
-  const sealed = await seal(key, o.plaintext, secretAad(secretId, o.kind, 1));
+  const sealed = await seal(ring.current.key, o.plaintext, secretAad(secretId, o.kind, 1));
   const now = isoNow();
   const hash = o.withHash ? await sha256Hex(o.plaintext) : null;
   const stmt = env.DB.prepare(
     `INSERT ${ignoreExisting ? "OR IGNORE " : ""}INTO secrets
-       (secret_id, org_id, owner_ref, kind, ciphertext, nonce, version, hash, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?8)`,
-  ).bind(secretId, DEFAULT_ORG, o.ownerRef, o.kind, sealed.ciphertext, sealed.nonce, hash, now);
+       (secret_id, org_id, owner_ref, kind, ciphertext, nonce, version, hash, created_at, updated_at, key_id)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?8, ?9)`,
+  ).bind(secretId, DEFAULT_ORG, o.ownerRef, o.kind, sealed.ciphertext, sealed.nonce, hash, now, ring.current.id);
   return { secretId, stmt };
 }
 
@@ -66,20 +69,23 @@ export async function getSecretByOwner(env: Env, ownerRef: string, kind: string)
 }
 
 export async function readSecret(env: Env, row: SecretRow): Promise<string> {
-  const key = await masterKey(env.EXP_MASTER_KEY);
-  return open(key, { nonce: row.nonce, ciphertext: row.ciphertext }, secretAad(row.secret_id, row.kind, row.version));
+  const ring = await keyRing(env);
+  return (await openWithRing(ring, { nonce: row.nonce, ciphertext: row.ciphertext }, secretAad(row.secret_id, row.kind, row.version), row.key_id)).plaintext;
 }
 
 /** Previous value if it is still inside its grace window, as plaintext (used by tests / diagnostics). */
 export async function readPreviousSecret(env: Env, row: SecretRow, at: number = nowMs()): Promise<string | null> {
   if (!row.previous_ciphertext || !row.previous_nonce || row.previous_version == null) return null;
   if (!row.previous_valid_until || Date.parse(row.previous_valid_until) <= at) return null;
-  const key = await masterKey(env.EXP_MASTER_KEY);
-  return open(
-    key,
-    { nonce: row.previous_nonce, ciphertext: row.previous_ciphertext },
-    secretAad(row.secret_id, row.kind, row.previous_version),
-  );
+  const ring = await keyRing(env);
+  return (
+    await openWithRing(
+      ring,
+      { nonce: row.previous_nonce, ciphertext: row.previous_ciphertext },
+      secretAad(row.secret_id, row.kind, row.previous_version),
+      row.previous_key_id,
+    )
+  ).plaintext;
 }
 
 /** Hashes that are currently valid for a verifier: the current one plus the previous within grace. */
@@ -98,24 +104,24 @@ export async function prepareRotateSecret(
   withHash: boolean,
   graceS: number = ROTATION_GRACE_S,
 ): Promise<D1PreparedStatement> {
-  const key = await masterKey(env.EXP_MASTER_KEY);
+  const ring = await keyRing(env);
   const version = row.version + 1;
-  const sealed = await seal(key, newPlaintext, secretAad(row.secret_id, row.kind, version));
+  const sealed = await seal(ring.current.key, newPlaintext, secretAad(row.secret_id, row.kind, version));
   const hash = withHash ? await sha256Hex(newPlaintext) : null;
   return env.DB.prepare(
     `UPDATE secrets SET
        previous_ciphertext = ciphertext, previous_nonce = nonce, previous_version = version,
-       previous_hash = hash, previous_valid_until = ?1,
-       ciphertext = ?2, nonce = ?3, version = ?4, hash = ?5, updated_at = ?6
+       previous_hash = hash, previous_valid_until = ?1, previous_key_id = key_id,
+       ciphertext = ?2, nonce = ?3, version = ?4, hash = ?5, updated_at = ?6, key_id = ?9
      WHERE secret_id = ?7 AND version = ?8`,
-  ).bind(isoAt(nowMs() + graceS * 1000), sealed.ciphertext, sealed.nonce, version, hash, isoNow(), row.secret_id, row.version);
+  ).bind(isoAt(nowMs() + graceS * 1000), sealed.ciphertext, sealed.nonce, version, hash, isoNow(), row.secret_id, row.version, ring.current.id);
 }
 
 /** Drop previous_* values past their grace window (cron housekeeping). Returns rows changed. */
 export async function dropExpiredPrevious(env: Env, at: number = nowMs()): Promise<number> {
   const r = await env.DB.prepare(
     `UPDATE secrets SET previous_ciphertext = NULL, previous_nonce = NULL, previous_version = NULL,
-       previous_hash = NULL, previous_valid_until = NULL, updated_at = ?1
+       previous_hash = NULL, previous_valid_until = NULL, previous_key_id = NULL, updated_at = ?1
      WHERE previous_valid_until IS NOT NULL AND previous_valid_until <= ?1`,
   ).bind(isoAt(at)).run();
   return r.meta.changes ?? 0;
@@ -123,12 +129,12 @@ export async function dropExpiredPrevious(env: Env, at: number = nowMs()): Promi
 
 /** Statement that replaces a write-only secret value outright (no overlap: the old value is not kept). */
 export async function prepareSetSecret(env: Env, row: SecretRow, newPlaintext: string): Promise<D1PreparedStatement> {
-  const key = await masterKey(env.EXP_MASTER_KEY);
+  const ring = await keyRing(env);
   const version = row.version + 1;
-  const sealed = await seal(key, newPlaintext, secretAad(row.secret_id, row.kind, version));
+  const sealed = await seal(ring.current.key, newPlaintext, secretAad(row.secret_id, row.kind, version));
   return env.DB.prepare(
     `UPDATE secrets SET ciphertext = ?1, nonce = ?2, version = ?3, previous_ciphertext = NULL, previous_nonce = NULL,
-       previous_version = NULL, previous_hash = NULL, previous_valid_until = NULL, updated_at = ?4
+       previous_version = NULL, previous_hash = NULL, previous_valid_until = NULL, previous_key_id = NULL, key_id = ?7, updated_at = ?4
      WHERE secret_id = ?5 AND version = ?6`,
-  ).bind(sealed.ciphertext, sealed.nonce, version, isoNow(), row.secret_id, row.version);
+  ).bind(sealed.ciphertext, sealed.nonce, version, isoNow(), row.secret_id, row.version, ring.current.id);
 }

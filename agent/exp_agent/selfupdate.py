@@ -41,8 +41,24 @@ def confirm_if_pending(ctx: Context) -> bool:
     if p and p.get("to") == ctx.agent_version:
         ctx.fs.remove(ctx.paths.agent_state / PENDING)
         ctx.state.event("info", f"agent updated to {ctx.agent_version} (previous {p.get('from')})")
+        prune_agent_trees(ctx)
         return True
     return False
+
+
+def prune_agent_trees(ctx: Context) -> list[str]:
+    """Keep only the running tree (`current`) and the rollback target (`previous`) in /opt/exp/agent/.
+    Never while an update is unconfirmed (both trees are needed then)."""
+    if read_pending(ctx) is not None:
+        return []
+    try:
+        removed = install.prune_versions(ctx.fs, "agent", {ctx.agent_version})
+    except (AgentError, OSError) as exc:
+        log.warning("pruning old agent trees failed: %s", exc)
+        return []
+    if removed:
+        ctx.state.event("info", "removed old agent trees: " + ", ".join(removed))
+    return removed
 
 
 def absorb_rollback_note(ctx: Context) -> None:
@@ -57,6 +73,7 @@ def absorb_rollback_note(ctx: Context) -> None:
         ctx.state.data["bad_agent_versions"] = sorted(blocked)[-10:]
     ctx.state.event("error", f"agent_rollback: agent {bad} did not report in time; restored {note.get('to')}")
     ctx.fs.remove(ctx.paths.agent_state / ROLLED_BACK)
+    prune_agent_trees(ctx)  # the tree that failed to confirm is gone for good
     ctx.state.save()
 
 

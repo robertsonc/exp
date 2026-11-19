@@ -7,11 +7,12 @@ import logging
 import os
 import pwd
 import re
+import stat
 from collections.abc import Callable
 from pathlib import Path
 
 from .errors import AgentError, AptError, Refused
-from .pathguard import SafeFS
+from .pathguard import VERSION_RE, SafeFS
 from .runner import Result, Runner
 
 log = logging.getLogger(__name__)
@@ -157,15 +158,30 @@ def current_version(fs: SafeFS, component: str) -> str | None:
 
 
 def prune_versions(fs: SafeFS, component: str, keep: set[str]) -> list[str]:
+    """Remove version directories under /opt/exp/<c>/ except `keep`, the one `current` points at and the
+    one the agent's `previous` symlink points at (the rollback target). Only real directories named like
+    a version are removed (never a symlink target, never `current`/`previous`/`rollback-check`); stale
+    `.staging-*` directories are cleaned up too. Returns the removed version names."""
     removed: list[str] = []
     base = fs.paths.comp_opt(component)
+    protected = set(keep)
+    for link in ("current", "previous"):
+        t = fs.readlink(base / link)
+        if t and VERSION_RE.match(t):
+            protected.add(t)
     for name in fs.listdir(base):
-        if name == "current" or name.startswith(".staging-") or name in keep:
-            if name.startswith(".staging-"):
-                fs.rmtree(base / name)
-            continue
         p = base / name
-        if fs.is_dir(p):
+        try:
+            real_dir = stat.S_ISDIR(os.lstat(p).st_mode)  # lstat: a symlink is never followed or removed
+        except OSError:
+            continue
+        if not real_dir:
+            continue
+        if name.startswith(".staging-"):
             fs.rmtree(p)
-            removed.append(name)
+            continue
+        if name in protected or not VERSION_RE.match(name):
+            continue
+        fs.rmtree(p)
+        removed.append(name)
     return removed

@@ -10,7 +10,7 @@ import { ApiError, ConfigError, forbidden, invalidRequest, invalidToken, notFoun
 import { onStatusStored } from "../fleet-hooks";
 import { hostSampleOf, mgmtNet } from "../fleet/rollup";
 import { enforce } from "../ratelimit";
-import { masterKey } from "../secrets/crypto";
+import { keyRing } from "../secrets/crypto";
 import { ROTATION_GRACE_S } from "../secrets/store";
 import { newToken, tokenHash } from "../secrets/tokens";
 import { readJson, readLimited } from "../util/body";
@@ -31,9 +31,9 @@ function zodDetails(err: ZodError): Record<string, unknown> {
   };
 }
 
-async function requireKey(env: Env): Promise<CryptoKey> {
+async function requireKey(env: Env): Promise<unknown> {
   try {
-    return await masterKey(env.EXP_MASTER_KEY);
+    return await keyRing(env);
   } catch (e) {
     if (e instanceof ConfigError) throw unavailable(e.message);
     throw e;

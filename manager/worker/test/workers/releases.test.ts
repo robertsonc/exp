@@ -235,10 +235,63 @@ describe("upload (multipart)", () => {
   });
 });
 
+describe("PATCH sites/{site}/release conformance (admin.yaml)", () => {
+  const patch = (b: Record<string, unknown>, site = "hall-b") => h.json<{ error: { code: string; details: Record<string, unknown> } }>("admin", "PATCH", `/sites/${site}/release`, b);
+  const imp = async (v: string, over: Record<string, unknown> = {}) => {
+    h.handlers.length = 0;
+    h.handlers.push(githubHandler(await buildRelease(key, v, undefined, over)));
+    expect((await importIt(v)).status).toBe(201);
+  };
+
+  it("422 release_not_imported (after the 404 for an unknown site)", async () => {
+    await seedSite();
+    const r = await patch({ version: "9.9.9" });
+    expect(r.status).toBe(422);
+    expect(r.body.error.code).toBe("release_not_imported");
+    expect((await patch({ version: "9.9.9" }, "nope")).status).toBe(404);
+  });
+
+  it("422 min_agent_version when a site host's agent is older; unknown/newer agents pass", async () => {
+    await seedSite();
+    await imp("0.5.0", { min_agent_version: "0.4.0" });
+    const old = await enrolHost("hall-b", "old");
+    await env.DB.prepare("UPDATE hosts SET agent_version = '0.3.9' WHERE host_id = ?1").bind(old.host_id).run();
+    const r = await patch({ version: "0.5.0" });
+    expect(r.status).toBe(422);
+    expect(r.body.error.code).toBe("min_agent_version");
+    expect(r.body.error.details).toMatchObject({ min_agent_version: "0.4.0", host_ids: [old.host_id] });
+    expect((await patch({ version: "0.5.0", canary_host_id: old.host_id })).body.error.code).toBe("min_agent_version");
+    // a canary on a different (fresh) host is judged on that host only
+    const fresh = await enrolHost("hall-b", "fresh");
+    await env.DB.prepare("UPDATE hosts SET agent_version = '0.10.0' WHERE host_id = ?1").bind(fresh.host_id).run();
+    expect((await patch({ version: "0.5.0", canary_host_id: fresh.host_id })).status).toBe(200);
+    await env.DB.prepare("UPDATE hosts SET agent_version = '0.4.0' WHERE host_id = ?1").bind(old.host_id).run();
+    await patch({ version: "0.5.0" });
+    expect((await patch({ version: "0.5.0" })).status).toBe(200);
+  });
+
+  it("409 rollout_in_progress for a second canary, 409 canary_failed after a failed one; a plain PATCH (rollback/promote) always works", async () => {
+    await seedSite();
+    await imp("0.2.0");
+    await imp("0.3.0");
+    const host = await enrolHost("hall-b", "srv");
+    expect((await patch({ version: "0.3.0", canary_host_id: host.host_id })).status).toBe(200);
+    const again = await patch({ version: "0.3.0", canary_host_id: host.host_id });
+    expect(again.status).toBe(409);
+    expect(again.body.error.code).toBe("rollout_in_progress");
+    await env.DB.prepare("UPDATE sites SET canary_state = 'failed' WHERE site = 'hall-b'").run();
+    const failed = await patch({ version: "0.3.0", canary_host_id: host.host_id });
+    expect(failed.status).toBe(409);
+    expect(failed.body.error.code).toBe("canary_failed");
+    expect((await patch({ version: "0.2.0" })).status).toBe(200);
+    expect((await patch({ version: "0.3.0", canary_host_id: host.host_id })).status).toBe(200);
+  });
+});
+
 describe("sites can target an imported release; rollback to a previous one", () => {
   it("PATCH sites/{site}/release needs an imported release and records canary intent", async () => {
     await seedSite();
-    expect((await h.json("admin", "PATCH", "/sites/hall-b/release", { version: "0.2.0" })).status).toBe(404);
+    expect((await h.json("admin", "PATCH", "/sites/hall-b/release", { version: "0.2.0" })).status).toBe(422);
     for (const v of ["0.2.0", "0.3.0"]) {
       h.handlers.length = 0;
       h.handlers.push(githubHandler(await buildRelease(key, v)));

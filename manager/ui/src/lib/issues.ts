@@ -20,7 +20,14 @@ export function issueScope(kind: string): string {
   return 'host';
 }
 
-export const SCOPES = ['host', 'component', 'probe', 'collector', 'dashboard'] as const;
+/** Issue type for the filter: the component type the API reports, `host` for host-level issues; an API that predates
+ *  `component_type` (CR-wp5-fleet-api-gaps item 6) falls back to the kind-derived scope. */
+export function issueType(i: Pick<Issue, 'kind' | 'component_type'>): string {
+  if (i.component_type === undefined) return issueScope(i.kind);
+  return i.component_type ?? 'host';
+}
+
+export const SCOPES = ['host', 'probe', 'collector', 'dashboard', 'runner'] as const;
 
 export function kindLabel(kind: string): string {
   return own(KIND_LABEL, kind) ?? kind;

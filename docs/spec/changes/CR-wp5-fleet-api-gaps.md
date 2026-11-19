@@ -29,3 +29,23 @@ so nothing is broken; these are the gaps against `11-manager-ui.md`.
 
 ## Compatibility
 All additive. No existing field changes meaning.
+
+## Resolution (M3 p1, applied)
+Items 1-6 are applied end to end (component, status report, manager storage, admin API, UI, mock_admin). Choices made:
+
+2. Collector health metrics carry `probes[]` (`probe_id`, `last_seen`, `records_per_min`, `clock_offset_ms`): configured probes
+   that delivered since the collector started, sorted by id, at most 500 rows and about 52 KB of JSON (the health document is
+   capped at 64 KiB by the agent). The manager keeps the latest rows per collector (table `component_probes_latest`, replaced by
+   every report, deleted when a report has no `probes` array) and serves them as `GET /fleet/components/{id}/probes`
+   (`reported_at`, `items`). Malformed rows are dropped, never stored. The collector view lists them and adds configured probes
+   that have not reported as dashes.
+3. `GET /fleet/hosts/{id}/interfaces/{iface}/metrics?range=1h|6h|24h|48h&keys=rx_pps,tx_pps,rx_bps,tx_bps,errors,drops`
+   serves `fleet_iface_5m` (5-minute buckets, 48 h; `errors` / `drops` are rx + tx per report, averaged per bucket; `max` is
+   null). An interface without rows answers empty series. Host-level `net_errors` / `net_drops` (management interface) were
+   already served; the host chart now uses them.
+5. Probe components accept `by_test_<name>` keys, one per test of the catalog (01-contracts.md section 3), rolled up from
+   `by_test_per_min` into the existing component roll-up tables (so 5 m / 1 h, 48 h / 30 d). The fixed catalog bounds the stored
+   key set whatever a probe reports. A test absent from a report adds no sample (a gap, never a fabricated zero). The keys are
+   chartable on request and are not part of the default key list.
+6. `Issue.component_type` (`probe|collector|dashboard|runner|speedtest|null`) is stored with the issue, backfilled by migration
+   `0004_fleet_gaps.sql`, and used by the UI type filter (`host` = null).

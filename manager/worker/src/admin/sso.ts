@@ -114,15 +114,22 @@ export async function buildSsoPage(env: Env, admin: { email: string; role: Role 
 // the dashboard; the GET still needs the Access JWT of that same admin. It is not a credential for the dashboard.
 export const LAUNCH_TTL_S = 30;
 
-async function launchKey(env: Env): Promise<CryptoKey> {
-  if (!env.EXP_MASTER_KEY) throw unavailable("EXP_MASTER_KEY is not set");
-  const raw = new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(`exp-sso-launch/v1|${env.EXP_MASTER_KEY}`)));
+// Key derivation (rotation-safe): the HMAC key is derived from the master key, so a nonce minted just before a rotation must
+// still verify just after it. mint always uses the current key; verify accepts the current key and, while one is configured,
+// EXP_MASTER_KEY_PREVIOUS (a nonce lives 30 s, far shorter than any rotation). Nothing else is ever accepted.
+async function launchKeyFrom(rawKey: string): Promise<CryptoKey> {
+  const raw = new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(`exp-sso-launch/v1|${rawKey}`)));
   return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 }
 
-async function launchSig(env: Env, email: string, dashId: string, exp: number): Promise<string> {
-  const k = await launchKey(env);
+async function launchSigWith(rawKey: string, email: string, dashId: string, exp: number): Promise<string> {
+  const k = await launchKeyFrom(rawKey);
   return bytesToB64url(new Uint8Array(await crypto.subtle.sign("HMAC", k, utf8(`${email}\n${dashId}\n${exp}`))));
+}
+
+async function launchSig(env: Env, email: string, dashId: string, exp: number): Promise<string> {
+  if (!env.EXP_MASTER_KEY) throw unavailable("EXP_MASTER_KEY is not set");
+  return launchSigWith(env.EXP_MASTER_KEY, email, dashId, exp);
 }
 
 export async function mintLaunchNonce(env: Env, email: string, dashId: string): Promise<string> {
@@ -133,6 +140,10 @@ export async function mintLaunchNonce(env: Env, email: string, dashId: string): 
 export async function verifyLaunchNonce(env: Env, email: string, dashId: string, nonce: string | undefined): Promise<void> {
   const m = /^(\d{10})\.([A-Za-z0-9_-]{43})$/.exec(nonce ?? "");
   const exp = m ? Number(m[1]) : 0;
-  const ok = m && exp >= Math.floor(nowMs() / 1000) && exp <= Math.floor(nowMs() / 1000) + LAUNCH_TTL_S && constantTimeEqual(m[2]!, await launchSig(env, email, dashId, exp));
+  let ok = false;
+  if (m && exp >= Math.floor(nowMs() / 1000) && exp <= Math.floor(nowMs() / 1000) + LAUNCH_TTL_S) {
+    ok = constantTimeEqual(m[2]!, await launchSig(env, email, dashId, exp));
+    if (!ok && env.EXP_MASTER_KEY_PREVIOUS) ok = constantTimeEqual(m[2]!, await launchSigWith(env.EXP_MASTER_KEY_PREVIOUS, email, dashId, exp));
+  }
   if (!ok) throw new ApiError(403, "invalid_launch_nonce", "the dashboard launch link is invalid or expired; open the dashboard again from the manager");
 }

@@ -172,7 +172,7 @@ def test_manager_refuses_unsigned_and_tampered_releases(stack, up):
     assert sql_count(stack, f"SELECT count(*) AS n FROM releases WHERE version IN ('{bad}', '0.1.9')") == 0
     # and the site cannot be pointed at them
     r = stack.admin.call("PATCH", f"/sites/{SITE}/release", {"version": bad})
-    assert r.status in (404, 422), r
+    assert r.status == 422 and r.json()["error"]["code"] == "release_not_imported", r
 
 
 # ======================================================================================== upgrade

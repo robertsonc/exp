@@ -4,6 +4,7 @@
 import type { StatusReport } from "./agent/status-schema";
 import type { Env } from "./env";
 import { recordRollups } from "./fleet/rollup";
+import { recordProbeRows } from "./fleet/probes";
 import { evaluateReport } from "./issues/engine";
 
 export interface StatusStored {
@@ -20,6 +21,11 @@ export async function onStatusStored(env: Env, evt: StatusStored): Promise<void>
     await recordRollups(env, evt.hostId, ms, evt.report, evt.components);
   } catch (e) {
     console.error("rollups failed", e instanceof Error ? e.name : "error");
+  }
+  try {
+    await recordProbeRows(env, evt.receivedAt, evt.report, evt.components);
+  } catch (e) {
+    console.error("probe rows failed", e instanceof Error ? e.name : "error");
   }
   try {
     await evaluateReport(env, evt.hostId, evt.report, ms);

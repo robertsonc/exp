@@ -118,6 +118,8 @@ _TABLE = {
         GET /fleet/sites
         GET /fleet/hosts
         GET /fleet/hosts/{id}/metrics
+        GET /fleet/hosts/{id}/interfaces/{iface}/metrics
+        GET /fleet/components/{component_id}/probes
         GET /fleet/components/{component_id}/metrics
         GET /fleet/top
         GET /issues
@@ -352,7 +354,7 @@ def test_fleet_endpoints_document_etag_and_cache():
             assert r200["headers"]["Cache-Control"]["schema"]["const"] == "private, max-age=15"
             assert "304" in o["responses"], p
             assert any(prm.get("name") == "If-None-Match" for prm in o["parameters"]), p
-    assert n == 6
+    assert n == 8
 
 
 def test_agent_desired_documents_etag_and_304():

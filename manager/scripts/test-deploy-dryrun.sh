@@ -340,15 +340,61 @@ assert_fails "refuses an output directory inside the repository" "outside it" en
 rmdir "$MANAGER/backups-test" 2>/dev/null || true
 assert_fails "requires credentials" "CLOUDFLARE_API_TOKEN" env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID "$MANAGER/scripts/backup.sh" --out-dir "$T/b"
 
+# ---- rotate-master-key.sh ---------------------------------------------------------------------------------------------------------------
+echo "rotate-master-key.sh"
+OLDK="$(openssl rand -base64 32)"; NEWK="$(openssl rand -base64 32)"
+printf '%s\n' "$OLDK" > "$T/old.key"; printf '%s\n' "$NEWK" > "$T/new.key"
+mkdir -p "$T/rbin"
+# wrangler shim: records argv (one line per call) and stdin (one file per call); never touches the network
+cat > "$T/rbin/npx" <<SHIM
+#!/bin/sh
+mkdir -p "$T/npx-in"
+n=\$(ls "$T/npx-in" | wc -l | tr -d ' ')
+echo "\$*" >> "$T/npx-args"
+cat > "$T/npx-in/\$n"
+exit 0
+SHIM
+chmod +x "$T/rbin/npx"
+cp "$T/bin/curl" "$T/rbin/curl"
+ROT=(env PATH="$T/rbin:$PATH" "$MANAGER/scripts/rotate-master-key.sh" -c "$MANAGER/wrangler.toml")
+rout="$("${ROT[@]}" --old-key-file "$T/old.key" --new-key-file "$T/new.key" --dry-run 2>&1)"; rrc=$?
+[ "$rrc" -eq 0 ] && ok "dry-run exits 0" || bad "dry-run exits 0 (rc=$rrc)" "$rout"
+assert_has "[dry-run] would run: wrangler secret put EXP_MASTER_KEY_PREVIOUS" "$rout" "dry-run plans setting the previous key"
+assert_has "[dry-run] would run: wrangler secret put EXP_MASTER_KEY " "$rout" "dry-run plans setting the new key"
+assert_has "wrangler secret delete EXP_MASTER_KEY_PREVIOUS" "$rout" "dry-run explains when to delete the previous key"
+assert_has "nothing was changed" "$rout" "dry-run says nothing was changed"
+assert_lacks "$OLDK" "$rout" "dry-run never prints the old key"
+assert_lacks "$NEWK" "$rout" "dry-run never prints the new key"
+if [ ! -f "$T/npx-args" ] && [ ! -f "$T/curl-calls" ]; then ok "dry-run ran no wrangler and no curl"; else bad "dry-run ran no wrangler and no curl" "$(cat "$T/npx-args" 2>/dev/null)"; fi
+rout="$("${ROT[@]}" --old-key-stdin --dry-run <<<"$OLDK" 2>&1)"; rrc=$?
+if [ "$rrc" -eq 0 ]; then ok "dry-run with stdin old key and a to-be-generated new key exits 0"; else bad "dry-run with stdin old key (rc=$rrc)" "$rout"; fi
+assert_lacks "$OLDK" "$rout" "stdin old key is not echoed"
+assert_fails "refuses identical keys" "identical" "${ROT[@]}" --old-key-file "$T/old.key" --new-key-file "$T/old.key" --dry-run
+assert_fails "refuses a key given as an argument" "never accepted as arguments" "${ROT[@]}" --old-key "$OLDK" --dry-run
+assert_fails "requires the old key" "OLD key must be supplied" "${ROT[@]}" --dry-run
+assert_fails "refuses a malformed key" "not base64 of exactly 32 bytes" "${ROT[@]}" --old-key-file "$T/priv.pem" --dry-run
+assert_fails "refuses two stdin keys" "only one key can come from stdin" "${ROT[@]}" --old-key-stdin --new-key-stdin --dry-run
+# real run against the recording shim: keys travel on stdin only, PREVIOUS is set before the new current key
+rm -f "$T/npx-args"; rm -rf "$T/npx-in"
+rout="$("${ROT[@]}" --old-key-file "$T/old.key" --new-key-file "$T/new.key" 2>&1)"; rrc=$?
+[ "$rrc" -eq 0 ] && ok "rotation run exits 0 (wrangler shim)" || bad "rotation run exits 0 (rc=$rrc)" "$rout"
+rargs="$(cat "$T/npx-args" 2>/dev/null)"
+assert_has "secret put EXP_MASTER_KEY_PREVIOUS" "$(sed -n 1p "$T/npx-args" 2>/dev/null)" "first call sets EXP_MASTER_KEY_PREVIOUS"
+assert_has "secret put EXP_MASTER_KEY -c" "$(sed -n 2p "$T/npx-args" 2>/dev/null)" "second call sets EXP_MASTER_KEY"
+assert_lacks "$OLDK" "$rargs$rout" "no key material in wrangler argv or script output (old)"
+assert_lacks "$NEWK" "$rargs$rout" "no key material in wrangler argv or script output (new)"
+if [ "$(cat "$T/npx-in/0" 2>/dev/null)" = "$OLDK" ] && [ "$(cat "$T/npx-in/1" 2>/dev/null)" = "$NEWK" ]; then ok "old key then new key are passed on stdin"; else bad "keys passed on stdin in order"; fi
+assert_has "safe_to_remove_previous" "$rout" "explains how to watch progress"
+
 # ---- shellcheck (when available) ---------------------------------------------------------------------------------------------------------
 echo "shellcheck"
 if command -v shellcheck >/dev/null 2>&1; then
-  for f in deploy.sh scripts/publish-release.sh scripts/backup.sh scripts/test-deploy-dryrun.sh; do
+  for f in deploy.sh scripts/publish-release.sh scripts/backup.sh scripts/rotate-master-key.sh scripts/test-deploy-dryrun.sh; do
     if shellcheck -S warning "$MANAGER/$f" >"$T/sc.out" 2>&1; then ok "shellcheck $f"; else bad "shellcheck $f" "$(cat "$T/sc.out")"; fi
   done
 else
   echo "  skip (shellcheck not installed)"
-  for f in deploy.sh scripts/publish-release.sh scripts/backup.sh scripts/test-deploy-dryrun.sh; do bash -n "$MANAGER/$f" && ok "bash -n $f" || bad "bash -n $f"; done
+  for f in deploy.sh scripts/publish-release.sh scripts/backup.sh scripts/rotate-master-key.sh scripts/test-deploy-dryrun.sh; do bash -n "$MANAGER/$f" && ok "bash -n $f" || bad "bash -n $f"; done
 fi
 
 printf '\n%d passed, %d failed\n' "$PASSES" "$FAILS"

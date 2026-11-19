@@ -28,7 +28,46 @@
     },
     "metrics": {
       "type": "object",
-      "description": "Open object; the agent copies it into the status report. Expected keys by component type -- probe: measurements_per_min, by_test_per_min (map test->n), fail_per_min, error_per_min, spool_depth, spool_bytes, push_lag_s, clock_offset_ms, skipped_per_hour, ports (array of {id,iface,role,link,leased,ip,gateway,rx_pps,tx_pps,rx_bps,tx_bps,rx_errors,tx_errors,rx_drops,tx_drops,last}). collector: ingest_records_per_s, ingest_rejected_per_min, ingest_duplicates_per_min, ingest_bytes_per_s, probes_total, probes_reporting, vm_up (0/1), vm_backlog_points, vm_series, vm_storage_gb, records_db_gb, storage_free_gb, days_to_full (null when growth<=0), sse_clients, open_incidents, webhook_failures_1h, rules_eval_ms_p95. dashboard: sessions_active, requests_per_min, sse_clients, collectors_total, collectors_reachable, login_failures_1h. runner: drills_active, pullers (array of {source,last_ok,errors_1h}); M6 adds correlations_per_hour, evidence_lag_s_p95, syslog_lines_per_s, syslog_dropped_per_min. speedtest (M6): tests_per_hour, active_tests, queue_depth, internet_leg_paused (0/1), local_leg_gbps_p95, rejected_per_hour."
+      "description": "Open object; the agent copies it into the status report. Expected keys by component type -- probe: measurements_per_min, by_test_per_min (map test->n), fail_per_min, error_per_min, spool_depth, spool_bytes, push_lag_s, clock_offset_ms, skipped_per_hour, ports (array of {id,iface,role,link,leased,ip,gateway,rx_pps,tx_pps,rx_bps,tx_bps,rx_errors,tx_errors,rx_drops,tx_drops,last}). collector: ingest_records_per_s, ingest_rejected_per_min, ingest_duplicates_per_min, ingest_bytes_per_s, probes_total, probes_reporting, probes (array, at most 500, latest per-probe rows {probe_id,last_seen,records_per_min,clock_offset_ms}), vm_up (0/1), vm_backlog_points, vm_series, vm_storage_gb, records_db_gb, storage_free_gb, days_to_full (null when growth<=0), sse_clients, open_incidents, webhook_failures_1h, rules_eval_ms_p95. dashboard: sessions_active, requests_per_min, sse_clients, collectors_total, collectors_reachable, login_failures_1h. runner: drills_active, pullers (array of {source,last_ok,errors_1h}); M6 adds correlations_per_hour, evidence_lag_s_p95, syslog_lines_per_s, syslog_dropped_per_min. speedtest (M6): tests_per_hour, active_tests, queue_depth, internet_leg_paused (0/1), local_leg_gbps_p95, rejected_per_hour.",
+      "properties": {
+        "probes": {
+          "type": "array",
+          "maxItems": 500,
+          "description": "Collector: per-probe latest figures (CR-wp5-fleet-api-gaps item 2); the manager keeps the latest values only.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "probe_id": {
+                "$ref": "common.schema.json#/$defs/slug"
+              },
+              "last_seen": {
+                "$ref": "common.schema.json#/$defs/ts"
+              },
+              "records_per_min": {
+                "type": "number",
+                "minimum": 0
+              },
+              "clock_offset_ms": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "probe_id",
+              "last_seen",
+              "records_per_min",
+              "clock_offset_ms"
+            ],
+            "additionalProperties": true
+          }
+        }
+      }
     },
     "facts": {
       "type": "object",

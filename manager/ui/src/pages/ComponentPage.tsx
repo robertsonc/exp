@@ -1,5 +1,7 @@
 import type { JSX } from 'preact';
-import type { Component, Me, StatusComponent } from '../api/types';
+import type { Component, Me, ProbeRows, StatusComponent } from '../api/types';
+import { ep } from '../api/endpoints';
+import { useResource } from '../data/hooks';
 import { useHostData } from '../data/hostData';
 import { Badge, EmptyState, ErrorBanner, Missing, Panel, SkeletonBlock, StatusPill, Tabs, healthPill } from '../components/atoms';
 import { OpenDashboardButton } from '../components/OpenDashboard';
@@ -45,28 +47,45 @@ function StorageRunway({ sc }: { sc: StatusComponent | undefined }): JSX.Element
   );
 }
 
-function ProbesTable({ comp, sc }: { comp: Component | undefined; sc: StatusComponent | undefined }): JSX.Element {
-  const reported = Array.isArray(sc?.metrics?.['probes']) ? (sc?.metrics?.['probes'] as Record<string, unknown>[]) : null;
-  const cfgProbes = Array.isArray(comp?.config['probes']) ? (comp?.config['probes'] as { probe_id?: unknown; label?: unknown }[]) : [];
-  const rows = reported
-    ? reported.map((p) => ({ id: String(p['probe_id'] ?? ''), seen: typeof p['last_seen'] === 'string' ? p['last_seen'] : null, rpm: num(p['records_per_min']), clk: num(p['clock_offset_ms']) }))
-    : cfgProbes.map((p) => ({ id: String(p.probe_id ?? ''), seen: null, rpm: null, clk: null }));
+interface ProbeLine { id: string; seen: string | null; rpm: number | null; clk: number | null; reported: boolean }
+
+/** Rows of the collector's probe table: the manager's latest rows (GET fleet/components/{id}/probes), else the rows of the
+ *  status report, plus every probe of the collector configuration that has not reported (shown with dashes). */
+export function probeLines(items: ProbeRows['items'] | null, report: unknown, cfg: unknown): ProbeLine[] {
+  const raw = items ?? (Array.isArray(report) ? (report as Record<string, unknown>[]) : null);
+  const byId = new Map<string, ProbeLine>();
+  for (const p of (raw ?? []).slice(0, 500)) {
+    const r = p as unknown as Record<string, unknown>;
+    const id = String(r['probe_id'] ?? '');
+    if (!id) continue;
+    byId.set(id, { id, seen: typeof r['last_seen'] === 'string' ? r['last_seen'] : null, rpm: num(r['records_per_min']), clk: num(r['clock_offset_ms']), reported: true });
+  }
+  for (const p of Array.isArray(cfg) ? (cfg as { probe_id?: unknown }[]) : []) {
+    const id = String(p.probe_id ?? '');
+    if (id && !byId.has(id)) byId.set(id, { id, seen: null, rpm: null, clk: null, reported: false });
+  }
+  return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+function ProbesTable({ cid, comp, sc }: { cid: string; comp: Component | undefined; sc: StatusComponent | undefined }): JSX.Element {
+  const stored = useResource<ProbeRows>(ep.compProbes(cid));
+  const rows = probeLines(stored.data && stored.data.reported_at ? stored.data.items : null, sc?.metrics?.['probes'], comp?.config['probes']);
   const total = metric(sc, 'probes_total');
   const reporting = metric(sc, 'probes_reporting');
   return (
     <Panel title={`Probes reporting${total !== null ? `: ${reporting ?? DASH} of ${total}` : ''}`} id="probes">
       {rows.length === 0 ? <EmptyState title="No probes assigned to this collector" /> : (
         <div class="table-scroll">
-          <table class="plain">
+          <table class="plain" data-testid="probe-rows">
             <caption class="sr-only">Probes of this collector</caption>
             <thead><tr><th scope="col">Probe</th><th scope="col">Last seen</th><th scope="col">Records/min</th><th scope="col">Clock offset</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
                   <th scope="row">{r.id}</th>
-                  <td>{r.seen ? <span title={formatAbsolute(r.seen)}>{formatAgo(r.seen, Date.now())}</span> : <Missing why="per-probe detail is not part of the collector health report" />}</td>
+                  <td>{r.seen ? <span title={formatAbsolute(r.seen)}>{formatAgo(r.seen, Date.now())}</span> : <Missing why={r.reported ? 'not reported' : 'not reported by this collector yet'} />}</td>
                   <td>{r.rpm !== null ? formatCount(r.rpm) : DASH}</td>
-                  <td>{r.clk !== null ? `${r.clk} ms` : DASH}</td>
+                  <td class={r.clk !== null && Math.abs(r.clk) >= 1000 ? 'sev-warn' : ''}>{r.clk !== null ? `${r.clk} ms` : DASH}</td>
                 </tr>
               ))}
             </tbody>
@@ -77,7 +96,7 @@ function ProbesTable({ comp, sc }: { comp: Component | undefined; sc: StatusComp
   );
 }
 
-function CollectorView({ sc, comp, m, range, tz }: { sc: StatusComponent | undefined; comp: Component | undefined; m: ReturnType<typeof useMetrics>; range: ReturnType<typeof rangeFrom>; tz: string | null }): JSX.Element {
+function CollectorView({ cid, sc, comp, m, range, tz }: { cid: string; sc: StatusComponent | undefined; comp: Component | undefined; m: ReturnType<typeof useMetrics>; range: ReturnType<typeof rangeFrom>; tz: string | null }): JSX.Element {
   const rejByReason = sc?.metrics?.['rejects_by_reason'];
   const reasons = rejByReason && typeof rejByReason === 'object' ? Object.entries(rejByReason as Record<string, unknown>).filter(([, v]) => typeof v === 'number') : [];
   return (
@@ -103,7 +122,7 @@ function CollectorView({ sc, comp, m, range, tz }: { sc: StatusComponent | undef
       </div>
       <StorageRunway sc={sc} />
       <div class="grid-2">
-        <ProbesTable comp={comp} sc={sc} />
+        <ProbesTable cid={cid} comp={comp} sc={sc} />
         <Panel title="Rejects by reason" id="rej">
           {reasons.length === 0 ? <EmptyState title="No rejects reported" /> : (
             <ul class="events">{reasons.map(([k, v]) => <li key={k}><strong>{k}</strong>: {String(v)}</li>)}</ul>
@@ -163,8 +182,18 @@ export function PortTile({ p }: { p: Port }): JSX.Element {
   );
 }
 
-function ProbeView({ sc, m, range, tz }: { sc: StatusComponent | undefined; m: ReturnType<typeof useMetrics>; range: ReturnType<typeof rangeFrom>; tz: string | null }): JSX.Element {
+/** Test groups of the per-test history (01-contracts.md section 3), at most six lines per chart. */
+export const BY_TEST_GROUPS: { title: string; tests: string[] }[] = [
+  { title: 'Heartbeats per minute, by test', tests: ['gateway', 'dhcp_hb', 'dns_hb', 'trace', 'ping', 'wifi_hb'] },
+  { title: 'Scheduled tests per minute, by test', tests: ['dhcp', 'dns', 'app', 'throughput', 'path', 'wifi_join'] },
+  { title: 'Other records per minute, by test', tests: ['target_access', 'probe_self'] },
+];
+const BY_TEST_COLORS = ['--exp-line-network', '--exp-line-dhcp', '--exp-line-dns', '--exp-line-internet', '--exp-line-apps', '--exp-line-wifi'];
+const BY_TEST_KEYS = BY_TEST_GROUPS.flatMap((g) => g.tests.map((t) => `by_test_${t}`));
+
+function ProbeView({ cid, sc, m, range, tz }: { cid: string; sc: StatusComponent | undefined; m: ReturnType<typeof useMetrics>; range: ReturnType<typeof rangeFrom>; tz: string | null }): JSX.Element {
   const ports = parsePorts(sc?.metrics?.['ports']);
+  const hist = useMetrics('component', cid, range, BY_TEST_KEYS);
   const byTest = sc?.metrics?.['by_test_per_min'];
   const tests = byTest && typeof byTest === 'object' ? Object.entries(byTest as Record<string, unknown>).filter(([, v]) => typeof v === 'number') as [string, number][] : [];
   const reach = sc?.facts?.['collector_reachable'];
@@ -188,7 +217,13 @@ function ProbeView({ sc, m, range, tz }: { sc: StatusComponent | undefined; m: R
         <MetricChart m={m} title="Spool depth" range={range} tz={tz} fmt={f1} keys={[{ key: 'spool_depth', label: 'records', color: '--exp-line-dhcp' }]} />
         <MetricChart m={m} title="Push lag" range={range} tz={tz} fmt={f1} keys={[{ key: 'push_lag_s', label: 'seconds', color: '--exp-line-internet' }]} />
       </div>
-      <Panel title="Measurements per minute by test" id="bytest">
+      <div class="charts" data-testid="bytest-history">
+        {BY_TEST_GROUPS.map((g) => (
+          <MetricChart key={g.title} m={hist} title={g.title} range={range} tz={tz} fmt={f1} skipEmpty
+            keys={g.tests.map((t, i) => ({ key: `by_test_${t}`, label: t, color: BY_TEST_COLORS[i % BY_TEST_COLORS.length] as string }))} />
+        ))}
+      </div>
+      <Panel title="Measurements per minute by test (latest)" id="bytest">
         {tests.length === 0 ? <EmptyState title="No per-test counts reported" /> : (
           <ul class="bars">{tests.map(([k, v]) => <li key={k}><span class="bar-label">{k}</span><span class="bar" style={{ width: `${Math.min(100, (v / Math.max(...tests.map((t) => t[1]), 1)) * 100)}%` }} /><span class="bar-val">{v}</span></li>)}</ul>
         )}
@@ -297,8 +332,8 @@ export function ComponentPage({ id, cid, me }: { id: string; cid: string; me?: M
       ) : null}
       {tab === 'status' ? (
       <div class={presence !== 'online' ? 'as-of-panel' : ''} role={editable ? 'tabpanel' : undefined} id="panel-status" aria-labelledby={editable ? 'tab-status' : undefined}>
-        {comp.type === 'collector' ? <CollectorView sc={sc} comp={comp} m={m} range={range} tz={d.tz} /> : null}
-        {comp.type === 'probe' ? <ProbeView sc={sc} m={m} range={range} tz={d.tz} /> : null}
+        {comp.type === 'collector' ? <CollectorView cid={cid} sc={sc} comp={comp} m={m} range={range} tz={d.tz} /> : null}
+        {comp.type === 'probe' ? <ProbeView cid={cid} sc={sc} m={m} range={range} tz={d.tz} /> : null}
         {comp.type === 'dashboard' ? <DashboardView sc={sc} comp={comp} m={m} range={range} tz={d.tz} /> : null}
         {comp.type === 'runner' ? <RunnerView sc={sc} comp={comp} m={m} range={range} tz={d.tz} /> : null}
         {comp.type === 'speedtest' ? <EmptyState title="Speedtest component">No dedicated panels yet; see the process figures above.</EmptyState> : null}

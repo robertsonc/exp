@@ -11,7 +11,7 @@ import { VirtualTable, type Column } from '../components/VirtualTable';
 import { Link } from '../components/viz';
 import { Loadable, PageHeader } from './common';
 import { formatAbsolute, formatAgo } from '../lib/format';
-import { isSnoozed, issueScope, issueValue, kindLabel, SCOPES, sortIssues } from '../lib/issues';
+import { isSnoozed, issueType, issueValue, kindLabel, SCOPES, sortIssues } from '../lib/issues';
 import { setQuery, useLocation } from '../router';
 
 const WEEK_MS = 7 * 86_400_000;
@@ -30,7 +30,7 @@ export function IssuesPage({ me }: { me: Me | undefined }): JSX.Element {
 
   const all = res.data?.items ?? [];
   const filtered = useMemo(() => {
-    const f = all.filter((i) => (!sev || i.severity === sev) && (!site || i.site === site) && (!kind || i.kind === kind) && (!scope || issueScope(i.kind) === scope)
+    const f = all.filter((i) => (!sev || i.severity === sev) && (!site || i.site === site) && (!kind || i.kind === kind) && (!scope || issueType(i) === scope)
       && (tab === 'open' || (i.resolved_at !== null && now - Date.parse(i.resolved_at) <= WEEK_MS)));
     return sortIssues(f);
     // `now` is intentionally coarse: recompute on data change only
@@ -50,7 +50,7 @@ export function IssuesPage({ me }: { me: Me | undefined }): JSX.Element {
     { id: 'where', header: 'Host / component', cell: (i) => (
       <span>
         <Link to={`/hosts/${i.host_id}`}>{hostName(i)}</Link>
-        {i.component_id ? <><br /><Link to={`/hosts/${i.host_id}/components/${i.component_id}`} class="dim">{dir.comps.get(i.component_id)?.id ?? i.component_id}</Link></> : null}
+        {i.component_id ? <><br /><Link to={`/hosts/${i.host_id}/components/${i.component_id}`} class="dim">{dir.comps.get(i.component_id)?.id ?? i.component_id}</Link>{i.component_type ? <span class="dim" data-testid="issue-component-type"> ({i.component_type})</span> : null}</> : null}
       </span>) },
     { id: 'site', header: 'Site', width: '7rem', cell: (i) => i.site },
     { id: 'since', header: tab === 'recent' ? 'Resolved' : 'Since', width: '8rem', cell: (i) => <span title={formatAbsolute(tab === 'recent' ? i.resolved_at : i.opened_at)}>{formatAgo(tab === 'recent' ? i.resolved_at : i.opened_at, now)}</span> },

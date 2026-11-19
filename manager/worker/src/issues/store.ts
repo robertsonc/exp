@@ -15,6 +15,7 @@ export interface IssueRow {
   severity: "warn" | "crit";
   host_id: string;
   component_id: string | null;
+  component_type?: string | null;
   site: string;
   opened_at: string;
   resolved_at: string | null;
@@ -31,6 +32,7 @@ export function issueOut(r: Record<string, unknown>): Record<string, unknown> {
     severity: r.severity,
     host_id: r.host_id,
     component_id: r.component_id ?? null,
+    component_type: r.component_type ?? null,
     site: r.site,
     opened_at: r.opened_at,
     resolved_at: r.resolved_at ?? null,

@@ -2023,6 +2023,52 @@
   ],
   "type": "object"
  },
+ "InterfaceMetrics": {
+  "additionalProperties": true,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "host_id": {
+    "$ref": "common.schema.json#/$defs/h_id"
+   },
+   "iface": {
+    "$ref": "common.schema.json#/$defs/iface"
+   },
+   "range": {
+    "enum": [
+     "1h",
+     "6h",
+     "24h",
+     "48h"
+    ]
+   },
+   "series": {
+    "additionalProperties": {
+     "items": {
+      "$ref": "#/$defs/MetricPoint"
+     },
+     "maxItems": 10000,
+     "type": "array"
+    },
+    "description": "Map key -> points for `rx_pps tx_pps rx_bps tx_bps errors drops` (`errors` = rx + tx errors and `drops` = rx + tx drops per status report, averaged per bucket). 5-minute buckets only, kept 48 h; `max` is always null; every `t` is epoch SECONDS; buckets without samples are absent.",
+    "properties": {},
+    "type": "object"
+   },
+   "step_s": {
+    "const": 300
+   }
+  },
+  "required": [
+   "host_id",
+   "iface",
+   "range",
+   "step_s",
+   "as_of",
+   "series"
+  ],
+  "type": "object"
+ },
  "Issue": {
   "additionalProperties": true,
   "properties": {
@@ -2035,6 +2081,23 @@
       "$ref": "common.schema.json#/$defs/cmp_id"
      }
     ]
+   },
+   "component_type": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "enum": [
+       "probe",
+       "collector",
+       "dashboard",
+       "runner",
+       "speedtest"
+      ]
+     }
+    ],
+    "description": "Type of the component the issue is about (null for host-level issues and for issues that predate the field and whose component is gone). Stored with the issue, so it survives deletion of the component (CR-wp5-fleet-api-gaps item 6)."
    },
    "detail": {
     "maxLength": 512,
@@ -2213,7 +2276,7 @@
      "maxItems": 10000,
      "type": "array"
     },
-    "description": "Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour buckets. Every `t` is epoch SECONDS. Host keys are `cpu_pct mem_pct disk_pct load1 net_rx_pps net_tx_pps net_rx_bps net_tx_bps net_errors net_drops disk_write_kbps` (`net_*` come from the management interface and carry a null max). Component keys are the chartable keys of 05-manager.md section 13.",
+    "description": "Map metric key -> points. Ranges 1h/6h/24h read 5-minute buckets; 7d/30d read 1-hour buckets. Every `t` is epoch SECONDS. Host keys are `cpu_pct mem_pct disk_pct load1 net_rx_pps net_tx_pps net_rx_bps net_tx_bps net_errors net_drops disk_write_kbps` (`net_*` come from the management interface and carry a null max). Component keys are the chartable keys of 05-manager.md section 13; probe components also accept `by_test_<name>` for each test of the catalog (01-contracts.md section 3), the per-test measurements per minute (CR-wp5-fleet-api-gaps item 5). `by_test_*` keys are only returned when asked for in `keys`.",
     "properties": {},
     "type": "object"
    },
@@ -2590,6 +2653,71 @@
   },
   "required": [
    "ports"
+  ],
+  "type": "object"
+ },
+ "ProbeRows": {
+  "additionalProperties": true,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "component_id": {
+    "$ref": "common.schema.json#/$defs/cmp_id"
+   },
+   "items": {
+    "items": {
+     "additionalProperties": true,
+     "properties": {
+      "clock_offset_ms": {
+       "anyOf": [
+        {
+         "type": "null"
+        },
+        {
+         "type": "number"
+        }
+       ]
+      },
+      "last_seen": {
+       "$ref": "common.schema.json#/$defs/ts"
+      },
+      "probe_id": {
+       "$ref": "common.schema.json#/$defs/slug"
+      },
+      "records_per_min": {
+       "minimum": 0,
+       "type": "number"
+      }
+     },
+     "required": [
+      "probe_id",
+      "last_seen",
+      "records_per_min",
+      "clock_offset_ms"
+     ],
+     "type": "object"
+    },
+    "maxItems": 500,
+    "type": "array"
+   },
+   "reported_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ],
+    "description": "When the collector last reported the rows; null when none are held (not a collector, no report yet, or a collector version that does not report `probes[]`)."
+   }
+  },
+  "required": [
+   "component_id",
+   "as_of",
+   "reported_at",
+   "items"
   ],
   "type": "object"
  },

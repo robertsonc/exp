@@ -238,6 +238,8 @@ def test_health_failure_rolls_back_and_is_not_retried(env):
     assert out.result == "rolled_back" and "rolled back to 0.1.0" in out.error
     p = env.ctx.paths
     assert os.readlink(p.current("collector")) == "0.1.0"
+    # a version that was installed and then rolled back is pruned; the restored one stays
+    assert sorted(os.listdir(p.comp_opt("collector"))) == ["0.1.0", "current"]
     assert p.config("collector").read_bytes() == old_cfg
     assert (p.creds_dir("collector") / "webhooks.json").read_bytes() == old_cred
     assert "0.1.0" in env.path("/etc/systemd/system/exp-collector.service").read_text()

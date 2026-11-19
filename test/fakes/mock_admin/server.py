@@ -1379,11 +1379,53 @@ def r_fleet_host_metrics(a: MockAdmin, r: Req) -> Resp:
                             {"host_id": h["host_id"], "_pending": not online})
 
 
+def r_fleet_iface_metrics(a: MockAdmin, r: Req) -> Resp:
+    h = a.host(r.params["id"])
+    iface = r.params["iface"]
+    if h["state"] == "removed":
+        raise ApiError(404, "not_found", "no such host")
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", iface):
+        raise ApiError(404, "not_found", "no such interface")
+    rng = r.q.enum("range", tuple(seed.IFACE_RANGES), "24h")
+    kq = r.q.one("keys")
+    if kq is not None and (len(kq) > 512 or not re.fullmatch(r"[a-z0-9_]+(,[a-z0-9_]+)*", kq)):
+        raise ApiError(400, "invalid_request", "bad keys")
+    keys = list(dict.fromkeys(kq.split(",") if kq else seed.IFACE_KEYS))
+    if any(k not in seed.IFACE_KEYS for k in keys):
+        raise ApiError(400, "invalid_request", "unknown metric key")
+    snap = a.snap()
+    known = {i["name"]: i for i in h["facts"].get("interfaces", [])}
+    online = h["state"] in ("enrolled", "stale", "offline")
+    until = h.get("_last_seen") if h["state"] in ("stale", "offline") else None
+    # an interface the host does not have has no roll-up rows: empty series (the real API answers the same)
+    if not online or iface not in known:
+        series: dict[str, Any] = {k: [] for k in keys}
+    else:
+        prof = seed.iface_profile(h["host_id"], iface, is_mgmt(known[iface]), h["_role"])
+        series = {k: seed.iface_series(f"{h['host_id']}:{iface}", k, prof, rng, snap, until) for k in keys}
+    return Resp(200, {"host_id": h["host_id"], "iface": iface, "range": rng, "step_s": 300, "as_of": seed.iso(snap),
+                      "series": series}, fleet=True)
+
+
+def r_fleet_comp_probes(a: MockAdmin, r: Req) -> Resp:
+    c = a.comp(r.params["component_id"])
+    h = a.w["hosts"][c["host_id"]]
+    at = a.at_of(h, a.snap())
+    if c["type"] != "collector" or at is None:
+        return Resp(200, {"component_id": c["component_id"], "as_of": seed.iso(a.snap()), "reported_at": None, "items": []},
+                    fleet=True)
+    return Resp(200, {"component_id": c["component_id"], "as_of": seed.iso(a.snap()), "reported_at": seed.iso(at),
+                      "items": seed.probe_rows(c, at)}, fleet=True)
+
+
 def r_fleet_comp_metrics(a: MockAdmin, r: Req) -> Resp:
     c = a.comp(r.params["component_id"])
     h = a.w["hosts"][c["host_id"]]
     online = h["state"] in ("enrolled", "stale", "offline")
-    return metrics_response(a, r, c["component_id"], c["_profile"], seed.COMPONENT_KEYS.get(c["type"], ("cpu_pct",)),
+    keys_all = seed.COMPONENT_KEYS.get(c["type"], ("cpu_pct",))
+    if c["type"] == "probe" and r.q.one("keys") is not None:
+        keys_all = keys_all + seed.PROBE_BY_TEST_KEYS          # on request only, never in the default key list
+    return metrics_response(a, r, c["component_id"], c["_profile"], keys_all,
                             h.get("_last_seen") if h["state"] in ("stale", "offline") else None,
                             {"component_id": c["component_id"], "_pending": not online})
 
@@ -1557,6 +1599,8 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("GET", "/fleet/summary", "viewer", r_fleet_summary), ("GET", "/fleet/sites", "viewer", r_fleet_sites),
         ("GET", "/fleet/hosts", "viewer", r_fleet_hosts),
         ("GET", "/fleet/hosts/{id}/metrics", "viewer", r_fleet_host_metrics),
+        ("GET", "/fleet/hosts/{id}/interfaces/{iface}/metrics", "viewer", r_fleet_iface_metrics),
+        ("GET", "/fleet/components/{component_id}/probes", "viewer", r_fleet_comp_probes),
         ("GET", "/fleet/components/{component_id}/metrics", "viewer", r_fleet_comp_metrics),
         ("GET", "/fleet/top", "viewer", r_fleet_top),
         ("GET", "/issues", "viewer", r_issues), ("POST", "/issues/{id}/snooze", "admin", r_snooze),

@@ -50,7 +50,7 @@ manager/
 ## Commands
 
 ```
-npm ci            # .npmrc sets legacy-peer-deps: @cloudflare/vitest-pool-workers peers on vitest ^4.1
+npm ci            # .npmrc sets legacy-peer-deps: @cloudflare/vitest-plugin peers on vitest ^4.1
 npm test          # vitest: workers project (D1/R2) + node project (compiler goldens)
 npm run build     # tsc --noEmit + wrangler bundle dry-run (size, no Node built-ins)
 npm run dev       # local wrangler dev (creates .dev.vars with a random EXP_MASTER_KEY)
@@ -123,6 +123,15 @@ exists, and without it every stored secret (dashboard SSO secrets, webhook URLs,
 state) is unrecoverable. `scripts/backup.sh --out-dir /secure/path` exports the D1 database (ciphertext only) to a
 location outside the repository; the key is not in it, so keep the two separately.
 
+### Rotate EXP_MASTER_KEY (with re-encryption)
+
+`scripts/rotate-master-key.sh --old-key-file FILE [--new-key-file FILE | --new-key-stdin] [-c CONFIG] [--dry-run]` sets
+`EXP_MASTER_KEY_PREVIOUS` = old and `EXP_MASTER_KEY` = new (stdin only; the new key is generated and shown once when not
+supplied). Every sealed value records the id of the sealing key (migration `0003_master_key_rotation.sql`), the Worker decrypts
+by key id with either key (unknown id: fail closed), and the 5-minute cron re-encrypts 200 rows per run until
+`GET /api/admin/v1/settings/master-key` (also Settings -> Master key) says `safe_to_remove_previous: true`; only then
+`wrangler secret delete EXP_MASTER_KEY_PREVIOUS`. Full procedure: `docs/deployments/exp-control.md`.
+
 ## Publishing a release
 
 ```
@@ -168,7 +177,7 @@ remote database. WP-5 UI development: run `npm run seed:demo`, then `npm run dev
 Vars (`wrangler.toml [vars]`, filled by `deploy.sh`): `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `EXP_OWNER_EMAIL`,
 `RELEASE_PUBKEY_PEM`, `RELEASES_REPO`, `ORG_NAME`, `MANAGER_URL` (optional; otherwise learned from the first
 authenticated admin request and stored in `settings.manager_url`).
-Secrets: `EXP_MASTER_KEY` (base64 of 32 bytes; **back it up offline**), `GITHUB_TOKEN` (optional).
+Secrets: `EXP_MASTER_KEY` (base64 of 32 bytes; **back it up offline**), `EXP_MASTER_KEY_PREVIOUS` (only during a rotation), `GITHUB_TOKEN` (optional).
 A missing or malformed `EXP_MASTER_KEY` makes every operation that stores or reads a secret fail with
 `503 unavailable` and a clear message; nothing falls back to plaintext.
 
