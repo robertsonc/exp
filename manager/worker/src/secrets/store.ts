@@ -24,6 +24,7 @@ export interface SecretRow {
   /** master key that sealed ciphertext / previous_ciphertext (null: legacy row, see migration 0003) */
   key_id?: string | null;
   previous_key_id?: string | null;
+  updated_at?: string;
 }
 
 export interface CreateSecretOptions {

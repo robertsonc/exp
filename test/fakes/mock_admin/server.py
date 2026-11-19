@@ -948,6 +948,61 @@ def r_dash_user_delete(a: MockAdmin, r: Req) -> Resp:
     return Resp(204)
 
 
+_PEM_CERT = re.compile(r"-----BEGIN CERTIFICATE-----\s*([A-Za-z0-9+/=\s]+?)\s*-----END CERTIFICATE-----")
+_PEM_KEY = re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----\s*[A-Za-z0-9+/=\s]+?\s*-----END (?:RSA |EC )?PRIVATE KEY-----")
+
+
+def _tls_view(t: dict[str, Any] | None) -> dict[str, Any]:
+    if not t:
+        return {"mode": "self_signed", "set": False, "updated_at": None, "cert": None}
+    return {"mode": "provided", "set": True, "updated_at": t["updated_at"], "cert": t["cert"]}
+
+
+def r_dash_tls_get(a: MockAdmin, r: Req) -> Resp:
+    d = dashboard(a, r.params["dashboard_id"])
+    return ok(_tls_view(a.w.setdefault("dash_tls", {}).get(d["id"])))
+
+
+def r_dash_tls_put(a: MockAdmin, r: Req) -> Resp:
+    """Mock of PUT dashboards/{id}/tls: structure checks only (the real Worker parses X.509 and proves key possession).
+    The key is never stored. Test directives inside cert_pem (PEM parsers ignore text outside the blocks):
+    `# mock-not-after: <iso>` sets the expiry (in the past: 422 expired); `# mock-mismatch` simulates a key mismatch."""
+    d = dashboard(a, r.params["dashboard_id"])
+    body = r.json("DashboardTlsPut")
+    store = a.w.setdefault("dash_tls", {})
+    if body["mode"] == "self_signed":
+        store.pop(d["id"], None)
+        a.audit(r.email, "dashboard.tls", f"dashboard:{d['id']}", {"mode": "self_signed", "secret_set": False})
+        a.mutated()
+        return ok(_tls_view(None))
+    m = _PEM_CERT.search(body["cert_pem"])
+    if m is None:
+        raise ApiError(422, "invalid_config", "cert_pem holds no PEM CERTIFICATE")
+    if _PEM_KEY.search(body["key_pem"]) is None:
+        raise ApiError(422, "invalid_config", "exactly one PEM private key (PRIVATE KEY, RSA PRIVATE KEY or EC PRIVATE KEY) is required")
+    if "# mock-mismatch" in body["cert_pem"]:
+        raise ApiError(422, "invalid_config", "the private key does not match the certificate")
+    now = a.now()
+    na = re.search(r"# mock-not-after:\s*(\S+)", body["cert_pem"])
+    not_after = na.group(1) if na else seed.iso(now + 365 * 86400)
+    if not_after <= seed.iso(now):
+        raise ApiError(422, "invalid_config", f"the certificate expired on {not_after}")
+    try:
+        der = base64.b64decode("".join(m.group(1).split()), validate=True)
+    except ValueError:
+        raise ApiError(422, "invalid_config", "malformed CERTIFICATE PEM") from None
+    fp = hashlib.sha256(der).hexdigest().upper()
+    cn = (d["config"].get("title") or d["id"]).replace(" ", "-")
+    cert = {"subject": "O=Mock Events, CN=" + cn, "issuer": "O=Mock Events CA, CN=Mock Issuing CA",
+            "not_before": seed.iso(now - 86400), "not_after": not_after, "sha256": ":".join(fp[i:i + 2] for i in range(0, 64, 2)),
+            "san": ["dash.example.test"]}
+    store[d["id"]] = {"updated_at": seed.iso(now), "cert": cert}
+    a.audit(r.email, "dashboard.tls", f"dashboard:{d['id']}",
+            {"mode": "provided", "sha256": cert["sha256"], "not_after": not_after, "secret_set": True})
+    a.mutated()
+    return ok(_tls_view(store[d["id"]]))
+
+
 def r_noc_list(a: MockAdmin, r: Req) -> Resp:
     d = dashboard(a, r.params["dashboard_id"])
     return ok(paginate(r.q, list(a.w["noc_tokens"].get(d["id"], []))))
@@ -1581,6 +1636,8 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("GET", "/dashboards/{dashboard_id}/users", "admin", r_dash_users),
         ("POST", "/dashboards/{dashboard_id}/users", "admin", r_dash_user_create),
         ("DELETE", "/dashboards/{dashboard_id}/users/{usr}", "admin", r_dash_user_delete),
+        ("GET", "/dashboards/{dashboard_id}/tls", "admin", r_dash_tls_get),
+        ("PUT", "/dashboards/{dashboard_id}/tls", "admin", r_dash_tls_put),
         ("GET", "/dashboards/{dashboard_id}/noc-tokens", "admin", r_noc_list),
         ("POST", "/dashboards/{dashboard_id}/noc-tokens", "admin", r_noc_create),
         ("DELETE", "/dashboards/{dashboard_id}/noc-tokens/{noc}", "admin", r_noc_revoke),

@@ -40,6 +40,7 @@ describe("role enforcement (05-manager.md section 4)", () => {
     ["PATCH", "/sites/x/release", { version: "0.1.0" }],
     ["POST", "/dashboards/d/users", { username: "u", role: "viewer", hash: PBKDF2 }],
     ["POST", "/dashboards/d/noc-tokens", { label: "l" }],
+    ["PUT", "/dashboards/d/tls", { mode: "self_signed" }],
     ["PUT", "/sites/x/alerts", { config: {}, webhooks: [] }],
     ["POST", "/sites/x/alerts/test", {}],
     ["POST", "/issues/iss_01ARZ3NDEKTSV4RRFFQ69G5FAV/snooze", { for: "1h" }],

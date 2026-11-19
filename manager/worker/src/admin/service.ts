@@ -152,6 +152,8 @@ export async function deleteComponent(env: Env, actor: Actor, componentId: strin
   const row = await env.DB.prepare("SELECT type, slug FROM components WHERE component_id = ?1").bind(componentId).first<{ type: string; slug: string }>();
   if (!row) throw notFound("no such component");
   await env.DB.batch([
+    // the component's secrets go with it (tokens, SSO secret, provided TLS key), as in deleteHost
+    env.DB.prepare("DELETE FROM secrets WHERE owner_ref = ?1 OR owner_ref LIKE ?2 OR owner_ref LIKE ?3").bind(componentId, `${componentId}:%`, `%:${componentId}`),
     env.DB.prepare("DELETE FROM component_probes_latest WHERE component_id = ?1").bind(componentId),
     env.DB.prepare("DELETE FROM components WHERE component_id = ?1").bind(componentId),
     auditStmt(env.DB, { actor: actor.email, action: "component.delete", resource: `component:${componentId}`, details: { type: row.type, id: row.slug }, ip: actor.ip }),

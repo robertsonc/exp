@@ -20,7 +20,7 @@ import {
   type World,
   secretKey,
 } from "./types";
-import { DASH_TOKEN_KIND, INGEST_KIND, SSO_KIND, WEBHOOK_KIND, requiredSecrets } from "./wiring";
+import { DASH_TOKEN_KIND, INGEST_KIND, SSO_KIND, TLS_KIND, WEBHOOK_KIND, requiredSecrets } from "./wiring";
 
 export function parseJson<T>(s: unknown, fallback: T): T {
   if (typeof s !== "string") return fallback;
@@ -83,7 +83,7 @@ async function readRows(env: Env): Promise<Rows> {
     q(`SELECT artifact_id, version, name, component, arch, sha256, size FROM artifacts
        WHERE version IN (SELECT release_version FROM sites WHERE release_version IS NOT NULL
                          UNION SELECT target_version FROM sites WHERE target_version IS NOT NULL)`),
-    q(`SELECT * FROM secrets WHERE kind IN ('${INGEST_KIND}','${DASH_TOKEN_KIND}','${SSO_KIND}','${WEBHOOK_KIND}')`),
+    q(`SELECT * FROM secrets WHERE kind IN ('${INGEST_KIND}','${DASH_TOKEN_KIND}','${SSO_KIND}','${WEBHOOK_KIND}','${TLS_KIND}')`),
   ]);
   const rows = (i: number) => (r[i]?.results ?? []) as Array<Record<string, unknown>>;
   return {

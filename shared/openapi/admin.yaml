@@ -891,6 +891,89 @@ components:
       - revoked_at
       - created_at
       additionalProperties: true
+    DashboardTls:
+      type: object
+      properties:
+        mode:
+          enum:
+          - self_signed
+          - provided
+        set:
+          type: boolean
+        updated_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        cert:
+          anyOf:
+          - type: 'null'
+          - type: object
+            properties:
+              subject:
+                type: string
+                maxLength: 1024
+              issuer:
+                type: string
+                maxLength: 1024
+              not_before:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              not_after:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              sha256:
+                type: string
+                description: Upper-case colon-separated SHA-256 of the leaf certificate DER (the dashboard's `tls_fingerprint_sha256`).
+                pattern: ^([0-9A-F]{2}:){31}[0-9A-F]{2}$
+              san:
+                type: array
+                maxItems: 64
+                items:
+                  type: string
+                  maxLength: 256
+            required:
+            - subject
+            - issuer
+            - not_before
+            - not_after
+            - sha256
+            - san
+            additionalProperties: false
+      required:
+      - mode
+      - set
+      - updated_at
+      - cert
+      additionalProperties: false
+      description: 'Dashboard TLS state (05-manager.md section 8). Write-only: the key (and the PEM) is never returned; `cert` is
+        parsed from the stored leaf certificate.'
+    DashboardTlsPut:
+      oneOf:
+      - type: object
+        properties:
+          mode:
+            const: self_signed
+        required:
+        - mode
+        additionalProperties: false
+        description: Delete any provided pair; the agent generates a self-signed certificate.
+      - type: object
+        properties:
+          mode:
+            const: provided
+          cert_pem:
+            type: string
+            minLength: 1
+            maxLength: 32768
+            description: PEM certificate (leaf first, at most 5 certificates). Must be a parsable X.509, not expired.
+          key_pem:
+            type: string
+            minLength: 1
+            maxLength: 8192
+            description: Unencrypted PKCS#8 / PKCS#1 RSA / SEC1 EC PEM whose public key matches the leaf certificate.
+        required:
+        - mode
+        - cert_pem
+        - key_pem
+        additionalProperties: false
     NocTokenCreate:
       type: object
       properties:
@@ -3664,6 +3747,74 @@ paths:
         '204':
           description: Revoked.
         '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /dashboards/{dashboard_id}/tls:
+    get:
+      operationId: getDashboardTls
+      summary: Dashboard TLS state (never the key)
+      tags:
+      - dashboards
+      parameters:
+      - *id012
+      x-exp-min-role: admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTls'
+        '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: putDashboardTls
+      summary: Set the dashboard certificate (self-signed or a provided pair)
+      description: Validated in the Worker (PEM, X.509, not expired, the key proves possession of the certificate's public key),
+        stored encrypted, delivered only to that dashboard's host as creds `tls.crt` / `tls.key`.
+      tags:
+      - dashboards
+      parameters:
+      - *id012
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardTlsPut'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTls'
+        '400': *id003
+        '404': *id005
+        '422':
+          description: 'Unprocessable. Error codes: `invalid_config` (garbage PEM, expired certificate, key does not match, oversize).'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
+              examples:
+                invalid_config:
+                  value:
+                    error:
+                      code: invalid_config
+                      message: the private key does not match the certificate
+                      details: {}
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

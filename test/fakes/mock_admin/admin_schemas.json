@@ -457,6 +457,129 @@
    "speedtest"
   ]
  },
+ "DashboardTls": {
+  "additionalProperties": false,
+  "description": "Dashboard TLS state (05-manager.md section 8). Write-only: the key (and the PEM) is never returned; `cert` is parsed from the stored leaf certificate.",
+  "properties": {
+   "cert": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "additionalProperties": false,
+      "properties": {
+       "issuer": {
+        "maxLength": 1024,
+        "type": "string"
+       },
+       "not_after": {
+        "$ref": "common.schema.json#/$defs/ts"
+       },
+       "not_before": {
+        "$ref": "common.schema.json#/$defs/ts"
+       },
+       "san": {
+        "items": {
+         "maxLength": 256,
+         "type": "string"
+        },
+        "maxItems": 64,
+        "type": "array"
+       },
+       "sha256": {
+        "description": "Upper-case colon-separated SHA-256 of the leaf certificate DER (the dashboard's `tls_fingerprint_sha256`).",
+        "pattern": "^([0-9A-F]{2}:){31}[0-9A-F]{2}$",
+        "type": "string"
+       },
+       "subject": {
+        "maxLength": 1024,
+        "type": "string"
+       }
+      },
+      "required": [
+       "subject",
+       "issuer",
+       "not_before",
+       "not_after",
+       "sha256",
+       "san"
+      ],
+      "type": "object"
+     }
+    ]
+   },
+   "mode": {
+    "enum": [
+     "self_signed",
+     "provided"
+    ]
+   },
+   "set": {
+    "type": "boolean"
+   },
+   "updated_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   }
+  },
+  "required": [
+   "mode",
+   "set",
+   "updated_at",
+   "cert"
+  ],
+  "type": "object"
+ },
+ "DashboardTlsPut": {
+  "oneOf": [
+   {
+    "additionalProperties": false,
+    "description": "Delete any provided pair; the agent generates a self-signed certificate.",
+    "properties": {
+     "mode": {
+      "const": "self_signed"
+     }
+    },
+    "required": [
+     "mode"
+    ],
+    "type": "object"
+   },
+   {
+    "additionalProperties": false,
+    "properties": {
+     "cert_pem": {
+      "description": "PEM certificate (leaf first, at most 5 certificates). Must be a parsable X.509, not expired.",
+      "maxLength": 32768,
+      "minLength": 1,
+      "type": "string"
+     },
+     "key_pem": {
+      "description": "Unencrypted PKCS#8 / PKCS#1 RSA / SEC1 EC PEM whose public key matches the leaf certificate.",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+     },
+     "mode": {
+      "const": "provided"
+     }
+    },
+    "required": [
+     "mode",
+     "cert_pem",
+     "key_pem"
+    ],
+    "type": "object"
+   }
+  ]
+ },
  "DashboardUser": {
   "additionalProperties": true,
   "description": "The password hash is never returned.",

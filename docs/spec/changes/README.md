@@ -35,3 +35,4 @@ Decisions: **accepted** (applied), **deferred** (accepted in principle, schedule
 | `CR-wp6-install-sh-serving.md` | WP-6 | manager, packaging | accepted | `06-agent.md` §8 (validated template, three tokens, headers); `05-manager.md` §1; `01-contracts.md` §6 |
 | `CR-wp6-shapes-converge-deferral.md` | WP-6 | packaging, harness | accepted (acceptance-test ownership moves to WP-7/WP-8) | `06-agent.md` §9 item 2 |
 | `CR-m3-master-key-rotation.md` | M3 k1 | manager secrets/cron/admin, deploy docs | accepted (applied by the step); `shared/openapi/admin.yaml` / mock admin still to list the endpoint | `05-manager.md` §6; `docs/deployments/exp-control.md`; `manager/README.md` |
+| `CR-m3-provided-tls.md` | M3 p2 | manager Worker/UI, admin.yaml, mock admin | accepted (applied by the step) | `05-manager.md` §6, §8; `01-contracts.md` §9.3, §13 (dashboards row); `shared/openapi/admin.yaml` `GET/PUT dashboards/{id}/tls`; resolves `CR-wp5-admin-ui-intent` item 6 |

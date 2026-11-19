@@ -337,13 +337,13 @@ export function applyCollectorForm(config: Cfg, f: CollectorForm): { config: Cfg
 
 // ---- dashboard editor -------------------------------------------------------------------------------------------
 
-export interface DashboardForm { title: string; url: string; tlsMode: 'self_signed' | 'provided'; sessionHours: string; localUsers: boolean; nocTokens: boolean; collectorIds: string[] }
+export interface DashboardForm { title: string; url: string; sessionHours: string; localUsers: boolean; nocTokens: boolean; collectorIds: string[] }
 
 export function dashboardFormFrom(c: Cfg): DashboardForm {
   const auth = obj(c['auth']);
   const ids = Array.isArray(c['collector_ids']) ? arr(c['collector_ids']).map(String) : arr(c['collectors']).map((x) => str(obj(x)['collector_id'])).filter(Boolean);
   return {
-    title: str(c['title']), url: str(c['url']), tlsMode: obj(c['tls'])['mode'] === 'provided' ? 'provided' : 'self_signed',
+    title: str(c['title']), url: str(c['url']),
     sessionHours: numStr(auth['session_hours'], '12'), localUsers: auth['local_users'] !== false, nocTokens: auth['noc_tokens'] !== false, collectorIds: ids,
   };
 }
@@ -362,9 +362,7 @@ export function applyDashboardForm(config: Cfg, f: DashboardForm): { config: Cfg
   setDef(auth, 'local_users', f.localUsers, true);
   setDef(auth, 'noc_tokens', f.nocTokens, true);
   if (Object.keys(auth).length || 'auth' in out) out['auth'] = auth;
-  const tls = obj(out['tls']);
-  setDef(tls, 'mode', f.tlsMode, 'self_signed');
-  if (Object.keys(tls).length || 'tls' in out) out['tls'] = tls;
+  // The certificate (mode + provided pair) has its own write-only endpoint (PUT dashboards/{id}/tls); config.tls is left as is.
   // Intent lists collector ids; the manager fills URL, pin and token when each collector has reported (05-manager.md section 7).
   const derived = dashboardFormFrom(config).collectorIds;
   if ('collector_ids' in out || JSON.stringify(derived) !== JSON.stringify(f.collectorIds)) out['collector_ids'] = [...f.collectorIds];

@@ -16,6 +16,7 @@ import { readJson } from "../util/body";
 import { sha256Hex } from "../util/encoding";
 import { HOST_ID_RE, SEMVER_RE, SLUG_RE } from "../util/ids";
 import { isoNow, isoPlusSeconds } from "../util/time";
+import { getDashboardTls, putDashboardTls } from "./dashboard-tls";
 import * as intent from "./intent";
 import * as read from "./read";
 import * as svc from "./service";
@@ -262,6 +263,16 @@ adminRoutes.delete("/dashboards/:did/noc-tokens/:noc", requireRole("admin"), asy
   if (!owner) throw notFound("no such NOC token");
   await svc.revokeNocToken(c.env, actorOf(c), noc);
   return c.body(null, 204);
+});
+adminRoutes.get("/dashboards/:did/tls", requireRole("admin"), async (c) => {
+  const d = await read.dashboardSlug(c.env, c.req.param("did"));
+  return c.json(await getDashboardTls(c.env, d));
+});
+adminRoutes.put("/dashboards/:did/tls", requireRole("admin"), async (c) => {
+  const d = await read.dashboardSlug(c.env, c.req.param("did"));
+  const raw = await readJson(c.req.raw, MAX_BODY);
+  if (raw === undefined) throw invalidRequest("a JSON body is required");
+  return c.json(await putDashboardTls(c.env, actorOf(c), d, raw));
 });
 const ssoResponse = (page: { html: string; csp: string }): Response =>
   new Response(page.html, {

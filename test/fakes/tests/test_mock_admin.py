@@ -202,6 +202,7 @@ GET_PATHS = [
     ("/settings/platform-webhook", "/settings/platform-webhook"), ("/audit", "/audit"), ("/settings", "/settings"),
     ("/dashboards/{dashboard_id}/users", "/dashboards/dash-main/users"),
     ("/dashboards/{dashboard_id}/noc-tokens", "/dashboards/dash-main/noc-tokens"),
+    ("/dashboards/{dashboard_id}/tls", "/dashboards/dash-main/tls"),
 ]
 
 
@@ -749,6 +750,29 @@ def test_dashboard_users_and_noc_tokens_never_expose_secrets(adm):
     assert A(adm, "POST", "/dashboards/dash-main/noc-tokens", {"label": ""}).status == 400
     audit = json.dumps(A(adm, "GET", "/audit?limit=1000").json())
     assert tok not in audit and h not in audit and "pbkdf2" not in audit
+
+
+def test_dashboard_tls_is_write_only_and_validated(adm):
+    cert = "-----BEGIN CERTIFICATE-----\nAQIDBAUG\n-----END CERTIFICATE-----\n"
+    key = "-----BEGIN PRIVATE KEY-----\nc2VjcmV0LWtleS1ib2R5\n-----END PRIVATE KEY-----\n"
+    empty = {"mode": "self_signed", "set": False, "updated_at": None, "cert": None}
+    assert get_ok(adm, "/dashboards/{dashboard_id}/tls", "/dashboards/dash-main/tls") == empty
+    r = A(adm, "PUT", "/dashboards/dash-main/tls", {"mode": "provided", "cert_pem": cert, "key_pem": key})
+    assert r.status == 200
+    check_openapi("admin", "/dashboards/{dashboard_id}/tls", "put", 200, r.json())
+    assert r.json()["mode"] == "provided" and r.json()["cert"]["sha256"]
+    audit = json.dumps(A(adm, "GET", "/audit?limit=1000").json())
+    for text in (r.body.decode(), A(adm, "GET", "/dashboards/dash-main/tls").body.decode(), audit):
+        assert "c2VjcmV0LWtleS1ib2R5" not in text and "PRIVATE KEY" not in text
+    bad = A(adm, "PUT", "/dashboards/dash-main/tls", {"mode": "provided", "cert_pem": "nope", "key_pem": key})
+    assert bad.status == 422 and bad.json()["error"]["code"] == "invalid_config"
+    old = "# mock-not-after: 2020-01-01T00:00:00Z\n" + cert
+    expired = A(adm, "PUT", "/dashboards/dash-main/tls", {"mode": "provided", "cert_pem": old, "key_pem": key})
+    assert expired.status == 422
+    assert A(adm, "PUT", "/dashboards/dash-main/tls", {"mode": "provided", "cert_pem": cert}).status == 400
+    assert A(adm, "PUT", "/dashboards/dash-main/tls", {"mode": "self_signed"}, role="operator").status == 403
+    assert A(adm, "PUT", "/dashboards/dash-main/tls", {"mode": "self_signed"}).json()["set"] is False
+    assert A(adm, "PUT", "/dashboards/nope/tls", {"mode": "self_signed"}).status == 404
 
 
 def test_sso_form_carries_a_valid_hs256_handoff(adm, clock):

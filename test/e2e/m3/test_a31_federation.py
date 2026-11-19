@@ -166,14 +166,15 @@ def test_a3_1_one_collector_down_flags_that_collector_only_and_the_rest_keeps_wo
     assert "All 3 probes are good" in page["text"] and "unreachable" not in page["text"], page["text"][:600]
     M.wait_for(lambda: M.line_states(stack.dash().get("state", probe=victim.probe, voice="sysadmin"))["dns"] == "ok", 60,
                what="the probe on the restarted collector routes again")
-    # the spool replayed: the outage is not a hole in the heartbeat history
-    now = time.time()
+    # the spool replayed: the outage is not a hole in the heartbeat history (beats stamped INSIDE the outage exist)
+    t_start = time.time()
 
-    def replayed() -> dict[str, Any] | None:
-        b = stack.dash().get("beats", probe=victim.probe, **{"from": M.iso(t_stop - 20), "to": M.iso(now)})
-        return b if len(b["lines"]["network"]) >= 8 else None
+    def replayed() -> list[float] | None:
+        b = stack.dash().get("beats", probe=victim.probe, **{"from": M.iso(t_stop - 20), "to": M.iso(time.time())})
+        inside = [x[0] / 1000 for x in b["lines"]["network"] if t_stop + 3 < x[0] / 1000 < t_stop + 40]
+        return inside if len(inside) >= 3 else None
 
-    beats = M.wait_for(replayed, 90, step=3.0, what="the outage's beats replayed")
-    ts = [x[0] / 1000 for x in beats["lines"]["network"]]
-    assert any(t_stop < t < t_stop + 40 for t in ts), "no network beats stamped inside the outage window"
+    inside = M.wait_for(replayed, 120, step=3.0, what="the outage's beats replayed from the probe's spool")
+    assert max(b - a for a, b in zip(inside, inside[1:], strict=False)) <= 11.5, inside
+    assert time.time() - t_start < 120
     stack.save_logs("a3_1-after-restart")

@@ -47,6 +47,7 @@ export const ep = {
   dashUser: (dash: string, usr: string) => `${API}/dashboards/${encodeURIComponent(dash)}/users/${encodeURIComponent(usr)}`,
   nocTokens: (dash: string) => `${API}/dashboards/${encodeURIComponent(dash)}/noc-tokens`,
   nocToken: (dash: string, noc: string) => `${API}/dashboards/${encodeURIComponent(dash)}/noc-tokens/${encodeURIComponent(noc)}`,
+  dashTls: (dash: string) => `${API}/dashboards/${encodeURIComponent(dash)}/tls`,
   sso: (dash: string) => `${API}/dashboards/${encodeURIComponent(dash)}/sso`,
   ssoLaunch: (dash: string) => `${API}/dashboards/${encodeURIComponent(dash)}/sso/launch`,
   thresholds: `${API}/settings/fleet-thresholds`,

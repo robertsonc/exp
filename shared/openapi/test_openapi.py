@@ -99,6 +99,8 @@ _TABLE = {
         GET /dashboards/{dashboard_id}/noc-tokens
         POST /dashboards/{dashboard_id}/noc-tokens
         DELETE /dashboards/{dashboard_id}/noc-tokens/{noc}
+        GET /dashboards/{dashboard_id}/tls
+        PUT /dashboards/{dashboard_id}/tls
         POST /dashboards/{dashboard_id}/sso
         GET /sites/{site}/alerts
         PUT /sites/{site}/alerts
@@ -338,7 +340,8 @@ def test_admin_role_matrix_matches_spec():
     assert role[("post", "/releases/import")] == "admin"
     assert role[("get", "/dashboards/{dashboard_id}/users")] == "admin"
     for (m, p), r in role.items():
-        admin_only = ("/audit", "/dashboards/{dashboard_id}/users", "/dashboards/{dashboard_id}/noc-tokens")
+        admin_only = ("/audit", "/dashboards/{dashboard_id}/users", "/dashboards/{dashboard_id}/noc-tokens",
+                      "/dashboards/{dashboard_id}/tls")
         if m == "get" and p not in admin_only:
             assert r == "viewer", (m, p)
 
