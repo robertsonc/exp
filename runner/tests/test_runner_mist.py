@@ -79,19 +79,44 @@ def test_roaming_scenario_roams_and_auth_failures_from_runtime_event_constants(w
     assert d["roams"] == sorted(d["roams"], key=lambda r: r["timestamp"])
     assert w.fmist.app.calls_to("/const/client_events") == 1
     assert ident.resolved_by == "mist" and docs["wifi"]["status"] == "ok"
-    assert w.fmist.app.calls_to("clients/events/search") == 2               # one per AP the client was seen on
+    assert w.fmist.app.calls_to(f"/clients/{MAC.replace(':', '')}/events") == 1      # getSiteEventsForClient, MAC lower-case 12-hex in the path
+    assert w.fmist.app.calls_to("clients/events/search") == 0                        # the AP-level search is never used
 
 
-def test_events_are_context_only_without_a_multi_ap_history(w):
-    """A client seen on ONE AP never gets roams, whatever other clients' events say (events_client has no MAC to filter by)."""
+def test_other_clients_roams_and_auth_failures_on_the_same_ap_never_reach_this_clients_evidence(w):
+    """Regression: the AP-level search had no MAC filter, so a neighbour's roam / auth failure was attributed to this speed test."""
+    info = w.mist_scenario("roaming_other_client")
+    docs, _i, _c = w.run()
+    d = wifi(docs)
+    assert d["roams"] == [] and d["roam_count"] == 0 and d["auth_failures"] == 0 and d["events"] == []
+    assert docs["wifi"]["status"] == "ok"
+    # the neighbour really has them on the same AP, and a direct per-client query for it returns them
+    assert info["other_mac"] != MAC.replace(":", "")
+    assert w.fmist.app.calls_to(f"/clients/{info['other_mac']}/events") == 0
+    assert len(w.fmist.state.client_events({"duration": "1h"}, fmist.SITE_ID, info["other_mac"])) == 5
+    assert w.fmist.app.calls_to("clients/events/search") == 0
+
+
+def test_unattributed_ap_events_are_not_this_clients(w):
     w.mist_scenario("healthy")
     w.fmist.state.add_event(ts=w.at - 100, type_=fmist.EVT_ROAM)
     w.fmist.state.add_event(ts=w.at - 90, type_=fmist.EVT_AUTH_FAIL)
-    w.fmist.state.add_event(ts=w.at - 80, type_="SOMETHING_ELSE_ENTIRELY")
     docs, _i, _c = w.run()
     d = wifi(docs)
-    assert d["roams"] == [] and d["roam_count"] == 0
-    assert [e["type"] for e in d["events"]] == [fmist.EVT_ROAM, fmist.EVT_AUTH_FAIL]      # unrelated types are dropped, not stored
+    assert d["roams"] == [] and d["roam_count"] == 0 and d["auth_failures"] == 0 and d["events"] == []
+
+
+def test_own_events_mixed_with_a_neighbours_and_unrelated_types(w):
+    w.mist_scenario("roaming_other_client")
+    for d_ in (120, 60):
+        w.fmist.state.add_event(ts=w.at - d_, type_=fmist.EVT_ROAM, mac=MAC)
+    w.fmist.state.add_event(ts=w.at - 50, type_=fmist.EVT_AUTH_FAIL, mac=MAC, type_code=15)
+    w.fmist.state.add_event(ts=w.at - 40, type_="SOMETHING_ELSE_ENTIRELY", mac=MAC)
+    docs, _i, _c = w.run()
+    d = wifi(docs)
+    assert d["roam_count"] == 2 and d["auth_failures"] == 1
+    assert [e["type"] for e in d["events"]] == [fmist.EVT_ROAM, fmist.EVT_ROAM, fmist.EVT_AUTH_FAIL]    # unrelated types dropped
+    assert all(e["ap_mac"] == "5c:5b:35:00:01:a0" for e in d["events"])
 
 
 def test_wired_client_identity_and_port_evidence(w):
@@ -141,6 +166,7 @@ def test_call_budget_is_six_per_test_including_first_use(w):
     w.run()
     calls = [c for c in w.fmist.app.log if c["path"] != "/api/v1/const/client_events"]
     assert len(calls) <= 6
+    assert [c["path"].rsplit("/", 1)[-1] for c in calls].count("events") == 1      # events cost exactly one call, whatever the AP count
     w.fmist.app.log.clear()
     w.mist_svc._lookups._d.clear()
     w.mist_svc._found._d.clear()

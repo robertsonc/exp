@@ -228,7 +228,7 @@ def test_client_events_roaming(fake):
     conform("response_events_search", j)
     types = [e["type"] for e in j["results"]]
     assert types.count(mist.EVT_ROAM) == 4 and mist.EVT_FBT_FAIL in types and mist.EVT_AUTH_FAIL in types
-    assert all("mac" not in e for e in j["results"])      # the OAS has no client MAC on events_client
+    assert all("mac" not in e and "client_mac" not in e for e in j["results"])      # the OAS has no client MAC on events_client
     assert get(fake, site("clients/events/search"), type=mist.EVT_ROAM, duration="15m").json()["total"] == 4
     assert get(fake, site("clients/events/search"), ap=mist.AP2["mac"], duration="15m").json()["total"] == 2
     assert get(fake, site("clients/events/search"), start=int(T0 - 100), end=int(T0)).json()["total"] == 0
@@ -236,6 +236,53 @@ def test_client_events_roaming(fake):
     d = get(fake, "/api/v1/const/client_events").json()
     conform("const_events", d)
     assert {x["key"] for x in d} >= {mist.EVT_ROAM, mist.EVT_FBT_FAIL}
+
+
+def cev(mac, **q):
+    return f"/api/v1/sites/{SITE}/clients/{mac}/events", q
+
+
+def test_get_site_events_for_client_only_this_clients_events(fake):
+    """getSiteEventsForClient: MAC in the path, response_client_events_search / events_client, nothing from other clients."""
+    info = fake.state.load_scenario("roaming_other_client", at=T0)
+    own, other = info["mac"], info["other_mac"]
+    j = get(fake, cev(own)[0], duration="15m").json()
+    conform("response_client_events_search", j)
+    assert j["total"] == 0 and j["results"] == []                       # the attendee has none; the other client's never leak
+    j = get(fake, cev(other)[0], duration="15m").json()
+    conform("response_client_events_search", j)
+    assert j["total"] == 5 and all("mac" not in e and "client_mac" not in e for e in j["results"])
+    assert [e["timestamp"] for e in j["results"]] == sorted((e["timestamp"] for e in j["results"]), reverse=True)
+    colon = ":".join(other[i:i + 2] for i in range(0, 12, 2))
+    assert get(fake, cev(colon)[0], duration="15m").json()["total"] == 5
+    assert get(fake, cev(other)[0], duration="15m", type=mist.EVT_ROAM).json()["total"] == 3
+    assert get(fake, cev(other)[0], duration="15m", ssid="nope").json()["total"] == 0
+    assert get(fake, cev(other)[0], start=int(T0 - 100), end=int(T0)).json()["total"] == 0
+
+
+def test_get_site_events_for_client_roaming_scenario_belongs_to_the_roaming_client(fake):
+    info = fake.state.load_scenario("roaming", at=T0)
+    j = get(fake, cev(info["mac"])[0], duration="15m").json()
+    conform("response_client_events_search", j)
+    assert j["total"] == 6
+    assert get(fake, cev("f0:18:98:cc:dd:02")[0], duration="15m").status == 404      # unknown client -> 404 {"id": mac}
+    assert get(fake, cev("zz")[0], duration="15m").status == 404
+
+
+def test_get_site_events_for_client_pagination_auth_and_errors(fake):
+    info = fake.state.load_scenario("roaming", at=T0)
+    path = cev(info["mac"])[0]
+    p1 = get(fake, path, duration="15m", limit=4).json()
+    conform("response_client_events_search", p1)
+    assert len(p1["results"]) == 4 and p1["total"] == 6 and "page=2" in p1["next"]
+    p2 = get(fake, path, duration="15m", limit=4, page=2).json()
+    assert len(p2["results"]) == 2 and "next" not in p2
+    assert {e["timestamp"] for e in p1["results"]}.isdisjoint({e["timestamp"] for e in p2["results"]})
+    assert get(fake, path, duration="15m", page=0).status == 400
+    assert get(fake, path, token=False).status == 401
+    assert get(fake, path, scheme="Bearer").status == 401
+    assert request(fake.port, "GET", f"/api/v1/sites/{'0' * 8}-0000-0000-0000-{'0' * 12}/clients/{info['mac']}/events",
+                   headers={"Authorization": f"Token {fake.token}"}).status == 404
 
 
 # ------------------------------------------------------------------------------------- limits and faults

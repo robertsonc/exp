@@ -27,6 +27,7 @@ from exp_collector.speedtest import privacy  # noqa: E402
 
 FIX = ROOT / "test" / "fixtures"
 XSS = "<img src=x onerror=alert(1)>"
+XSS_HOST = "<svg onload=alert(2)>"
 ZONES = ("hallb-row12", "hallb-row3", "lobby")
 APS = ("hallb-ap-12", "hallb-ap-3", "lobby-ap-1", "hallb-ap-7")
 CAUSES = ("wifi_signal", "wifi_congestion", "wan_saturation", None, "dns")
@@ -83,7 +84,7 @@ class StData:
 
     def _add_hostile(self, i: int) -> None:
         self._make(i, zone=ZONES[0], ap=XSS, cause="wifi_signal", ended=self.now - 60, score=33, down=5.0, up=2.0,
-                   ssid=XSS, band="5", os_family="iOS", comment="slow " + XSS, hostname=XSS)
+                   ssid=XSS, band="5", os_family="iOS", comment="slow " + XSS, hostname=XSS_HOST)
 
     def _make(self, i: int, *, zone: str, ap: str, cause: str | None, ended: float, score: int, down: float,
               up: float, ssid: str, band: str, os_family: str, comment: str | None,

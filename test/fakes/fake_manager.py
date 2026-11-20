@@ -420,6 +420,10 @@ class ManagerApp:
     def referenced_artifacts(self, host: Host) -> set[str]:
         d = host.desired or {}
         refs = {c["artifact"]["id"] for c in d.get("components", []) if isinstance(c.get("artifact"), dict)}
+        for c in d.get("components", []):  # M6: speedtest branding assets are referenced by the desired state too (SR-6)
+            for asset in c.get("assets", []) if isinstance(c.get("assets"), list) else []:
+                if isinstance(asset, dict) and isinstance(asset.get("artifact"), dict):
+                    refs.add(asset["artifact"]["id"])
         agent_art = (d.get("agent") or {}).get("artifact")
         if isinstance(agent_art, str):
             refs.add(agent_art)

@@ -10,19 +10,24 @@ step that wrote it. No `shared/` change: everything fits `evidence.schema.json` 
    reports `unavailable` + reason (health fact `sse`) when `sources.sse.enabled` is set; SSE decisions can still arrive via syslog.
 2. **Mist budget**: <= `max_calls_per_test` (6) calls per test *including retries and the identity step* (one `CallBudget`
    `ctx.budgets["mist"]` shared by identity and the connector). A typical wireless test uses 5: wireless search, wired search, client
-   stats, AP stats (30 s cache per AP, shared by neighbouring tests), one events call per AP (<= 2). Cache hits cost nothing. The
+   stats, AP stats (30 s cache per AP, shared by neighbouring tests), one per-client events call. Cache hits cost nothing. The
    event-type constants (`GET /const/client_events`) are reference data refreshed hourly **outside** the per-test budget.
-   Pagination: searches ask `limit=5` (two hits already mean ambiguity), events one page of 100 per AP: bounded, never followed.
+   Pagination: searches ask `limit=5` (two hits already mean ambiguity), events one page of 100: bounded, never followed.
 3. **Identity lookup**: wireless **and** wired search for every site in `sources.mist.sites` until a site has any hit; the union of
    MACs decides (one binds; zero = `no_match`; more = `ambiguous`; a wireless and a wired client sharing the IP is ambiguous). A budget,
    timeout, 429 or 5xx *before the answer is complete* is `mist_status: error` — never `no_match`/`ambiguous`; the DHCP / subnet
    fallbacks apply. Lookups are cached 30 s per (IP, window bucket) so the where-cache loop does not burn the quota.
-4. **Mist events are AP-level context.** `events_client` has no MAC property and `searchSiteWirelessClientEvents` no MAC filter (the c1
-   fake documents the same gap). Events are fetched per AP the client was seen on (search record `ap[]`), filtered to the client's SSID,
-   kept only when classified at runtime from the event constants' key/display text as a roam or an authentication failure (other
-   clients' unrelated events are not stored), and **roams are reported only when the client was seen on more than one AP in the
-   window**. A noisy AP can still attribute another client's auth failure to this test; `wifi_roaming` therefore reads
-   `events`/`auth_failures` as context, as `12 §5.3` words it ("an auth failure during the test").
+4. **Mist events are the client's own (`getSiteEventsForClient`).** `GET /sites/{site_id}/clients/{client_mac}/events?start&end&limit=100`
+   (OAS operationId `getSiteEventsForClient`, response schema `response_client_events_search` / `events_client`; `client_mac` is
+   the 12 lower-case hex form, put in the path unchanged as mistapi's `clients.py` does) returns only that client's events, so the
+   earlier AP-level `searchSiteWirelessClientEvents` (no MAC filter: another client's roam or auth failure on the same AP was
+   attributed to the test) is **no longer called**; no AP-level event context is kept. Events are filtered to the client's SSID,
+   kept only when classified at runtime from the event constants' key/display text as a roam or an authentication failure.
+   `roams`, `roam_count`, `auth_failures` and `events` come **only** from this one call (a roam event = one roam; no multi-AP gating
+   is needed any more). Budget: one events call per test instead of <= 2, so a typical test is 4-5 calls. Evidence schema: only
+   description strings changed (no field added or renamed). Collector input: `rule_wifi_roaming` reads `wifi.roams`, `wifi.events`
+   and `wifi.auth_failures` (`collector/exp_collector/speedtest/diagnosis.py:320-346`), exactly the client-specific fields.
+   The c1 fake implements the route (`page`-based pagination, 404 for an unknown client) and a `roaming_other_client` scenario.
 5. **Mist stats are current state.** `stats_wireless_client` is read after the window closed: a client that left (404) yields
    `wifi.status = partial` carrying the search-record fields (SSID, band, AP). Mist zones (`zones`) are map zones and not used; the
    exp zone is `sources.mist.zone_map` then the subnet table.
@@ -57,6 +62,5 @@ step that wrote it. No `shared/` change: everything fits `evidence.schema.json` 
 
 ## Not done / limits
 * HPE Aruba SSE API connector (no local documentation) and Mist `fast_roam` (`listSiteRoamingEvents`): the c1 Mist fake does not
-  implement it and the AP-level events above cover roam counts; switch-port events (`searchSiteDeviceEvents`) are requested best
+  implement it and roam counts come from the client's own events (decision 4); switch-port events (`searchSiteDeviceEvents`) are requested best
   effort (a 404 is tolerated, the fake has no such route).
-* The collector's `wifi_roaming` rule sees context events, see decision 4.

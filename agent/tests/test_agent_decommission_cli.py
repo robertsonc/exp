@@ -27,7 +27,9 @@ def env(tmp_path, monkeypatch):
 
     def guarded(root, **kw):
         assert os.path.abspath(str(root)) != "/", "a test tried to run against the REAL root filesystem"
-        kw.setdefault("agent_version", RUNNING_AGENT_VERSION)  # the fake world's running agent (see agent_helpers)
+        kw.setdefault(
+            "agent_version", RUNNING_AGENT_VERSION
+        )  # the fake world's running agent (see agent_helpers)
         return real(root, runner=e.runner, lchown=lambda *a: None, user_exists=lambda n: True, **kw)
 
     monkeypatch.setattr(cli, "build_context", guarded)

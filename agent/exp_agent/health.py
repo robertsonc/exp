@@ -30,7 +30,7 @@ class HealthResult:
 _FACT_REFS = {
     "tls_fingerprint_sha256": "common.schema.json#/$defs/tls_fingerprint",
     "listen": "common.schema.json#/$defs/hostport",
-    "url": "common.schema.json#/$defs/https_url",
+    "url": "common.schema.json#/$defs/http_url",  # a speedtest is http:// by default (D15)
 }
 
 

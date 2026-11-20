@@ -16,6 +16,7 @@ GET /api/v1/sites/{site_id}/wired_clients/search           searchSiteWiredClient
 GET /api/v1/orgs/{org_id}/wired_clients/search             searchOrgWiredClients (same)
 GET /api/v1/sites/{site_id}/stats/ports/search             searchSiteSwOrGwPorts (response_switch_port_search / stats_switch_port)
 GET /api/v1/sites/{site_id}/clients/events/search          searchSiteWirelessClientEvents (response_events_search / events_client)
+GET /api/v1/sites/{site_id}/clients/{client_mac}/events    getSiteEventsForClient (response_client_events_search / events_client)
 GET /api/v1/const/client_events                            listClientEventsDefinitions (const_events: ``key`` / ``display``)
 =========================================================  ===============================================================
 
@@ -36,9 +37,13 @@ What the OAS documents and this fake follows (and where it is silent):
   examples); colon forms are accepted in filters and the ``client_mac`` path parameter.
 * **404** for an unknown site / device / client (response_http404 has only an ``id`` property).
 
-Known gaps, stated plainly: ``events_client`` in the OAS has **no client-MAC property and no MAC filter** on
-``searchSiteWirelessClientEvents``; events are selectable by AP, SSID, band, type and time only, so the fake cannot (and does
-not) tie an event to one client. Event type keys are discovered via ``GET /api/v1/const/client_events``; only
+Client events: ``events_client`` has **no client-MAC property** and ``searchSiteWirelessClientEvents`` no MAC filter (AP, SSID,
+band, type and time only: AP-level, every client's events mixed). The per-client route is ``getSiteEventsForClient``: ``client_mac``
+is a PATH parameter (12 lower-case hex digits; colon forms accepted), query ``type``, ``proto``, ``band``, ``channel``, ``wlan_id``,
+``ssid``, ``start``, ``end``, ``duration``, ``limit`` (default 100) and ``page`` (1-based; the OAS parameter ``page``); the response is
+``response_client_events_search`` (``start``, ``end``, ``limit``, ``total``, ``results`` of ``events_client``, ``next``). The fake keeps
+the owning MAC in an internal ``client_mac`` key that is never serialised. Event type keys are discovered via
+``GET /api/v1/const/client_events``; only
 ``CLIENT_AUTH_ASSOCIATION_11R`` (the OAS example of ``const_events``) and ``MARVIS_EVENT_CLIENT_FBT_FAILURE`` (the OAS example of
 ``events_client.type``) are OAS-documented; ``FAKE_CLIENT_AUTH_FAILURE`` is a fake-chosen key so a runner cannot hard-code it.
 
@@ -73,7 +78,8 @@ WLAN_ID = "00000000-0000-0000-0000-00000000bb01"
 RATE_LIMIT_DETAIL = "Too Many Request. The API Token used for the request reached the 5000 API Calls per hour threshold"
 DEFAULT_RATE_LIMIT = 5000
 MAX_LIMIT = 1000
-SCENARIOS = ("healthy", "weak_rssi", "congested_ap", "roaming", "wired_port_errors", "nat_ambiguity", "no_client")
+SCENARIOS = ("healthy", "weak_rssi", "congested_ap", "roaming", "roaming_other_client", "wired_port_errors", "nat_ambiguity",
+             "no_client")
 EVT_ROAM = "CLIENT_AUTH_ASSOCIATION_11R"            # OAS example of const_events
 EVT_FBT_FAIL = "MARVIS_EVENT_CLIENT_FBT_FAILURE"    # OAS example of events_client.type
 EVT_AUTH_FAIL = "FAKE_CLIENT_AUTH_FAILURE"          # fake-chosen
@@ -222,8 +228,11 @@ class MistState:
         return p
 
     def add_event(self, *, ts: float, type_: str, ap: dict[str, str] = AP1, site_id: str = SITE_ID, ssid: str = "Summit-Guest",
-                  band: str = "5", channel: int = 36, proto: str = "ax", text: str = "", type_code: int | None = None) -> dict[str, Any]:
-        e = {"site_id": site_id, "ap": ap["mac"], "band": band, "bssid": ap["mac"][:-1] + "1", "channel": channel, "proto": proto,
+                  band: str = "5", channel: int = 36, proto: str = "ax", text: str = "", type_code: int | None = None,
+                  mac: str | None = None) -> dict[str, Any]:
+        # ``client_mac`` is internal (events_client has no MAC property): it only routes getSiteEventsForClient; None = unattributed
+        e = {"site_id": site_id, "client_mac": norm_mac(mac) if mac else None, "ap": ap["mac"], "band": band,
+             "bssid": ap["mac"][:-1] + "1", "channel": channel, "proto": proto,
              "ssid": ssid, "text": text or type_, "timestamp": ts, "type": type_, "wlan_id": WLAN_ID, "key_mgmt": "WPA2-PSK/CCMP"}
         if type_code is not None:
             e["type_code"] = type_code
@@ -252,9 +261,18 @@ class MistState:
             self.add_wireless_session(mac=mac, ip=ip, t_from=t0, t_to=at - 150, ap=AP1, rssi=-71)
             self.add_wireless_session(mac=mac, ip=ip, t_from=at - 150, ap=AP2, rssi=-66)
             for i, d in enumerate((400, 300, 200, 150)):
-                self.add_event(ts=at - d, type_=EVT_ROAM, ap=AP2 if i == 3 else AP1, text="11r association")
-            self.add_event(ts=at - 250, type_=EVT_FBT_FAIL, ap=AP1, text="FBT failure")
-            self.add_event(ts=at - 180, type_=EVT_AUTH_FAIL, ap=AP2, text="auth failure", type_code=15)
+                self.add_event(ts=at - d, type_=EVT_ROAM, ap=AP2 if i == 3 else AP1, text="11r association", mac=mac)
+            self.add_event(ts=at - 250, type_=EVT_FBT_FAIL, ap=AP1, text="FBT failure", mac=mac)
+            self.add_event(ts=at - 180, type_=EVT_AUTH_FAIL, ap=AP2, text="auth failure", type_code=15, mac=mac)
+        elif name == "roaming_other_client":
+            # the attendee is steady on AP1; ANOTHER client on the same AP roams and fails auth (must never reach the attendee)
+            self.add_wireless_session(mac=mac, ip=ip, t_from=t0)
+            self.add_wireless_session(mac=other_mac, ip="10.60.14.99", t_from=t0, ap=AP1, rssi=-75)
+            for d in (400, 300, 200):
+                self.add_event(ts=at - d, type_=EVT_ROAM, ap=AP1, text="11r association", mac=other_mac)
+            self.add_event(ts=at - 250, type_=EVT_FBT_FAIL, ap=AP1, text="FBT failure", mac=other_mac)
+            self.add_event(ts=at - 180, type_=EVT_AUTH_FAIL, ap=AP1, text="auth failure", type_code=15, mac=other_mac)
+            out["other_mac"] = norm_mac(other_mac)
         elif name == "wired_port_errors":
             self.add_wired(mac=mac, ip=ip, t_from=t0)
             self.add_port(port_id="ge-0/0/12", speed=100, full_duplex=False, rx_errors=41822, tx_errors=900, last_flapped=at - 90,
@@ -453,7 +471,27 @@ class MistState:
                     continue
                 if q.get("reason_code") and str(e.get("type_code")) != q["reason_code"]:
                     continue
-                out.append({k: v for k, v in e.items() if k != "site_id"})
+                out.append({k: v for k, v in e.items() if k not in ("site_id", "client_mac")})
+        out.sort(key=lambda r: -r["timestamp"])
+        return out
+
+    def client_events(self, q: dict[str, str], site_id: str, mac: str) -> list[dict[str, Any]]:
+        """getSiteEventsForClient: this client's events only (OAS query: type, proto, band, channel, wlan_id, ssid, start, end, duration)."""
+        start, end = self.window(q)
+        with self.lock:
+            known = any(s["mac"] == mac and s["site_id"] == site_id for s in self.sessions) or \
+                any(e["client_mac"] == mac and e["site_id"] == site_id for e in self.events)
+            if not known:
+                raise MistError(404, {"id": mac})
+            out = []
+            for e in self.events:
+                if e["site_id"] != site_id or e["client_mac"] != mac or not (start <= e["timestamp"] <= end):
+                    continue
+                if q.get("type") and e["type"] not in q["type"].split(","):
+                    continue
+                if any(q.get(k) and str(e[k]) != q[k] for k in ("ssid", "band", "proto", "wlan_id", "channel")):
+                    continue
+                out.append({k: v for k, v in e.items() if k not in ("site_id", "client_mac")})
         out.sort(key=lambda r: -r["timestamp"])
         return out
 
@@ -589,6 +627,13 @@ class Handler(fc.BaseHandler):
             return 200, self._page(path, q, st.port_search(q, site_id), q, window=False)
         if rest == "clients/events/search":
             return 200, self._page(path, q, st.event_search(q, site_id), q)
+        m = re.fullmatch(r"clients/([0-9a-fA-F:-]{12,17})/events", rest)       # getSiteEventsForClient
+        if m:
+            try:
+                mac = norm_mac(m.group(1))
+            except ValueError as exc:
+                raise bad("invalid client_mac") from exc
+            return 200, self._page_n(path, q, st.client_events(q, site_id, mac))
         if rest == "stats/clients":
             if q.get("wired") == "true":
                 return 200, []
@@ -635,6 +680,22 @@ class Handler(fc.BaseHandler):
         if off + limit < len(items) and limit > 0:
             nq = {k: v for k, v in raw_q.items() if k != "search_after"}
             nq["search_after"] = _cursor_enc(off + limit)
+            out["next"] = path + "?" + "&".join(f"{k}={v}" for k, v in nq.items())
+        return out
+
+    def _page_n(self, path: str, q: dict[str, str], items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Page-based pagination of getSiteEventsForClient (``limit`` default 100, ``page`` >= 1); ``next`` while more pages exist."""
+        limit = self._limit(q)
+        raw = q.get("page", "1")
+        if not re.fullmatch(r"[0-9]{1,6}", raw) or int(raw) < 1:
+            raise bad("invalid page")
+        page = int(raw)
+        off = (page - 1) * limit
+        start, end = self.app.state.window(q)
+        out: dict[str, Any] = {"start": int(start), "end": int(end), "limit": limit, "total": len(items), "results": items[off: off + limit]}
+        if limit > 0 and off + limit < len(items):
+            nq = {k: v for k, v in q.items() if k != "page"}
+            nq["page"] = str(page + 1)
             out["next"] = path + "?" + "&".join(f"{k}={v}" for k, v in nq.items())
         return out
 

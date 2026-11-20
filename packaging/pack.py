@@ -35,7 +35,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vendor  # noqa: E402
 
-COMPONENTS = ("agent", "probe", "collector", "dashboard", "runner")
+COMPONENTS = ("agent", "probe", "collector", "dashboard", "runner", "speedtest")
 PER_ARCH_COMPONENTS = ("collector",)  # bundle a native binary (VictoriaMetrics)
 APT_ALLOWLIST = frozenset("""busybox busybox-static iproute2 iputils-ping iperf3 curl openssl
 ca-certificates ethtool iw wpasupplicant tcpdump""".split())

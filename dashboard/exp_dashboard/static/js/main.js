@@ -7,6 +7,10 @@ import { mountOverview } from "./overview.js";
 import { mountIncidents } from "./incidents.js";
 import { mountLogin } from "./login.js";
 import { mountKiosk } from "./kiosk.js";
+import { mountOverview as mountSpeedtests } from "../speedtest/overview.js";
+import { mountBreakdowns } from "../speedtest/breakdowns.js";
+import { mountDetail } from "../speedtest/detail.js";
+import { mountSupport } from "../speedtest/support.js";
 
 const app = document.getElementById("app");
 const chrome = document.getElementById("chrome");
@@ -42,13 +46,13 @@ function renderChrome(params, path) {
   document.body.classList.toggle("kiosk", kiosk);
   chrome.hidden = kiosk || path === "/login";
   if (chrome.hidden) return;
-  const nav = [["/", "Overview", "dashboard"], ["/incidents", "Incidents", "alert"]];
+  const nav = [["/", "Overview", "dashboard"], ["/incidents", "Incidents", "alert"], ["/speedtests", "Speedtests", "internet"]];
   const theme = pref("theme") || "dark";
   const themeBtn = h("button", { class: "btn btn-quiet", type: "button", title: "Change colour theme" }, icon("settings"), h("span", { class: "theme-text", text: "Theme: " + theme }));
   themeBtn.addEventListener("click", () => cycleTheme(themeBtn));
   chrome.append(
     h("a", { class: "brand", href: "/", "data-spa": "" }, icon("probe"), h("span", { text: session ? String(session.title || "exp") : "exp" })),
-    h("nav", { "aria-label": "Main" }, nav.map(([href, label, ic]) => h("a", { class: "nav-link", href, "data-spa": "", "aria-current": href === path ? "page" : null }, icon(ic), label))),
+    h("nav", { "aria-label": "Main" }, nav.map(([href, label, ic]) => h("a", { class: "nav-link", href, "data-spa": "", "aria-current": href === path || (href !== "/" && path.startsWith(href + "/")) ? "page" : null }, icon(ic), label))),
     h("div", { class: "chrome-tools" }, themeBtn,
       session ? h("span", { class: "who", title: "Signed in" }, icon("user"), h("span", { class: "who-name", text: String(session.user) }),
         h("span", { class: "role role-" + String(session.role), text: String(session.role) })) : null,
@@ -105,7 +109,10 @@ async function route() {
   const staticMode = params.get("static") === "1";
   const kiosk = document.body.classList.contains("kiosk");
   const probe = /^\/probe\/([a-z0-9][a-z0-9-]{0,63})$/.exec(path);
-  const common = { static: staticMode, voice: params.get("voice"), defaultVoice: session.voice, navigate: soft };
+  const common = { static: staticMode, voice: params.get("voice"), defaultVoice: session.voice, navigate: soft, go };
+  const test = /^\/speedtests\/test\/(st_[0-9A-HJKMNP-TV-Z]{26})$/.exec(path);
+  const shared = /^\/st\/r\/(st_[0-9A-HJKMNP-TV-Z]{26})$/.exec(path);
+  if (shared) { go("/speedtests/test/" + shared[1], true); return; }   // a pasted share link: the #k= fragment is dropped here
   if (path === "/") {
     document.title = "Overview";
     mount(() => kiosk ? mountKiosk(app, { ...common, rotate: params.get("rotate"), site: params.get("site") })
@@ -115,6 +122,18 @@ async function route() {
   } else if (path === "/incidents") {
     document.title = "Incidents";
     mount(() => mountIncidents(app, common));
+  } else if (path === "/speedtests") {
+    document.title = "Speedtests";
+    mount(() => mountSpeedtests(app, common));
+  } else if (path === "/speedtests/breakdowns") {
+    document.title = "Speedtest breakdowns";
+    mount(() => mountBreakdowns(app, common));
+  } else if (path === "/speedtests/support") {
+    document.title = "Speedtest support lookup";
+    mount(() => mountSupport(app, common));
+  } else if (test) {
+    document.title = "Speedtest " + test[1];
+    mount(() => mountDetail(app, { ...common, id: test[1] }));
   } else if (path === "/drills") {
     document.title = "Drills";
     mount(drills);

@@ -5,7 +5,8 @@ Allowed roots (logical paths, i.e. as seen on a real host; `Paths(root=...)` map
 prefix so tests run unprivileged in a tmp dir):
 
     /opt/exp  /etc/exp  /var/lib/exp  /run/exp  /etc/systemd/system/exp-*.service|timer
-    plus the /usr/local/bin/exp-<component> convenience symlinks.
+    plus the /usr/local/bin/exp-<component> convenience symlinks and the single speedtest sysctl drop-in
+    /etc/sysctl.d/60-exp-speedtest-ping.conf.
 
 A path is refused when it contains "..", is relative, is outside the roots lexically, or when its
 *resolved* location (symlinks followed) leaves the roots. Deleting a root itself is refused.
@@ -33,6 +34,10 @@ CRED_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 ALLOWED_ROOTS = ("/opt/exp", "/etc/exp", "/var/lib/exp", "/run/exp")
 UNIT_DIR = "/etc/systemd/system"
 BIN_DIR = "/usr/local/bin"
+# The ONE file outside the roots the agent may write: the scoped ping_group_range drop-in of the speedtest box
+# (pingsys.py). Exactly this name; /etc/sysctl.d itself and every other file in it stay refused.
+SYSCTL_DIR = "/etc/sysctl.d"
+SYSCTL_DROPIN = SYSCTL_DIR + "/60-exp-speedtest-ping.conf"
 PROTECTED = frozenset(ALLOWED_ROOTS) | {UNIT_DIR, BIN_DIR}
 # Plain system directories above the roots: they exist on every host; only a tmp test root lacks them.
 _ANCESTORS = frozenset(
@@ -47,6 +52,7 @@ _ANCESTORS = frozenset(
         "/usr/local/bin",
         "/etc/systemd",
         "/etc/systemd/system",
+        "/etc/sysctl.d",
     }
 )
 
@@ -57,6 +63,8 @@ def _lexical_ok(logical: PurePosixPath) -> bool:
         if s == root or s.startswith(root + "/"):
             return True
     if logical.parent == PurePosixPath(UNIT_DIR) and UNIT_RE.match(logical.name):
+        return True
+    if str(logical) == SYSCTL_DROPIN:
         return True
     return logical.parent == PurePosixPath(BIN_DIR) and bool(BIN_RE.match(logical.name))
 
@@ -74,6 +82,7 @@ class Paths:
         self.run = self.host("/run/exp")
         self.systemd = self.host(UNIT_DIR)
         self.usr_bin = self.host(BIN_DIR)
+        self.sysctl_dropin = self.host(SYSCTL_DROPIN)
         self.proc = self.host("/proc")
         self.sys = self.host("/sys")
         self.agent_json = self.etc / "agent.json"

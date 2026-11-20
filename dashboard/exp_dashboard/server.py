@@ -56,7 +56,8 @@ CONTENT_TYPES = {
     ".woff2": "font/woff2", ".map": "application/json",
 }
 SPA_ROUTES = re.compile(r"^/(probe/[a-z0-9][a-z0-9-]{0,63}|incidents|drills|login"
-                        r"|speedtests(/(breakdowns|support|test/st_[0-9A-HJKMNP-TV-Z]{26}))?)?/?$")
+                        r"|speedtests(/(breakdowns|support|test/st_[0-9A-HJKMNP-TV-Z]{26}))?"
+                        r"|st/r/st_[0-9A-HJKMNP-TV-Z]{26})?/?$")
 _BAD_TARGET = re.compile(r"[\x00-\x20\x7f-\xff\\]")
 _HOST_OK = re.compile(r"^[A-Za-z0-9.\-]{1,253}(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:.]{2,45}\](:[0-9]{1,5})?$")
 _ERR_TEXT = {"1": "Username or password is wrong.", "429": "Too many attempts. Try again later."}

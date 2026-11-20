@@ -13,7 +13,9 @@ GET /sites/{site_id}/wired_clients/search?ip&start&end     searchSiteWiredClient
                                                            ``port_id``, ``vlan``, ``auth_*``, ``dhcp_*``, ``mac``)
 GET /sites/{site_id}/stats/clients/{client_mac}            getSiteWirelessClientStats / stats_wireless_client
 GET /sites/{site_id}/stats/devices/{device_id}             getSiteDeviceStats / stats_ap (+ ap_radio_stat in ``radio_stat``)
-GET /sites/{site_id}/clients/events/search?ap&start&end    searchSiteWirelessClientEvents / events_client
+GET /sites/{site_id}/clients/{client_mac}/events?start&end getSiteEventsForClient / response_client_events_search
+                                                           (``results``: events_client; ``client_mac`` = 12 lower-case hex, as
+                                                           mistapi's clients.py puts it in the path unchanged)
 GET /const/client_events                                   listClientEventsDefinitions (``key`` / ``display``)
 GET /sites/{site_id}/stats/ports/search?mac&port_id        searchSiteSwOrGwPorts / stats_switch_port
 GET /sites/{site_id}/devices/events/search?mac&start&end   searchSiteDeviceEvents / device_event (best effort)
@@ -21,11 +23,11 @@ GET /sites/{site_id}/devices/events/search?mac&start&end   searchSiteDeviceEvent
 
 Honest limits (never presented as vendor fact):
 
-* ``events_client`` has **no client-MAC property and ``searchSiteWirelessClientEvents`` no MAC filter**. Events are therefore
-  selected by AP (every AP the client was seen on in the window) and SSID and kept only when classified as a roam or an
-  authentication failure. They are *AP-level context*, not proof they belong to this client; roams are reported only when the
-  client was seen on more than one AP in the window. Event type keys are *discovered* from ``GET /const/client_events`` at runtime
-  (never hard-coded) and classified by their key / display text.
+* ``events_client`` has no client-MAC property and the AP-level ``searchSiteWirelessClientEvents`` has no MAC filter, so that
+  endpoint is **never used**: any client's roam or auth failure on the same AP would be attributed to this test. The client's own
+  events come from ``getSiteEventsForClient`` (MAC in the path) in the test window: ``roams`` / ``roam_count`` / ``auth_failures`` /
+  ``events`` are derived from that single call only. Event type keys are *discovered* from ``GET /const/client_events`` at runtime
+  (never hard-coded) and classified by their key / display text. One page (``limit`` 100) is read, never followed.
 * ``stats_wireless_client`` is the client's *current* state (the runner reads it after the correlation window closed); when the
   client is gone (404) the ``wifi`` evidence falls back to the search record and is ``partial``.
 * Mist zones (``stats_wireless_client.zones``) are map zones, not exp zones: the exp zone comes from ``sources.mist.zone_map``
@@ -58,7 +60,6 @@ CONNECTOR_TIMEOUT_S = 60.0
 COLLECT_DEADLINE_S = 50.0
 SEARCH_LIMIT = 5
 EVENTS_LIMIT = 100
-EVENT_APS_MAX = 2
 MAX_EVENTS = 100
 MAX_ROAMS = 50
 FOUND_KEEP = 256
@@ -331,16 +332,14 @@ class MistConnector(Connector):
         if ap:
             data["ap"] = ap
             refs.append(f"mist:ap:{ap.get('mac', '')}")
-        visited = _visited_aps(found)[-EVENT_APS_MAX:]
         roams: list[dict[str, Any]] = []
         events: list[dict[str, Any]] = []
         ev_ok = True
-        if visited:
-            try:
-                roams, events = self._events(found, visited, ctx, sc)
-            except UpstreamError as exc:
-                ev_ok = False
-                errors.append(exc.kind)
+        try:
+            roams, events = self._events(found, ctx, sc)
+        except UpstreamError as exc:
+            ev_ok = False
+            errors.append(exc.kind)
         data["roams"] = roams[:MAX_ROAMS]
         data["events"] = events[:MAX_EVENTS]
         data["roam_count"] = sum(1 for r in roams if r.get("type") != "none")
@@ -411,49 +410,45 @@ class MistConnector(Connector):
             a["radio"] = radio
         return a
 
-    def _events(self, found: Found, visited: list[str], ctx: Context, sc: Scope) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def _events(self, found: Found, ctx: Context, sc: Scope) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """This client's roam / auth-failure events: getSiteEventsForClient (``client_mac`` path parameter; response_client_events_search)."""
         svc = self.svc
         ssid = up.s((found.stats or {}).get("ssid") or found.rec.get("last_ssid"))
         roams: list[dict[str, Any]] = []
         events: list[dict[str, Any]] = []
         seen: set[tuple[Any, ...]] = set()
-        multi_ap = len(_visited_aps(found)) > 1
-        batches: list[list[dict[str, Any]]] = []
-        for ap in visited:
-            batches.append(svc._results(f"/sites/{found.site_id}/clients/events/search",
-                                        {"ap": ap.replace(":", ""), **svc._win(ctx.window), "limit": EVENTS_LIMIT}, sc))
-        types = svc.event_types() if any(batches) else {}
-        for rows in batches:
-            for r in rows:
-                ts = up.f(r.get("timestamp"))
-                typ = up.s(r.get("type"), 128)
-                if ts is None or typ is None:
-                    continue
-                if ssid and up.s(r.get("ssid")) not in (None, ssid):
-                    continue
-                cls = classify_event(typ, types.get(typ, ""), str(r.get("text") or ""))
-                if cls is None:
-                    continue
-                sig = (ts, typ, r.get("ap"), r.get("bssid"))
-                if sig in seen:
-                    continue
-                seen.add(sig)
-                e: dict[str, Any] = {"timestamp": ts, "type": typ, "_cls": cls}
-                up.put(e, "type_code", up.i(r.get("type_code")))
-                up.put(e, "text", up.s(r.get("text"), 256))
-                up.put(e, "ssid", up.s(r.get("ssid")))
-                up.put(e, "bssid", up.s(r.get("bssid"), 17))
-                up.put(e, "ap_mac", _colon(r.get("ap")))
-                up.put(e, "band", up.s(r.get("band"), 16))
-                up.put(e, "channel", up.i(r.get("channel")))
-                up.put(e, "proto", up.s(r.get("proto"), 16))
-                up.put(e, "wlan_id", up.s(r.get("wlan_id"), 64))
-                events.append(e)
-                if cls in ("roam", "roam_fail") and multi_ap:
-                    ro: dict[str, Any] = {"timestamp": ts, "type": "fail" if cls == "roam_fail" else "success"}
-                    up.put(ro, "ap_mac", _colon(r.get("ap")))
-                    up.put(ro, "ssid", up.s(r.get("ssid")))
-                    roams.append(ro)
+        rows = svc._results(f"/sites/{found.site_id}/clients/{found.mac12}/events", {**svc._win(ctx.window), "limit": EVENTS_LIMIT}, sc)
+        types = svc.event_types() if rows else {}
+        for r in rows:
+            ts = up.f(r.get("timestamp"))
+            typ = up.s(r.get("type"), 128)
+            if ts is None or typ is None:
+                continue
+            if ssid and up.s(r.get("ssid")) not in (None, ssid):
+                continue
+            cls = classify_event(typ, types.get(typ, ""), str(r.get("text") or ""))
+            if cls is None:
+                continue
+            sig = (ts, typ, r.get("ap"), r.get("bssid"))
+            if sig in seen:
+                continue
+            seen.add(sig)
+            e: dict[str, Any] = {"timestamp": ts, "type": typ, "_cls": cls}
+            up.put(e, "type_code", up.i(r.get("type_code")))
+            up.put(e, "text", up.s(r.get("text"), 256))
+            up.put(e, "ssid", up.s(r.get("ssid")))
+            up.put(e, "bssid", up.s(r.get("bssid"), 17))
+            up.put(e, "ap_mac", _colon(r.get("ap")))
+            up.put(e, "band", up.s(r.get("band"), 16))
+            up.put(e, "channel", up.i(r.get("channel")))
+            up.put(e, "proto", up.s(r.get("proto"), 16))
+            up.put(e, "wlan_id", up.s(r.get("wlan_id"), 64))
+            events.append(e)
+            if cls in ("roam", "roam_fail"):
+                ro: dict[str, Any] = {"timestamp": ts, "type": "fail" if cls == "roam_fail" else "success"}
+                up.put(ro, "ap_mac", _colon(r.get("ap")))
+                up.put(ro, "ssid", up.s(r.get("ssid")))
+                roams.append(ro)
         events.sort(key=lambda x: x["timestamp"])
         roams.sort(key=lambda x: x["timestamp"])
         return roams, events
@@ -533,19 +528,6 @@ class MistConnector(Connector):
             out.append(e)
         out.sort(key=lambda x: x["timestamp"])
         return out[:50]
-
-
-def _visited_aps(found: Found) -> list[str]:
-    """Every AP the client was seen on in the window, current AP last (colon MACs)."""
-    seen: list[str] = []
-    for v in [*_as_list(found.rec.get("ap")), found.rec.get("last_ap")]:
-        m = _colon(v)
-        if m and m not in seen:
-            seen.append(m)
-    cur = _colon((found.stats or {}).get("ap_mac"))
-    if cur and cur not in seen:
-        seen.append(cur)
-    return seen
 
 
 def make_mist(cfg: RunnerConfig, creds: dict[str, str] | None, **kw: Any) -> tuple[MistConnector, MistService] | None:
