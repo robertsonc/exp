@@ -1,0 +1,57 @@
+{
+  "schema": "exp.speedtest/1",
+  "id": "st_01M7R3X9G0DP49BXNNRFE7X054",
+  "site": "hall-b",
+  "zone": "hallb-row12",
+  "zone_source": "mist",
+  "started": "2026-11-18T14:02:11.120Z",
+  "ended": "2026-11-18T14:02:27.540Z",
+  "client": {
+    "ip": "10.60.14.77",
+    "ua": {
+      "os_family": "iOS",
+      "os_version": "18.1",
+      "browser": "Safari",
+      "device_class": "phone"
+    },
+    "connection_hint": "wifi"
+  },
+  "consent": {
+    "text_version": 3
+  },
+  "legs": {
+    "local": {
+      "status": "ok",
+      "down_mbps": 150.0,
+      "up_mbps": 60.0,
+      "idle_ms": 7.0,
+      "jitter_ms": 1.0,
+      "loaded_down_ms": 50.0,
+      "loaded_up_ms": 60.0,
+      "rpm": 1000,
+      "cv": 0.15,
+      "failures": 0,
+      "bytes": 150000000,
+      "server": "spd-core"
+    },
+    "internet": {
+      "status": "queued"
+    }
+  },
+  "score": {
+    "total": 89,
+    "speed": 100,
+    "responsiveness": 89,
+    "stability": 70
+  },
+  "flags": [
+    "internet_queued"
+  ],
+  "observed": {
+    "received_at": "2026-11-18T14:02:27.900Z",
+    "server_id": "spd-core",
+    "local_bytes_down": 190000000,
+    "local_bytes_up": 61000000,
+    "session_ms": 16780
+  }
+}

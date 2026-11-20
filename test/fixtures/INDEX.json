@@ -11,6 +11,10 @@
     "schema": "collector.config.schema.json",
     "expected": "valid"
   },
+  "configs/collector.speedtests.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "valid"
+  },
   "configs/collector.webhook-allow.json": {
     "schema": "collector.config.schema.json",
     "expected": "valid"
@@ -43,8 +47,28 @@
     "schema": "probe.config.schema.json",
     "expected": "valid"
   },
+  "configs/runner.correlation.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "valid"
+  },
   "configs/runner.json": {
     "schema": "runner.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/speedtest.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/speedtest.minimal.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "valid"
+  },
+  "configs/speedtest.tls-provided.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "valid"
+  },
+  "desired/all-in-one-speedtest.json": {
+    "schema": "desired.schema.json",
     "expected": "valid"
   },
   "desired/all-in-one.json": {
@@ -73,6 +97,54 @@
   },
   "desired/unknown-component-type.json": {
     "schema": "desired.schema.json",
+    "expected": "valid"
+  },
+  "evidence/baseline.ok.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/dns.ok.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/flows.ok.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/identity.dhcp-fallback.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/identity.mist.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/identity.nat-suspected.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/identity.scrubbed.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/security.policy-block.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/wan.ok.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/wifi.ok.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/wifi.unavailable.json": {
+    "schema": "evidence.schema.json",
+    "expected": "valid"
+  },
+  "evidence/wired.ok.json": {
+    "schema": "evidence.schema.json",
     "expected": "valid"
   },
   "health/collector-fail.json": {
@@ -144,6 +216,14 @@
     "expected": "invalid"
   },
   "invalid/configs/collector-ingest-over-limit.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-speedtests-evidence-over-256.json": {
+    "schema": "collector.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/collector-speedtests-retention-zero.json": {
     "schema": "collector.config.schema.json",
     "expected": "invalid"
   },
@@ -239,8 +319,72 @@
     "schema": "runner.config.schema.json",
     "expected": "invalid"
   },
+  "invalid/configs/runner-channel-not-loopback.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/runner-correlation-negative-window.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "invalid"
+  },
   "invalid/configs/runner-missing-collector.json": {
     "schema": "runner.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/runner-mist-flows-over-50.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/runner-syslog-bad-listen.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/runner-syslog-ring-over-60.json": {
+    "schema": "runner.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-auto-pause-over-100.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-bad-client-subnet.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-bad-color.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-bad-tls-mode.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-bytes-local-tiny.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-channel-not-loopback.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-collector-http.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-listen-ip-hostname.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-logo-not-art-id.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-unknown-key.json": {
+    "schema": "speedtest.config.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/configs/speedtest-unknown-provider.json": {
+    "schema": "speedtest.config.schema.json",
     "expected": "invalid"
   },
   "invalid/desired/action-arbitrary-command.json": {
@@ -273,6 +417,94 @@
   },
   "invalid/desired/restart-without-component.json": {
     "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/runner-correlation-invalid-inside.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/speedtest-asset-bad-content-type.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/speedtest-asset-traversal-name.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/desired/speedtest-config-invalid-inside.json": {
+    "schema": "desired.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/bad-source.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/bad-status.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/flows-full-url-field.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/flows-over-50.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/identity-bad-device-key.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/identity-bad-nat-reason.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/identity-email.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/identity-person-name.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/kind-data-mismatch.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/missing-test-id.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/naive-window.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/security-bad-action.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/security-over-200-lines.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/unknown-kind.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/wifi-bad-band.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/wifi-client-email.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/wifi-guest-object.json": {
+    "schema": "evidence.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/evidence/wifi-rssi-positive.json": {
+    "schema": "evidence.schema.json",
     "expected": "invalid"
   },
   "invalid/health/bad-status.json": {
@@ -473,6 +705,118 @@
   },
   "invalid/measurements/wrong-schema.json": {
     "schema": "measurement.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-bad-id.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-bad-leg-status.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-bad-zone-source.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-bad-zone.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-comment-control-char.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-comment-too-long.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-dns-bad-source.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-down-over-100gbps.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-duration-over-60s.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-missing-observed.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-naive-timestamp.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-person-email.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-person-name.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-raw-user-agent.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-score-over-100.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-top-level-person.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-ua-unknown-class.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/result-unknown-flag.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-bad-zone-hint.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-comment-control-char.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-missing-local.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-negative-speed.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-over-100gbps.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-person-field.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-sets-client-ip.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-sets-observed.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-sets-score.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "invalid"
+  },
+  "invalid/speedtest/submission-wrong-schema-const.json": {
+    "schema": "speedtest.submission.schema.json",
     "expected": "invalid"
   },
   "invalid/state/bad-line-key.json": {
@@ -693,6 +1037,42 @@
   },
   "measurements/wifi_join.ok.json": {
     "schema": "measurement.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/result.counters-disagree.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/result.internet-queued.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/result.internet-unavailable.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/result.ok.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/result.policy-block.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/result.unresolved-nat.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/submission.full.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/submission.internet-unavailable.json": {
+    "schema": "speedtest.submission.schema.json",
+    "expected": "valid"
+  },
+  "speedtest/submission.minimal.json": {
+    "schema": "speedtest.submission.schema.json",
     "expected": "valid"
   },
   "state/all-ok.json": {

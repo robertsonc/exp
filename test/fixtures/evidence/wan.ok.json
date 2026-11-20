@@ -1,0 +1,97 @@
+{
+  "schema": "exp.evidence/1",
+  "test_id": "st_01M7R3X9G0QWCYM3A3S1DE8MT4",
+  "kind": "wan",
+  "source": "ec",
+  "collected_at": "2026-11-18T14:03:40.000Z",
+  "window": {
+    "from": "2026-11-18T13:57:11.120Z",
+    "to": "2026-11-18T14:04:27.540Z"
+  },
+  "status": "ok",
+  "data": {
+    "appliances": [
+      {
+        "ne_pk": "1.NE",
+        "hostname": "ec-core",
+        "state": 1,
+        "interfaces": [
+          {
+            "ifname": "wan0",
+            "wan_if": true,
+            "lan_if": false,
+            "admin": true,
+            "oper": true,
+            "if_speed": "1000",
+            "duplex": "full (auto)",
+            "label": "2",
+            "public_ip": "203.0.113.2",
+            "max_wan_bandwidth_kbps": 200000,
+            "rx_bps": 185000000,
+            "tx_bps": 60000000,
+            "util_pct": 92.5
+          }
+        ],
+        "health": {
+          "latency": [
+            {
+              "tunnel_id": "to_dc",
+              "health_status": "HEALTHY",
+              "critical_mins": 0,
+              "major_mins": 3,
+              "normal_mins": 57,
+              "max": 38
+            }
+          ],
+          "loss": [
+            {
+              "tunnel_id": "to_dc",
+              "health_status": "HEALTHY",
+              "critical_mins": 0,
+              "major_mins": 0,
+              "normal_mins": 60,
+              "max": 0.2
+            }
+          ],
+          "jitter": [],
+          "mos": []
+        },
+        "alarms": [
+          {
+            "sequence_id": 551,
+            "severity": "major",
+            "type": "tunnel",
+            "name": "Tunnel state",
+            "description": "Tunnel to_dc degraded",
+            "time_occurred_ms": 1763474400000,
+            "occurrence_count": 2,
+            "service_affect": true,
+            "closed": false,
+            "host_name": "ec-core"
+          }
+        ],
+        "timeseries": {
+          "columns": [
+            "time",
+            "rx_bps",
+            "tx_bps"
+          ],
+          "rows": [
+            [
+              1763474460,
+              180000000,
+              59000000
+            ],
+            [
+              1763474520,
+              185000000,
+              60000000
+            ]
+          ]
+        }
+      }
+    ],
+    "wan_util_pct": 92.5
+  },
+  "raw_refs": []
+}

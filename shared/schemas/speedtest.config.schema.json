@@ -1,0 +1,470 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speedtest.config.schema.json",
+  "title": "exp.speedtest.config/1",
+  "description": "Config of the exp-speedtest component (12 section 7.5 + CR-m6-spec-resolutions). The speedtest is its own component type co-located with probe + collector + runner on ONE core/DC box (the all-in-one profile). Transport: plain HTTP by default (TCP 80 on serve.listen_ip when tls.mode = none); TCP 443 (+ 80 -> 443 redirect) only when tls.mode = provided. Creds (never in this document): collector_token (exps_), runner_channel_token_sha256 (sha256 of the runner's expl_ token), tls.key/tls.crt when tls.mode = provided.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.speedtest.config/1"
+    },
+    "speedtest_id": {
+      "$ref": "common.schema.json#/$defs/slug",
+      "description": "Identity bound to the exps_ token."
+    },
+    "site": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "zones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 256,
+      "description": "Zone directory (labels). Zones are resolved by correlation; a QR ?z=<id> only stamps a hint."
+    },
+    "zone_labels": {
+      "type": "object",
+      "properties": {
+        "subnets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "cidr": {
+                "$ref": "common.schema.json#/$defs/ipv4_cidr"
+              },
+              "zone": {
+                "$ref": "common.schema.json#/$defs/slug"
+              }
+            },
+            "required": [
+              "cidr",
+              "zone"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 256,
+          "description": "Longest-prefix match; client subnet -> coarse zone (identity fallback, 12 5.1)."
+        }
+      },
+      "required": [
+        "subnets"
+      ],
+      "additionalProperties": false,
+      "description": "Subnet to zone label table (the correlation fallback)."
+    },
+    "branding": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "logo_artifact": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/art_id"
+            }
+          ],
+          "description": "art_ id of the logo artifact (PNG/SVG/JPEG <= 256 KiB); the desired state's component assets[] carries the download (CR-m6-contracts)."
+        },
+        "colors": {
+          "type": "object",
+          "properties": {
+            "primary": {
+              "type": "string",
+              "maxLength": 7,
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            },
+            "accent": {
+              "type": "string",
+              "maxLength": 7,
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            },
+            "background": {
+              "type": "string",
+              "maxLength": 7,
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 7,
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 8,
+            "pattern": "^[a-z]{2}(-[A-Za-z]{2,4})?$"
+          },
+          "maxItems": 8,
+          "uniqueItems": true,
+          "description": "BCP 47 language tags the page offers; the first is the default."
+        },
+        "copy": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 280,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxProperties": 40,
+          "propertyNames": {
+            "$ref": "common.schema.json#/$defs/ident"
+          },
+          "description": "Page copy overrides keyed by string id (start_button, verdict_good, ...)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Event branding (like Orb Custom's configurator)."
+    },
+    "consent": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 2000,
+          "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "description": "Incremented by the manager whenever the text changes; stored with every test."
+        }
+      },
+      "required": [
+        "text",
+        "version"
+      ],
+      "additionalProperties": false,
+      "description": "Consent panel shown before the first test (device and traffic metadata are recorded for network diagnostics)."
+    },
+    "display": {
+      "type": "object",
+      "properties": {
+        "show_network_details": {
+          "type": "boolean",
+          "description": "Show AP name and channel to the user (default false)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "targets": {
+      "type": "object",
+      "properties": {
+        "down_mbps": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 100000
+        },
+        "up_mbps": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 100000
+        }
+      },
+      "additionalProperties": false,
+      "description": "Score targets (defaults 25 / 10 Mb/s)."
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "tests_per_10min_per_ip": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "default 6"
+        },
+        "max_concurrent_per_ip": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "default 1"
+        },
+        "max_concurrent_tests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Total concurrent tests per box. Default 20 (CR-m6-spec-resolutions)."
+        },
+        "max_concurrent_internet": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Internet-leg slots. Default 10."
+        },
+        "bytes_local": {
+          "type": "integer",
+          "minimum": 1000000,
+          "maximum": 10000000000,
+          "description": "On-network byte cap per test. Default 200e6 (the 4.4 core-bandwidth guard supersedes 400 MB)."
+        },
+        "bytes_internet": {
+          "type": "integer",
+          "minimum": 1000000,
+          "maximum": 10000000000,
+          "description": "Internet byte cap per test. Default 200e6."
+        },
+        "leg_token_ttl_s": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 300,
+          "description": "Session leg token lifetime. Default 60."
+        },
+        "result_deadline_s": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 900,
+          "description": "Seconds after session creation within which the result may be submitted. Default 180."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Abuse and capacity protection (12 4.4)."
+    },
+    "internet_leg": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "provider": {
+          "enum": [
+            "cloudflare"
+          ]
+        },
+        "paused": {
+          "type": "boolean",
+          "description": "Admin switch 'Pause internet leg' (e.g. during a keynote)."
+        },
+        "auto_pause_wan_util_pct": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Pause the internet leg while the runner's EC WAN utilization is above this (default 80)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Internet leg (browser -> Cloudflare's public speed-test endpoints)."
+    },
+    "serve": {
+      "type": "object",
+      "properties": {
+        "placement": {
+          "enum": [
+            "core",
+            "dc",
+            "other"
+          ],
+          "description": "Informational; the box must be where attendee VLANs reach it routed and un-NAT'd (D15)."
+        },
+        "hostname": {
+          "$ref": "common.schema.json#/$defs/host_or_ip"
+        },
+        "listen_ip": {
+          "$ref": "common.schema.json#/$defs/ipv4",
+          "description": "The box's routed interface address. HTTP/HTTPS and the DNS-leg server bind here."
+        },
+        "require_real_client_ip": {
+          "type": "boolean",
+          "description": "D15 hard requirement: when true an observed client IP outside every client_subnets entry fails identity closed (nat_suspected)."
+        },
+        "client_subnets": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/ipv4_cidr"
+          },
+          "maxItems": 64,
+          "description": "Attendee subnets (NAT guard input)."
+        },
+        "translated_addresses": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/ipv4"
+          },
+          "maxItems": 64,
+          "description": "Known NAT/edge/translated addresses: a client IP equal to one of these fails identity closed."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Tests/dev only. Production leaves it unset: 80 when tls.mode = none; 443 (+ 80 -> 443 redirect) when provided."
+        }
+      },
+      "required": [
+        "hostname",
+        "listen_ip"
+      ],
+      "additionalProperties": false,
+      "description": "Where and how the box serves."
+    },
+    "tls": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "none",
+            "provided"
+          ]
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false,
+      "description": "none = plain HTTP (default, D15); provided = tls.crt/tls.key creds. Self-signed is not offered."
+    },
+    "dns_leg": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "zone": {
+          "$ref": "common.schema.json#/$defs/host_or_ip"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Tests/dev only; production is UDP+TCP 53 on serve.listen_ip."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Authoritative DNS-leg server: answers only 'zone' (e.g. t.speed.summit.example), no recursion, rate-limited (SR-22). Needs an NS delegation of the zone to the box; without it the page falls back to the probe's DNS line (flag dns_fallback)."
+    },
+    "path": {
+      "type": "object",
+      "properties": {
+        "gateway": {
+          "anyOf": [
+            {
+              "const": "auto"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/ipv4"
+            }
+          ]
+        },
+        "edge": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/ipv4"
+            }
+          ]
+        },
+        "edge1": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "const": "auto"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/ipv4"
+            }
+          ]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Hops the box times (SR-22: only these and the requesting client). Infrastructure context, not per-user."
+    },
+    "privacy": {
+      "type": "object",
+      "properties": {
+        "retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Tests, device metadata and evidence kept this long (default 30). Aggregates in VictoriaMetrics are kept forever."
+        },
+        "scrub_after_diagnosis": {
+          "type": "boolean",
+          "description": "Drop raw IP/MAC/username/hostname after the final diagnosis, keep device_key (default false, privacy sign-off decides)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The manager compiles the same values into collector.config speedtests and runner.config correlation.privacy."
+    },
+    "core_guard": {
+      "type": "object",
+      "properties": {
+        "iface": {
+          "$ref": "common.schema.json#/$defs/iface"
+        },
+        "util_pct": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Shrink on-network sizes while this interface's utilization is above it (default 70)."
+        },
+        "min_bytes": {
+          "type": "integer",
+          "minimum": 100000,
+          "maximum": 1000000000,
+          "description": "Floor of the adaptive on-network size (default 5e6)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Core-bandwidth guard (12 4.4): auto-shrink the on-network transfer when the core-facing interface is busy."
+    },
+    "collector": {
+      "$ref": "probe.config.schema.json#/$defs/collector_ref",
+      "description": "The collector on the same host (results, status read)."
+    },
+    "local_channel": {
+      "type": "object",
+      "properties": {
+        "listen": {
+          "$ref": "common.schema.json#/$defs/loopback_hostport"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Runner -> speedtest channel (127.0.0.1 only, expl_ token): Mist 'where' cache and internet-leg auto-pause."
+    }
+  },
+  "required": [
+    "schema",
+    "speedtest_id",
+    "site",
+    "serve",
+    "tls",
+    "collector"
+  ],
+  "additionalProperties": false
+}

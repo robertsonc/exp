@@ -1,0 +1,22 @@
+{
+  "schema": "exp.evidence/1",
+  "test_id": "st_01M7R3X9G0RBGD0H1DC76AJK35",
+  "kind": "identity",
+  "source": "mist",
+  "collected_at": "2026-11-18T14:03:40.000Z",
+  "window": {
+    "from": "2026-11-18T13:57:11.120Z",
+    "to": "2026-11-18T14:04:27.540Z"
+  },
+  "status": "partial",
+  "data": {
+    "resolved_by": "none",
+    "ip": "10.0.0.2",
+    "zone": "unresolved",
+    "zone_source": "unresolved",
+    "candidates": 0,
+    "nat_suspected": true,
+    "nat_reason": "because"
+  },
+  "raw_refs": []
+}

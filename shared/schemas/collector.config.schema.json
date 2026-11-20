@@ -184,6 +184,71 @@
         }
       },
       "description": "Cannot be raised above the contract limits (4 MiB, 1000 lines)."
+    },
+    "speedtests": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "speedtests": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "maxItems": 8,
+          "description": "Speedtest component ids allowed to hold an exps_ token (creds speedtest_tokens.json {speedtest_id: sha256})."
+        },
+        "runners": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "maxItems": 8,
+          "description": "Runner ids allowed to hold an expr_ token (creds runner_tokens.json {runner_id: sha256})."
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Tests, device metadata, evidence (default 30). VM aggregates are kept forever."
+        },
+        "scrub_after_diagnosis": {
+          "type": "boolean",
+          "description": "Drop raw IP/MAC/username/hostname after the final diagnosis, keep device_key (default false)."
+        },
+        "targets": {
+          "type": "object",
+          "properties": {
+            "down_mbps": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 100000
+            },
+            "up_mbps": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 100000
+            }
+          },
+          "additionalProperties": false,
+          "description": "Score targets (the collector recomputes scores; default 25 / 10)."
+        },
+        "max_evidence_kib": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 256,
+          "description": "Serialized evidence per test (default and maximum 256)."
+        },
+        "stream_replay_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600,
+          "description": "SSE replay window for speedtests/stream (default 300)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "M6 speedtest storage, diagnosis and privacy (12 sections 5.3, 6, 9). Creds: speedtest_tokens.json, runner_tokens.json (sha256 maps, str or [current, previous] like the other token files), optional device_key_secret (expk_; lets the purge tool match a MAC against scrubbed rows)."
     }
   },
   "required": [

@@ -1,0 +1,80 @@
+{
+  "schema": "exp.runner.config/1",
+  "runner_id": "run-core",
+  "site": "hall-b",
+  "collector": {
+    "url": "https://10.32.98.25:8443",
+    "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6"
+  },
+  "drills_enabled": false,
+  "correlation": {
+    "enabled": true,
+    "window_before_s": 300,
+    "window_after_s": 120,
+    "poll_interval_s": 5,
+    "sources": {
+      "mist": {
+        "sites": [
+          {
+            "site_id": "00000000-0000-0000-0000-00000000aa01",
+            "name": "Summit venue"
+          }
+        ],
+        "zone_map": [
+          {
+            "zone": "hall-b",
+            "ap_name_prefix": "hallb-ap-"
+          },
+          {
+            "zone": "hall-a",
+            "ap_macs": [
+              "5c:5b:35:00:01:a0"
+            ]
+          }
+        ],
+        "max_calls_per_test": 6,
+        "cache_ttl_s": 30
+      },
+      "ec": {
+        "appliances": [
+          {
+            "ne_pk": "1.NE",
+            "hostname": "ec-core",
+            "wan_interfaces": [
+              "wan0"
+            ]
+          }
+        ],
+        "max_flows": 50,
+        "wan_util": {
+          "enabled": true,
+          "interval_s": 30
+        }
+      },
+      "syslog": {
+        "listen": [
+          "icmp:5514"
+        ],
+        "bind": "0.0.0.0",
+        "allow": [
+          "10.0.0.0/8"
+        ],
+        "rate_limit_lines_per_s": 200,
+        "max_line_bytes": 4096,
+        "ring_minutes": 60,
+        "tls": {
+          "mode": "self_signed"
+        }
+      },
+      "sse": {
+        "enabled": false
+      }
+    },
+    "privacy": {
+      "scrub_after_diagnosis": false
+    },
+    "speedtest_channel": {
+      "url": "http://127.0.0.1:8480/local/v1"
+    }
+  }
+}

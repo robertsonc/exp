@@ -1,0 +1,623 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speedtest.schema.json",
+  "title": "exp.speedtest/1",
+  "description": "Speedtest result as stored by the collector (12 section 7.1). Built by exp-speedtest from the page's submission (exp.speedtest.submission/1): the server OVERWRITES id, site, client.ip, timestamps it can observe and the score, bounds every number (<= 100 Gb/s, <= 60 s), cross-checks the local leg against its byte counters (flag counters_disagree above 20 %). ANONYMOUS BY CONSTRUCTION: additionalProperties is false everywhere and no field can carry a person's name, email, phone or account; device/network identity lives in exp.evidence/1 kind 'identity'.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.speedtest/1"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/st_id"
+    },
+    "site": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "zone": {
+      "$ref": "common.schema.json#/$defs/zone_id",
+      "description": "Resolved after the test from correlation (12 3.1): Mist AP/zone by client IP, else subnet->zone, else a QR hint, else 'unresolved'. Set to 'unresolved' (with flag nat_suspected) when identity resolution fails closed."
+    },
+    "zone_source": {
+      "enum": [
+        "qr",
+        "subnet",
+        "mist",
+        "dhcp",
+        "unresolved"
+      ],
+      "description": "How zone was determined. 'qr' = the ?z= hint stamped by the page (a hint only; flag zone_hint_conflict when correlation disagrees)."
+    },
+    "started": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "ended": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "client": {
+      "type": "object",
+      "properties": {
+        "ip": {
+          "$ref": "common.schema.json#/$defs/ip_addr",
+          "description": "Server-observed source address of the session (never client-reported). Correlation keys on it (D15)."
+        },
+        "ua": {
+          "$ref": "#/$defs/ua"
+        },
+        "connection_hint": {
+          "enum": [
+            "wifi",
+            "ethernet",
+            "cellular",
+            "other",
+            "unknown"
+          ],
+          "description": "navigator.connection.type when the browser exposes it; a hint only."
+        }
+      },
+      "required": [
+        "ip"
+      ],
+      "additionalProperties": false
+    },
+    "consent": {
+      "type": "object",
+      "properties": {
+        "text_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "text_version"
+      ],
+      "additionalProperties": false,
+      "description": "Version of the consent text shown before the test."
+    },
+    "legs": {
+      "type": "object",
+      "properties": {
+        "local": {
+          "$ref": "#/$defs/leg"
+        },
+        "internet": {
+          "$ref": "#/$defs/leg"
+        },
+        "dns": {
+          "$ref": "#/$defs/dns_leg"
+        },
+        "path": {
+          "$ref": "#/$defs/path_leg"
+        }
+      },
+      "required": [
+        "local"
+      ],
+      "additionalProperties": false,
+      "description": "Measured legs (12 4.2/7.1). 'internet' is present with status != ok when the leg could not run."
+    },
+    "score": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/score"
+        }
+      ],
+      "description": "null when no leg produced a throughput number."
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "nat_suspected",
+          "counters_disagree",
+          "internet_unavailable",
+          "internet_paused",
+          "internet_queued",
+          "dns_fallback",
+          "bytes_capped",
+          "partial",
+          "zone_hint_conflict"
+        ]
+      },
+      "maxItems": 16,
+      "uniqueItems": true,
+      "description": "Bounded flag set: nat_suspected (identity failed closed), counters_disagree (> 20 % client/server byte mismatch), internet_unavailable / internet_paused / internet_queued (why the internet leg is not ok), dns_fallback (probe DNS used), bytes_capped (per-test byte cap reached), partial (a leg aborted), zone_hint_conflict."
+    },
+    "comment": {
+      "type": "string",
+      "maxLength": 500,
+      "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+      "description": "Optional 'report a problem' text (SR-23): untrusted, <= 500 chars, rendered with textContent only. Newlines allowed, other control characters not."
+    },
+    "observed": {
+      "type": "object",
+      "properties": {
+        "received_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "server_id": {
+          "$ref": "common.schema.json#/$defs/slug"
+        },
+        "local_bytes_down": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1099511627776,
+          "description": "Box counter: bytes served on /st/down for this session."
+        },
+        "local_bytes_up": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1099511627776,
+          "description": "Box counter: bytes received on /st/up for this session."
+        },
+        "session_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Server-observed time from session creation to result submission."
+        }
+      },
+      "required": [
+        "received_at",
+        "server_id"
+      ],
+      "additionalProperties": false,
+      "description": "Server-observed facts (never client-reported)."
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "site",
+    "zone",
+    "zone_source",
+    "started",
+    "ended",
+    "client",
+    "consent",
+    "legs",
+    "score",
+    "flags",
+    "observed"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "leg": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "unavailable",
+            "paused",
+            "queued",
+            "skipped"
+          ],
+          "description": "ok = measured. unavailable (internet down / unreachable), paused (admin or WAN auto-pause), queued (no internet slot yet), skipped (client aborted). A non-ok leg carries no throughput numbers."
+        },
+        "down_mbps": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "Download throughput, Mb/s: 90th percentile of 250 ms samples after the ramp (12 4.2). <= 100 Gb/s."
+        },
+        "up_mbps": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "Upload throughput, Mb/s (same method)."
+        },
+        "idle_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Median idle RTT (20 pings for the local leg)."
+        },
+        "jitter_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Idle jitter."
+        },
+        "loaded_down_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Median RTT while the download ran (the bufferbloat figure)."
+        },
+        "loaded_up_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Median RTT while the upload ran."
+        },
+        "rpm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Round trips per minute under load (60000 / loaded latency)."
+        },
+        "cv": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Coefficient of variation of the throughput samples (stability input)."
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "description": "Failed requests during the leg (stability input)."
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1099511627776,
+          "description": "Bytes moved by this leg (browser count). For the local leg the box cross-checks it against its own counters."
+        },
+        "server": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "Server label: the box id for the local leg, 'cloudflare:<colo>' (3-letter IATA from /cdn-cgi/trace) for the internet leg."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One measured leg (12 7.1)."
+    },
+    "dns_leg": {
+      "type": "object",
+      "properties": {
+        "cold_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Resource Timing domainLookupEnd - domainLookupStart for a fresh nonce name (resolver recursed to the box's authoritative server)."
+        },
+        "warm_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Same for the repeated name (answered from the resolver's cache)."
+        },
+        "resolver_ip": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/ip_addr"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The resolver IP the box's DNS-leg server saw, or null."
+        },
+        "source": {
+          "enum": [
+            "browser",
+            "probe"
+          ],
+          "description": "browser = measured by the page through the device's own resolver; probe = fallback to the nearest probe's DNS line ('measured by the hall sensor') when the delegation is missing (flag dns_fallback)."
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "additionalProperties": false,
+      "description": "DNS leg (12 4.2)."
+    },
+    "path_leg": {
+      "type": "object",
+      "properties": {
+        "gateway_ms": {
+          "type": "object",
+          "properties": {
+            "idle": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "Idle RTT to the hop."
+            },
+            "loaded": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "RTT to the hop while the box's own link was loaded (during tests)."
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "description": "Number of samples behind the figures."
+            }
+          },
+          "required": [
+            "idle",
+            "loaded",
+            "samples"
+          ],
+          "additionalProperties": false,
+          "description": "Box-timed hop (ICMP / TTL-limited trace from the core box)."
+        },
+        "edge_ms": {
+          "type": "object",
+          "properties": {
+            "idle": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "Idle RTT to the hop."
+            },
+            "loaded": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "RTT to the hop while the box's own link was loaded (during tests)."
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "description": "Number of samples behind the figures."
+            }
+          },
+          "required": [
+            "idle",
+            "loaded",
+            "samples"
+          ],
+          "additionalProperties": false,
+          "description": "Box-timed hop (ICMP / TTL-limited trace from the core box)."
+        },
+        "edge1_ms": {
+          "type": "object",
+          "properties": {
+            "idle": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "Idle RTT to the hop."
+            },
+            "loaded": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "RTT to the hop while the box's own link was loaded (during tests)."
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "description": "Number of samples behind the figures."
+            }
+          },
+          "required": [
+            "idle",
+            "loaded",
+            "samples"
+          ],
+          "additionalProperties": false,
+          "description": "Box-timed hop (ICMP / TTL-limited trace from the core box)."
+        },
+        "edge1_addr": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/ipv4"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Address of the hop one past the edge, or null."
+        },
+        "device_icmp_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Box -> the requesting client only (per test). Never a client-chosen target (SR-22)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Core -> edge path timed by the box. gateway/edge/edge+1 are SHARED venue-infrastructure context (not per user); device_icmp_ms is per test (CR-m6-spec-resolutions)."
+    },
+    "ua": {
+      "type": "object",
+      "properties": {
+        "os_family": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "Parsed from the User-Agent by the server; the raw UA string is never stored."
+        },
+        "os_version": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "browser": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "device_class": {
+          "enum": [
+            "phone",
+            "tablet",
+            "desktop",
+            "other"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "Coarse client descriptors parsed by the server."
+    },
+    "score": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "speed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "responsiveness": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "stability": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "total",
+        "speed",
+        "responsiveness",
+        "stability"
+      ],
+      "additionalProperties": false,
+      "description": "exp score (12 4.2), always recomputed by the server (exp_common.speedtest.compute_score)."
+    },
+    "diagnosis": {
+      "type": "object",
+      "properties": {
+        "stage": {
+          "enum": [
+            "quick",
+            "final"
+          ],
+          "description": "quick = from the legs alone; final = after evidence is complete."
+        },
+        "updated": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "cause": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "enum": [
+                  "wifi_signal",
+                  "wifi_congestion",
+                  "wifi_roaming",
+                  "wired_port",
+                  "device_limit",
+                  "wan_saturation",
+                  "internet_path",
+                  "policy_block",
+                  "qos_shaping",
+                  "dns",
+                  "network_wide",
+                  "none"
+                ]
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "cites": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "wifi",
+                        "wired",
+                        "flows",
+                        "wan",
+                        "security",
+                        "baseline",
+                        "dns",
+                        "identity",
+                        "legs"
+                      ]
+                    },
+                    "ref": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "Pointer into the cited evidence (field path, flow index, log line id)"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "id",
+              "confidence",
+              "cites"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8,
+          "description": "Ordered, most likely first."
+        },
+        "user_text": {
+          "type": "string",
+          "maxLength": 280,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "Plain, blame-free sentence shown to the user."
+        },
+        "noc_text": {
+          "type": "string",
+          "maxLength": 600,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "Names the evidence (AP, channel, utilization, RSSI) for the NOC."
+        }
+      },
+      "required": [
+        "stage",
+        "updated",
+        "cause",
+        "user_text",
+        "noc_text"
+      ],
+      "additionalProperties": false,
+      "description": "Diagnosis produced by the collector rules (12 5.3). Not part of the wire result; part of GET speedtests/{id} and the user-safe status."
+    }
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "schema": "exp.speedtest/1",
+  "id": "st_notaulid",
+  "site": "hall-b",
+  "zone": "hallb-row12",
+  "zone_source": "mist",
+  "started": "2026-11-18T14:02:11.120Z",
+  "ended": "2026-11-18T14:02:27.540Z",
+  "client": {
+    "ip": "10.60.14.77",
+    "ua": {
+      "os_family": "iOS",
+      "os_version": "18.1",
+      "browser": "Safari",
+      "device_class": "phone"
+    },
+    "connection_hint": "wifi"
+  },
+  "consent": {
+    "text_version": 3
+  },
+  "legs": {
+    "local": {
+      "status": "ok",
+      "down_mbps": 212.4,
+      "up_mbps": 88.1,
+      "idle_ms": 6.2,
+      "jitter_ms": 1.1,
+      "loaded_down_ms": 41.0,
+      "loaded_up_ms": 55.3,
+      "rpm": 1084,
+      "cv": 0.12,
+      "failures": 0,
+      "bytes": 190000000,
+      "server": "spd-core"
+    },
+    "internet": {
+      "status": "ok",
+      "down_mbps": 184.0,
+      "up_mbps": 61.7,
+      "idle_ms": 18.9,
+      "jitter_ms": 2.4,
+      "loaded_down_ms": 96.0,
+      "loaded_up_ms": 120.4,
+      "rpm": 498,
+      "cv": 0.21,
+      "failures": 0,
+      "bytes": 150000000,
+      "server": "cloudflare:FRA"
+    },
+    "dns": {
+      "cold_ms": 38.0,
+      "warm_ms": 2.1,
+      "resolver_ip": "10.0.0.53",
+      "source": "browser"
+    },
+    "path": {
+      "gateway_ms": {
+        "idle": 0.4,
+        "loaded": 0.9,
+        "samples": 40
+      },
+      "edge_ms": {
+        "idle": 0.7,
+        "loaded": 1.8,
+        "samples": 40
+      },
+      "edge1_ms": {
+        "idle": 4.1,
+        "loaded": 9.6,
+        "samples": 40
+      },
+      "edge1_addr": "203.0.113.1",
+      "device_icmp_ms": 5.9
+    }
+  },
+  "score": {
+    "total": 78,
+    "speed": 100,
+    "responsiveness": 67,
+    "stability": 58
+  },
+  "flags": [],
+  "observed": {
+    "received_at": "2026-11-18T14:02:27.900Z",
+    "server_id": "spd-core",
+    "local_bytes_down": 190000000,
+    "local_bytes_up": 61000000,
+    "session_ms": 16780
+  }
+}

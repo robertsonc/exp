@@ -79,7 +79,7 @@
           "$ref": "common.schema.json#/$defs/hostport"
         },
         "url": {
-          "$ref": "common.schema.json#/$defs/https_url"
+          "$ref": "common.schema.json#/$defs/http_url"
         },
         "collector_reachable": {
           "type": "boolean"
@@ -92,9 +92,15 @@
             "netns",
             "host"
           ]
+        },
+        "tls_mode": {
+          "enum": [
+            "none",
+            "provided"
+          ]
         }
       },
-      "description": "Expected keys by type -- probe: collector_reachable, collector_url, mode. collector: tls_fingerprint_sha256, listen. dashboard: tls_fingerprint_sha256, url. runner: inventory (bounded). speedtest: url, tls_fingerprint_sha256.",
+      "description": "Expected keys by type -- probe: collector_reachable, collector_url, mode. collector: tls_fingerprint_sha256, listen. dashboard: tls_fingerprint_sha256, url. runner: inventory (bounded). speedtest: url (http:// by default, https:// when tls.mode = provided), tls_fingerprint_sha256 (only when provided), tls_mode.",
       "additionalProperties": true
     }
   },

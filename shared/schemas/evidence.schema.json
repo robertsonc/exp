@@ -1,0 +1,2767 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evidence.schema.json",
+  "title": "exp.evidence/1",
+  "description": "Evidence bundle piece posted by the runner to the collector (POST speedtests/{id}/evidence, 12 sections 5.2/7.2): one document per kind. Bounded: at most 256 KiB serialized per test across all kinds (enforced by the collector), top-50 flows, at most 200 log lines. Field names come ONLY from the vendor references named in each description (Mist OAS 3.1 in the mistapi 0.64.1 SDK, MIT; HPE pyedgeconnect 0.16.0a1, MIT); HPE Aruba SSE has no local vendor documentation, so there is no SSE connector (CR-m6-spec-resolutions). additionalProperties is false everywhere: nothing outside these fields (e.g. Mist guest name/email) can be stored.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.evidence/1"
+    }
+  },
+  "required": [
+    "schema"
+  ],
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ev_wifi"
+    },
+    {
+      "$ref": "#/$defs/ev_wired"
+    },
+    {
+      "$ref": "#/$defs/ev_flows"
+    },
+    {
+      "$ref": "#/$defs/ev_wan"
+    },
+    {
+      "$ref": "#/$defs/ev_security"
+    },
+    {
+      "$ref": "#/$defs/ev_baseline"
+    },
+    {
+      "$ref": "#/$defs/ev_dns"
+    },
+    {
+      "$ref": "#/$defs/ev_identity"
+    }
+  ],
+  "$defs": {
+    "data_wifi": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "type": "object",
+          "properties": {
+            "mac": {
+              "$ref": "common.schema.json#/$defs/mac"
+            },
+            "ap_mac": {
+              "$ref": "common.schema.json#/$defs/mac",
+              "description": "stats_wireless_client.ap_mac (AP the client is connected to)."
+            },
+            "ap_id": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.ap_id"
+            },
+            "bssid": {
+              "type": "string",
+              "maxLength": 17,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.bssid"
+            },
+            "ssid": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.ssid"
+            },
+            "band": {
+              "enum": [
+                "24",
+                "5",
+                "5-dedicated",
+                "5-selectable",
+                "6",
+                "6-dedicated",
+                "6-selectable"
+              ],
+              "description": "stats_wireless_client.band (enum copied from the OAS)."
+            },
+            "channel": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 400,
+              "description": "stats_wireless_client.channel"
+            },
+            "proto": {
+              "enum": [
+                "a",
+                "ac",
+                "ax",
+                "b",
+                "be",
+                "g",
+                "n"
+              ],
+              "description": "stats_wireless_client.proto (802.11 amendment, enum copied from the OAS)."
+            },
+            "rssi": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": -150,
+              "maximum": 0,
+              "description": "stats_wireless_client.rssi (dBm)"
+            },
+            "snr": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": -20,
+              "maximum": 120,
+              "description": "stats_wireless_client.snr (dB)"
+            },
+            "tx_rate_mbps": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "stats_wireless_client.tx_rate (Mbps)"
+            },
+            "rx_rate_mbps": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "stats_wireless_client.rx_rate (Mbps)"
+            },
+            "tx_retries": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.tx_retries (counter since connection)"
+            },
+            "rx_retries": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.rx_retries (counter since connection)"
+            },
+            "tx_pkts": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.tx_pkts"
+            },
+            "rx_pkts": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.rx_pkts"
+            },
+            "tx_bps": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.tx_bps"
+            },
+            "rx_bps": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.rx_bps"
+            },
+            "idle_time_s": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.idle_time (seconds since the last RX packet)"
+            },
+            "uptime_s": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.uptime (seconds connected)"
+            },
+            "power_saving": {
+              "type": "boolean",
+              "description": "stats_wireless_client.power_saving"
+            },
+            "dual_band": {
+              "type": "boolean",
+              "description": "stats_wireless_client.dual_band"
+            },
+            "key_mgmt": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.key_mgmt"
+            },
+            "vlan_id": {
+              "type": "string",
+              "maxLength": 16,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.vlan_id"
+            },
+            "wlan_id": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.wlan_id"
+            },
+            "manufacture": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.manufacture (device manufacturer via fingerprint/OUI)"
+            },
+            "family": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.family (device family)"
+            },
+            "os": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.os"
+            },
+            "model": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_wireless_client.model"
+            },
+            "last_seen": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_wireless_client.last_seen (epoch seconds)"
+            },
+            "retry_pct": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100,
+              "description": "DERIVED by the runner: (tx_retries / tx_pkts) * 100. Not a Mist field."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Client stats at test time. Source: Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json), schema stats_wireless_client (operationId getSiteWirelessClientStats / listSiteWirelessClientsStats). Deliberately omits the Mist guest object (it carries name/email) and username/psk fields: identity evidence carries the allowed ones."
+        },
+        "ap": {
+          "type": "object",
+          "properties": {
+            "mac": {
+              "$ref": "common.schema.json#/$defs/mac"
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_ap.name"
+            },
+            "model": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_ap.model"
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_ap.version"
+            },
+            "status": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_ap.status"
+            },
+            "num_clients": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "stats_ap.num_clients"
+            },
+            "uptime_s": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_ap.uptime"
+            },
+            "cpu_util": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100,
+              "description": "stats_ap.cpu_util"
+            },
+            "power_constrained": {
+              "type": "boolean",
+              "description": "stats_ap.power_constrained"
+            },
+            "radio": {
+              "type": "object",
+              "properties": {
+                "band": {
+                  "enum": [
+                    "24",
+                    "5",
+                    "6"
+                  ],
+                  "description": "Which stats_ap.radio_stat key the client's radio is: band_24 / band_5 / band_6."
+                },
+                "channel": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 400,
+                  "description": "ap_radio_stat.channel"
+                },
+                "bandwidth_mhz": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 160,
+                  "description": "ap_radio_stat.bandwidth (0, 20, 40, 80, 160)"
+                },
+                "power_dbm": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": -20,
+                  "maximum": 60,
+                  "description": "ap_radio_stat.power"
+                },
+                "noise_floor_dbm": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": -150,
+                  "maximum": 0,
+                  "description": "ap_radio_stat.noise_floor"
+                },
+                "num_clients": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100000,
+                  "description": "ap_radio_stat.num_clients"
+                },
+                "util_all": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "ap_radio_stat.util_all (%)"
+                },
+                "util_tx": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "ap_radio_stat.util_tx (%)"
+                },
+                "util_rx_in_bss": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "ap_radio_stat.util_rx_in_bss (%)"
+                },
+                "util_rx_other_bss": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "ap_radio_stat.util_rx_other_bss (%)"
+                },
+                "util_non_wifi": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "ap_radio_stat.util_non_wifi (%): interference"
+                },
+                "util_unknown_wifi": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "ap_radio_stat.util_unknown_wifi (%)"
+                },
+                "util_undecodable_wifi": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "ap_radio_stat.util_undecodable_wifi (%)"
+                }
+              },
+              "additionalProperties": false,
+              "description": "stats_ap.radio_stat.<band> (schema ap_radio_stat, Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json))."
+            }
+          },
+          "additionalProperties": false,
+          "description": "AP the client was on: stats_ap (operationId listSiteDevicesStats type=ap) incl. radio_stat. Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json)"
+        },
+        "roams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number",
+                "minimum": 0,
+                "description": "event_fastroam.timestamp (epoch seconds)"
+              },
+              "from_ap_mac": {
+                "$ref": "common.schema.json#/$defs/mac",
+                "description": "event_fastroam.fromap"
+              },
+              "ap_mac": {
+                "$ref": "common.schema.json#/$defs/mac",
+                "description": "event_fastroam.ap_mac (destination AP)"
+              },
+              "type": {
+                "enum": [
+                  "fail",
+                  "none",
+                  "pingpong",
+                  "poor",
+                  "slow",
+                  "success"
+                ],
+                "description": "event_fastroam.type (enum copied from the OAS)"
+              },
+              "latency_s": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 600,
+                "description": "event_fastroam.latency (seconds)"
+              },
+              "ssid": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "event_fastroam.ssid"
+              }
+            },
+            "required": [
+              "timestamp",
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50,
+          "description": "Roams of this client in the window: GET /sites/{site_id}/events/fast_roam, operationId listSiteRoamingEvents, schema event_fastroam. Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json)"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number",
+                "minimum": 0,
+                "description": "events_client.timestamp (epoch seconds)"
+              },
+              "type": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "events_client.type. Type names are discovered from Mist's event constants at runtime, never hard-coded here."
+              },
+              "type_code": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 100000,
+                "description": "events_client.type_code (reason code of association / disassociation events)"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "events_client.text"
+              },
+              "ssid": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "events_client.ssid"
+              },
+              "bssid": {
+                "type": "string",
+                "maxLength": 17,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "events_client.bssid"
+              },
+              "ap_mac": {
+                "$ref": "common.schema.json#/$defs/mac",
+                "description": "events_client.ap"
+              },
+              "band": {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "events_client.band"
+              },
+              "channel": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 400,
+                "description": "events_client.channel"
+              },
+              "proto": {
+                "type": "string",
+                "maxLength": 8,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "events_client.proto"
+              },
+              "wlan_id": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "events_client.wlan_id"
+              }
+            },
+            "required": [
+              "timestamp",
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 100,
+          "description": "Client events in the window: operationId searchSiteWirelessClientEvents, schema events_client. Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json)"
+        },
+        "roam_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "description": "DERIVED by the runner: number of roams with type != none in the window."
+        },
+        "auth_failures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "description": "DERIVED by the runner: events classified as authentication failures (classification from Mist's runtime event constants)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "kind=wifi (Mist wireless). Every key is optional (a status partial/unavailable evidence carries what was obtainable). Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json)"
+    },
+    "ev_wifi": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "exp.evidence/1"
+        },
+        "test_id": {
+          "$ref": "common.schema.json#/$defs/st_id"
+        },
+        "kind": {
+          "const": "wifi"
+        },
+        "source": {
+          "enum": [
+            "mist",
+            "ec",
+            "syslog",
+            "sse",
+            "exp"
+          ],
+          "description": "Where the data came from (allowed for this kind: mist, syslog)."
+        },
+        "collected_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Correlation window [start - window_before_s, end + window_after_s] (default 5 min / 2 min)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "error"
+          ],
+          "description": "ok = full; partial = some calls failed / rate budget hit; unavailable = connector not configured or no data; error = the pull failed (data is {})."
+        },
+        "data": {
+          "$ref": "#/$defs/data_wifi"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxItems": 20,
+          "description": "Source ids of what was pulled (Mist client/event ids, EC flow ids, syslog line ids)."
+        }
+      },
+      "required": [
+        "schema",
+        "test_id",
+        "kind",
+        "source",
+        "collected_at",
+        "window",
+        "status",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "data_wired": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "type": "object",
+          "properties": {
+            "mac": {
+              "$ref": "common.schema.json#/$defs/mac"
+            },
+            "ip": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/ip_addr"
+              },
+              "maxItems": 8,
+              "description": "wired_client_response.ip"
+            },
+            "vlan": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4094
+              },
+              "maxItems": 8,
+              "description": "wired_client_response.vlan"
+            },
+            "port_id": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "maxItems": 8,
+              "description": "wired_client_response.port_id"
+            },
+            "device_mac": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/mac"
+              },
+              "maxItems": 8,
+              "description": "wired_client_response.device_mac (switch / gateway MACs)"
+            },
+            "auth_method": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "wired_client_response.auth_method"
+            },
+            "auth_state": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "wired_client_response.auth_state"
+            },
+            "dhcp_hostname": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "wired_client_response.dhcp_hostname"
+            },
+            "dhcp_fqdn": {
+              "type": "string",
+              "maxLength": 253,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "wired_client_response.dhcp_fqdn"
+            },
+            "dhcp_vendor_class_identifier": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "wired_client_response.dhcp_vendor_class_identifier"
+            },
+            "timestamp": {
+              "type": "number",
+              "minimum": 0,
+              "description": "wired_client_response.timestamp (epoch seconds)"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Wired client record: operationId searchSiteWiredClients, schema wired_client_response. Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json)"
+        },
+        "port": {
+          "type": "object",
+          "properties": {
+            "switch_mac": {
+              "$ref": "common.schema.json#/$defs/mac",
+              "description": "stats_switch_port.mac (switch that reported the port)"
+            },
+            "port_id": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_switch_port.port_id"
+            },
+            "up": {
+              "type": "boolean",
+              "description": "stats_switch_port.up"
+            },
+            "disabled": {
+              "type": "boolean",
+              "description": "stats_switch_port.disabled"
+            },
+            "speed_mbps": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1000000,
+              "description": "stats_switch_port.speed (Mbps)"
+            },
+            "full_duplex": {
+              "type": "boolean",
+              "description": "stats_switch_port.full_duplex"
+            },
+            "rx_errors": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_switch_port.rx_errors"
+            },
+            "tx_errors": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_switch_port.tx_errors"
+            },
+            "rx_bps": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_switch_port.rx_bps"
+            },
+            "tx_bps": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_switch_port.tx_bps"
+            },
+            "rx_pkts": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_switch_port.rx_pkts"
+            },
+            "tx_pkts": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_switch_port.tx_pkts"
+            },
+            "last_flapped": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "stats_switch_port.last_flapped"
+            },
+            "mac_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "stats_switch_port.mac_count"
+            },
+            "stp_state": {
+              "type": "string",
+              "maxLength": 16,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_switch_port.stp_state"
+            },
+            "stp_role": {
+              "type": "string",
+              "maxLength": 16,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_switch_port.stp_role"
+            },
+            "poe_on": {
+              "type": "boolean",
+              "description": "stats_switch_port.poe_on"
+            },
+            "poe_mode": {
+              "type": "string",
+              "maxLength": 16,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_switch_port.poe_mode"
+            },
+            "power_draw_w": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1000,
+              "description": "stats_switch_port.power_draw (W)"
+            },
+            "auth_state": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_switch_port.auth_state"
+            },
+            "port_usage": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_switch_port.port_usage"
+            },
+            "uplink": {
+              "type": "boolean",
+              "description": "stats_switch_port.uplink"
+            },
+            "neighbor_system_name": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "stats_switch_port.neighbor_system_name"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Switch port: operationId searchSiteSwOrGwPorts, schema stats_switch_port. Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json)"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number",
+                "minimum": 0,
+                "description": "device_event.timestamp (epoch seconds)"
+              },
+              "type": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "device_event.type"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "device_event.text"
+              },
+              "port_id": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "device_event.port_id"
+              },
+              "device_name": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "device_event.device_name"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "device_event.reason"
+              }
+            },
+            "required": [
+              "timestamp",
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50,
+          "description": "Switch port events: operationId searchSiteDeviceEvents, schema device_event. Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json)"
+        }
+      },
+      "additionalProperties": false,
+      "description": "kind=wired (Mist wired clients behind Mist-managed switches). Mist OpenAPI 3.1 (mistapi 0.64.1 mist_openapi/mist.openapi.json)"
+    },
+    "ev_wired": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "exp.evidence/1"
+        },
+        "test_id": {
+          "$ref": "common.schema.json#/$defs/st_id"
+        },
+        "kind": {
+          "const": "wired"
+        },
+        "source": {
+          "enum": [
+            "mist",
+            "ec",
+            "syslog",
+            "sse",
+            "exp"
+          ],
+          "description": "Where the data came from (allowed for this kind: mist, syslog)."
+        },
+        "collected_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Correlation window [start - window_before_s, end + window_after_s] (default 5 min / 2 min)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "error"
+          ],
+          "description": "ok = full; partial = some calls failed / rate budget hit; unavailable = connector not configured or no data; error = the pull failed (data is {})."
+        },
+        "data": {
+          "$ref": "#/$defs/data_wired"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxItems": 20,
+          "description": "Source ids of what was pulled (Mist client/event ids, EC flow ids, syslog line ids)."
+        }
+      },
+      "required": [
+        "schema",
+        "test_id",
+        "kind",
+        "source",
+        "collected_at",
+        "window",
+        "status",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "data_flows": {
+      "type": "object",
+      "properties": {
+        "appliance": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "EdgeConnect appliance id (nePk, e.g. '3.NE')."
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "total_flows": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "get_appliance_flows response total_flows"
+            },
+            "matched_flows": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "get_appliance_flows response matched_flows"
+            },
+            "returned_flows": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "get_appliance_flows response returned_flows"
+            },
+            "flows_firewall_dropped": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "get_appliance_flows response active.flows_firewall_dropped + inactive.flows_firewall_dropped"
+            },
+            "flows_route_dropped": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "get_appliance_flows response active.flows_route_dropped + inactive.flows_route_dropped"
+            }
+          },
+          "additionalProperties": false,
+          "description": "pyedgeconnect 0.16.0a1 orch/_flow.py get_appliance_flows (GET /flow?nePk=...&ip1=<client ip>)."
+        },
+        "flows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "application": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [3] Application Name"
+              },
+              "ip1": {
+                "$ref": "common.schema.json#/$defs/ip_addr"
+              },
+              "port1": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 65535,
+                "description": "flow row [10] Port1 (source)"
+              },
+              "ip2": {
+                "$ref": "common.schema.json#/$defs/ip_addr"
+              },
+              "port2": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 65535,
+                "description": "flow row [17] Port2 (destination)"
+              },
+              "protocol": {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [26] Protocol (e.g. tcp)"
+              },
+              "bytes_in_tx": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "flow row [20] Inbound TX bytes"
+              },
+              "bytes_in_rx": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "flow row [21] Inbound RX bytes"
+              },
+              "bytes_out_rx": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "flow row [22] Outbound RX bytes"
+              },
+              "bytes_out_tx": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "flow row [23] Outbound TX bytes"
+              },
+              "bytes_total": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "DERIVED by the runner: sum of the four byte counters (the sort key for top-50)."
+              },
+              "uptime_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "flow row [25] Uptime in ms"
+              },
+              "outbound_tunnel": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [27] Outbound Tunnel Id"
+              },
+              "inbound_tunnel": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [28] Inbound Tunnel Id"
+              },
+              "overlay": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [60] Business Intent Overlay (e.g. DefaultOverlay)"
+              },
+              "lan_vlan": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 4094,
+                "description": "flow row [30] LAN side VLAN"
+              },
+              "traffic_class": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 10,
+                "description": "flow row [31] QoS Traffic Class (1-10)"
+              },
+              "lan_dscp": {
+                "type": "string",
+                "maxLength": 32,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [32] LAN DSCP treatment"
+              },
+              "wan_dscp": {
+                "type": "string",
+                "maxLength": 32,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [33] WAN DSCP treatment"
+              },
+              "app_type": {
+                "type": "string",
+                "maxLength": 32,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [58] Application Type (Idle, Voice, Video_Conferencing, Video_Streaming, Bulk_Data_transfer, Interactive)"
+              },
+              "start_s": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "flow row [38] Flow Start Time (unix seconds)"
+              },
+              "end_s": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "flow row [39] Flow End Time (unix seconds)"
+              },
+              "slow_duration": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "flow row [43] TCP Slow Duration"
+              },
+              "from_zone": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "flow row [46] From Zone (integer zone id)"
+              },
+              "to_zone": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "flow row [47] To Zone (integer zone id)"
+              },
+              "firewall_dropped": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1,
+                "description": "flow row [48] dropped by security policy (ZBF): 0 not dropped"
+              },
+              "drop_reason": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 2,
+                "description": "flow row [59] Drop reason: 0 not dropped, 1 dropped by ZBF, 2 dropped due to routing decision"
+              },
+              "nat_type": {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [57] NAT Type (LAN_SNAT, LAN_DNAT, WAN_SNAT, WAN_DNAT)"
+              },
+              "domain": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "flow row [45] IP2 Domain Name: host only, never a full URL"
+              }
+            },
+            "required": [
+              "ip1",
+              "ip2"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50,
+          "description": "Top flows by bytes (at most 50). Positional row indexes per the pyedgeconnect docstring of get_appliance_flows; the runner maps them to these names."
+        }
+      },
+      "additionalProperties": false,
+      "description": "kind=flows (EdgeConnect). pyedgeconnect 0.16.0a1 orch/"
+    },
+    "ev_flows": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "exp.evidence/1"
+        },
+        "test_id": {
+          "$ref": "common.schema.json#/$defs/st_id"
+        },
+        "kind": {
+          "const": "flows"
+        },
+        "source": {
+          "enum": [
+            "mist",
+            "ec",
+            "syslog",
+            "sse",
+            "exp"
+          ],
+          "description": "Where the data came from (allowed for this kind: ec, syslog)."
+        },
+        "collected_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Correlation window [start - window_before_s, end + window_after_s] (default 5 min / 2 min)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "error"
+          ],
+          "description": "ok = full; partial = some calls failed / rate budget hit; unavailable = connector not configured or no data; error = the pull failed (data is {})."
+        },
+        "data": {
+          "$ref": "#/$defs/data_flows"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxItems": 20,
+          "description": "Source ids of what was pulled (Mist client/event ids, EC flow ids, syslog line ids)."
+        }
+      },
+      "required": [
+        "schema",
+        "test_id",
+        "kind",
+        "source",
+        "collected_at",
+        "window",
+        "status",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "data_wan": {
+      "type": "object",
+      "properties": {
+        "appliances": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ne_pk": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "Appliance id (nePk)"
+              },
+              "hostname": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "appliance hostName (_appliance.py get_appliances)"
+              },
+              "state": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 5,
+                "description": "appliance state: 0 unknown, 1 normal, 2 unreachable, 3 unsupported version, 4 out of sync, 5 sync in progress (_appliance.py)"
+              },
+              "interfaces": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ifname": {
+                      "type": "string",
+                      "maxLength": 32,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "interfaceState ifInfo[].ifname (e.g. wan1)"
+                    },
+                    "wan_if": {
+                      "type": "boolean",
+                      "description": "ifInfo[].wan-if"
+                    },
+                    "lan_if": {
+                      "type": "boolean",
+                      "description": "ifInfo[].lan-if"
+                    },
+                    "admin": {
+                      "type": "boolean",
+                      "description": "ifInfo[].admin"
+                    },
+                    "oper": {
+                      "type": "boolean",
+                      "description": "ifInfo[].oper"
+                    },
+                    "if_speed": {
+                      "type": "string",
+                      "maxLength": 32,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "ifInfo[].ifSpeed (string as returned)"
+                    },
+                    "duplex": {
+                      "type": "string",
+                      "maxLength": 32,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "ifInfo[].duplex (e.g. 'full (auto)')"
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 16,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "ifInfo[].label (interface label id)"
+                    },
+                    "public_ip": {
+                      "$ref": "common.schema.json#/$defs/ip_addr",
+                      "description": "ifInfo[].publicIp"
+                    },
+                    "max_wan_bandwidth_kbps": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "description": "interfaceState scalars.maxWanBandwidth (kbps)"
+                    },
+                    "rx_bps": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "description": "DERIVED by the runner from stats/timeseries/interface (column names come from the response COLUMN_DEF at runtime)"
+                    },
+                    "tx_bps": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "description": "DERIVED (as rx_bps)"
+                    },
+                    "util_pct": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "maximum": 1000,
+                      "description": "DERIVED by the runner: peak(rx_bps, tx_bps) / max bandwidth * 100 for the test window. The auto-pause signal (default pause at 80)."
+                    }
+                  },
+                  "required": [
+                    "ifname"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 16,
+                "description": "interfaceState (_interface_state.py get_appliance_interface_state): GET /interfaceState?nePk=...&cached=..."
+              },
+              "health": {
+                "type": "object",
+                "properties": {
+                  "latency": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tunnel_id": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                          "description": "health *PeriodSummary tunnelId (alias of the tunnel violating a threshold)"
+                        },
+                        "health_status": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                          "description": "health *PeriodSummary healthStatus (HEALTHY when thresholds are met)"
+                        },
+                        "critical_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "criticalMins"
+                        },
+                        "major_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "majorMins"
+                        },
+                        "normal_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "normalMins"
+                        },
+                        "max": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Maximum observed value during the hour: 'max' (latency, jitter, mos) or 'maxLossPercentage' (loss). Units as returned by the Orchestrator (not documented in pyedgeconnect; the runner does not convert)."
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16,
+                    "description": "GET /health/latencyPeriodSummary"
+                  },
+                  "loss": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tunnel_id": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                          "description": "health *PeriodSummary tunnelId (alias of the tunnel violating a threshold)"
+                        },
+                        "health_status": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                          "description": "health *PeriodSummary healthStatus (HEALTHY when thresholds are met)"
+                        },
+                        "critical_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "criticalMins"
+                        },
+                        "major_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "majorMins"
+                        },
+                        "normal_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "normalMins"
+                        },
+                        "max": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Maximum observed value during the hour: 'max' (latency, jitter, mos) or 'maxLossPercentage' (loss). Units as returned by the Orchestrator (not documented in pyedgeconnect; the runner does not convert)."
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16,
+                    "description": "GET /health/lossPeriodSummary"
+                  },
+                  "jitter": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tunnel_id": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                          "description": "health *PeriodSummary tunnelId (alias of the tunnel violating a threshold)"
+                        },
+                        "health_status": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                          "description": "health *PeriodSummary healthStatus (HEALTHY when thresholds are met)"
+                        },
+                        "critical_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "criticalMins"
+                        },
+                        "major_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "majorMins"
+                        },
+                        "normal_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "normalMins"
+                        },
+                        "max": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Maximum observed value during the hour: 'max' (latency, jitter, mos) or 'maxLossPercentage' (loss). Units as returned by the Orchestrator (not documented in pyedgeconnect; the runner does not convert)."
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16,
+                    "description": "GET /health/jitterPeriodSummary"
+                  },
+                  "mos": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tunnel_id": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                          "description": "health *PeriodSummary tunnelId (alias of the tunnel violating a threshold)"
+                        },
+                        "health_status": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                          "description": "health *PeriodSummary healthStatus (HEALTHY when thresholds are met)"
+                        },
+                        "critical_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "criticalMins"
+                        },
+                        "major_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "majorMins"
+                        },
+                        "normal_mins": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 60,
+                          "description": "normalMins"
+                        },
+                        "max": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Maximum observed value during the hour: 'max' (latency, jitter, mos) or 'maxLossPercentage' (loss). Units as returned by the Orchestrator (not documented in pyedgeconnect; the runner does not convert)."
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16,
+                    "description": "GET /health/mosPeriodSummary"
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Per-hour tunnel health summaries (_health.py get_health_latency / get_health_loss / get_health_jitter / get_health_mos)."
+              },
+              "alarms": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sequence_id": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "alarm sequenceId"
+                    },
+                    "severity": {
+                      "enum": [
+                        "warning",
+                        "minor",
+                        "major",
+                        "critical"
+                      ],
+                      "description": "alarm severity (_alarm.py)"
+                    },
+                    "type": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "alarm type"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "alarm name"
+                    },
+                    "description": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "alarm description"
+                    },
+                    "time_occurred_ms": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "alarm timeOccurredInMills (epoch ms)"
+                    },
+                    "occurrence_count": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "description": "alarm occurrenceCount"
+                    },
+                    "service_affect": {
+                      "type": "boolean",
+                      "description": "alarm serviceAffect"
+                    },
+                    "closed": {
+                      "type": "boolean",
+                      "description": "alarm closed"
+                    },
+                    "cleared_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "description": "alarm clearedTimeInMills"
+                    },
+                    "host_name": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                      "description": "alarm hostName"
+                    }
+                  },
+                  "required": [
+                    "severity",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 50,
+                "description": "Alarms in the window: POST /alarm/appliance (_alarm.py get_alarms_from_appliances)."
+              },
+              "timeseries": {
+                "type": "object",
+                "properties": {
+                  "columns": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                    },
+                    "maxItems": 32,
+                    "description": "COLUMN_DEF of GET /stats/timeseries/interface (names are whatever the Orchestrator returns; the docstring documents only the COLUMN_DEF/DATA structure)"
+                  },
+                  "rows": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 128
+                      },
+                      "maxItems": 32
+                    },
+                    "maxItems": 120,
+                    "description": "DATA rows, one array per timestamp, same order as columns"
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Raw bounded interface time series (_timeseries_stats.py get_timeseries_stats_interface_single_appliance), kept so the NOC can chart WAN use."
+              }
+            },
+            "required": [
+              "ne_pk"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8,
+          "description": "One entry per appliance of the site."
+        },
+        "wan_util_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "DERIVED by the runner: the highest util_pct over all WAN interfaces. Pushed to the speedtest localhost channel for the internet-leg auto-pause."
+        }
+      },
+      "additionalProperties": false,
+      "description": "kind=wan (EdgeConnect). pyedgeconnect 0.16.0a1 orch/"
+    },
+    "ev_wan": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "exp.evidence/1"
+        },
+        "test_id": {
+          "$ref": "common.schema.json#/$defs/st_id"
+        },
+        "kind": {
+          "const": "wan"
+        },
+        "source": {
+          "enum": [
+            "mist",
+            "ec",
+            "syslog",
+            "sse",
+            "exp"
+          ],
+          "description": "Where the data came from (allowed for this kind: ec, syslog)."
+        },
+        "collected_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Correlation window [start - window_before_s, end + window_after_s] (default 5 min / 2 min)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "error"
+          ],
+          "description": "ok = full; partial = some calls failed / rate budget hit; unavailable = connector not configured or no data; error = the pull failed (data is {})."
+        },
+        "data": {
+          "$ref": "#/$defs/data_wan"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxItems": 20,
+          "description": "Source ids of what was pulled (Mist client/event ids, EC flow ids, syslog line ids)."
+        }
+      },
+      "required": [
+        "schema",
+        "test_id",
+        "kind",
+        "source",
+        "collected_at",
+        "window",
+        "status",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "data_security": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ts": {
+                "$ref": "common.schema.json#/$defs/ts"
+              },
+              "source": {
+                "enum": [
+                  "ec",
+                  "sse",
+                  "syslog"
+                ]
+              },
+              "format": {
+                "enum": [
+                  "rfc5424",
+                  "cef",
+                  "leef",
+                  "kv",
+                  "raw"
+                ],
+                "description": "Parser that handled the line (12 5.2). Vendor key names are parser input, cited in the runner's recorded-line tests."
+              },
+              "action": {
+                "enum": [
+                  "deny",
+                  "drop",
+                  "block",
+                  "reset",
+                  "limit",
+                  "alert",
+                  "allow",
+                  "other"
+                ]
+              },
+              "category": {
+                "enum": [
+                  "firewall",
+                  "zbf",
+                  "url",
+                  "ips",
+                  "nat",
+                  "session_limit",
+                  "other"
+                ]
+              },
+              "src_ip": {
+                "$ref": "common.schema.json#/$defs/ip_addr"
+              },
+              "src_port": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 65535
+              },
+              "dst_ip": {
+                "$ref": "common.schema.json#/$defs/ip_addr"
+              },
+              "dst_port": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 65535
+              },
+              "proto": {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "rule": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "zone_from": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "zone_to": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "host": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "Destination host only; never a full URL unless the event enabled URL detail."
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000,
+                "description": "Collapsed repeats of an identical line."
+              },
+              "raw": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "The line, bounded; never executed or followed (SR-24)."
+              }
+            },
+            "required": [
+              "ts",
+              "source",
+              "action"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 200,
+          "description": "At most 200 matching lines/decisions for the client IP in the window."
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "deny": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "drop": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "block": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "session_limit": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "description": "Totals before truncation."
+        },
+        "ec_dropped_flows": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Flows with drop_reason 1/2 from kind=flows (firewall/route drops), when EC flows were available."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when more lines matched than events carries."
+        }
+      },
+      "additionalProperties": false,
+      "description": "kind=security. Normalized from syslog (EC firewall / zone-policy, CEF, LEEF, RFC 5424, key=value), SSE (unavailable: no vendor docs, CR-m6-spec-resolutions) and EC flow drops (flows[].firewall_dropped / drop_reason)."
+    },
+    "ev_security": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "exp.evidence/1"
+        },
+        "test_id": {
+          "$ref": "common.schema.json#/$defs/st_id"
+        },
+        "kind": {
+          "const": "security"
+        },
+        "source": {
+          "enum": [
+            "mist",
+            "ec",
+            "syslog",
+            "sse",
+            "exp"
+          ],
+          "description": "Where the data came from (allowed for this kind: syslog, sse, ec)."
+        },
+        "collected_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Correlation window [start - window_before_s, end + window_after_s] (default 5 min / 2 min)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "error"
+          ],
+          "description": "ok = full; partial = some calls failed / rate budget hit; unavailable = connector not configured or no data; error = the pull failed (data is {})."
+        },
+        "data": {
+          "$ref": "#/$defs/data_security"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxItems": 20,
+          "description": "Source ids of what was pulled (Mist client/event ids, EC flow ids, syslog line ids)."
+        }
+      },
+      "required": [
+        "schema",
+        "test_id",
+        "kind",
+        "source",
+        "collected_at",
+        "window",
+        "status",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "data_baseline": {
+      "type": "object",
+      "properties": {
+        "probe": {
+          "$ref": "common.schema.json#/$defs/slug"
+        },
+        "site": {
+          "$ref": "common.schema.json#/$defs/slug"
+        },
+        "distance": {
+          "enum": [
+            "same_ap",
+            "same_zone",
+            "same_site"
+          ],
+          "description": "How close the probe is to the test's resolved location."
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "severity": {
+          "enum": [
+            "ok",
+            "warn",
+            "fail",
+            "unknown"
+          ],
+          "description": "exp.state/1 verdict.severity of the probe at test time."
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "$ref": "common.schema.json#/$defs/line_key"
+              },
+              "state": {
+                "enum": [
+                  "ok",
+                  "warn",
+                  "fail",
+                  "unknown"
+                ]
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              }
+            },
+            "required": [
+              "key",
+              "state"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        },
+        "throughput": {
+          "type": "object",
+          "properties": {
+            "down_mbps": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "up_mbps": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "latency_idle_ms": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000
+            },
+            "latency_loaded_ms": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000
+            },
+            "ts": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Latest throughput test of the probe (exp.measurement/1 test=throughput metrics)."
+        },
+        "wifi": {
+          "type": "object",
+          "properties": {
+            "ssid": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "band": {
+              "type": "string",
+              "maxLength": 16,
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+            },
+            "rssi_dbm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": -150,
+              "maximum": 0
+            },
+            "snr_db": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": -20,
+              "maximum": 120
+            }
+          },
+          "additionalProperties": false,
+          "description": "Probe wifi_hb figures, when the probe has a Wi-Fi port."
+        }
+      },
+      "required": [
+        "probe",
+        "severity"
+      ],
+      "additionalProperties": false,
+      "description": "kind=baseline (source exp): the nearest probe's state at test time, from the collector's own records (GET speedtests/baseline)."
+    },
+    "ev_baseline": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "exp.evidence/1"
+        },
+        "test_id": {
+          "$ref": "common.schema.json#/$defs/st_id"
+        },
+        "kind": {
+          "const": "baseline"
+        },
+        "source": {
+          "enum": [
+            "mist",
+            "ec",
+            "syslog",
+            "sse",
+            "exp"
+          ],
+          "description": "Where the data came from (allowed for this kind: exp)."
+        },
+        "collected_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Correlation window [start - window_before_s, end + window_after_s] (default 5 min / 2 min)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "error"
+          ],
+          "description": "ok = full; partial = some calls failed / rate budget hit; unavailable = connector not configured or no data; error = the pull failed (data is {})."
+        },
+        "data": {
+          "$ref": "#/$defs/data_baseline"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxItems": 20,
+          "description": "Source ids of what was pulled (Mist client/event ids, EC flow ids, syslog line ids)."
+        }
+      },
+      "required": [
+        "schema",
+        "test_id",
+        "kind",
+        "source",
+        "collected_at",
+        "window",
+        "status",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "data_dns": {
+      "type": "object",
+      "properties": {
+        "resolver_ip": {
+          "$ref": "common.schema.json#/$defs/ip_addr"
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ts": {
+                "$ref": "common.schema.json#/$defs/ts"
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "qtype": {
+                "type": "string",
+                "maxLength": 8,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "rcode": {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              },
+              "rtt_ms": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 60000
+              },
+              "client_ip": {
+                "$ref": "common.schema.json#/$defs/ip_addr"
+              }
+            },
+            "required": [
+              "ts",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 200,
+          "description": "Resolver query-log lines for the client IP in the window (syslog)."
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "slow": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Queries slower than 250 ms (tunable)."
+        },
+        "slowest_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "probe_dns": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "ok",
+                "warn",
+                "fail",
+                "unknown"
+              ]
+            },
+            "rtt_ms": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 60000
+            },
+            "resolver": {
+              "$ref": "common.schema.json#/$defs/ip_addr"
+            }
+          },
+          "additionalProperties": false,
+          "description": "The nearest probe's DNS line, used when no resolver logs exist (also the dns_fallback source)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "kind=dns (optional): resolver logs via syslog and/or the probe's DNS line."
+    },
+    "ev_dns": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "exp.evidence/1"
+        },
+        "test_id": {
+          "$ref": "common.schema.json#/$defs/st_id"
+        },
+        "kind": {
+          "const": "dns"
+        },
+        "source": {
+          "enum": [
+            "mist",
+            "ec",
+            "syslog",
+            "sse",
+            "exp"
+          ],
+          "description": "Where the data came from (allowed for this kind: syslog, sse, ec)."
+        },
+        "collected_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Correlation window [start - window_before_s, end + window_after_s] (default 5 min / 2 min)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "error"
+          ],
+          "description": "ok = full; partial = some calls failed / rate budget hit; unavailable = connector not configured or no data; error = the pull failed (data is {})."
+        },
+        "data": {
+          "$ref": "#/$defs/data_dns"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxItems": 20,
+          "description": "Source ids of what was pulled (Mist client/event ids, EC flow ids, syslog line ids)."
+        }
+      },
+      "required": [
+        "schema",
+        "test_id",
+        "kind",
+        "source",
+        "collected_at",
+        "window",
+        "status",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "data_identity": {
+      "type": "object",
+      "properties": {
+        "resolved_by": {
+          "enum": [
+            "mist",
+            "dhcp",
+            "ec",
+            "subnet",
+            "qr",
+            "none"
+          ],
+          "description": "Best source that produced the device (mist, dhcp = DHCP syslog IP->MAC, ec) or the coarse zone (subnet, qr)."
+        },
+        "ip": {
+          "$ref": "common.schema.json#/$defs/ip_addr"
+        },
+        "mac": {
+          "$ref": "common.schema.json#/$defs/mac",
+          "description": "Raw MAC; present until the privacy scrub (scrub_after_diagnosis) drops it."
+        },
+        "device_key": {
+          "$ref": "common.schema.json#/$defs/device_key"
+        },
+        "hostname": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "Mist stats_wireless_client.hostname / DHCP hostname. Raw; dropped by the scrub."
+        },
+        "username": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "802.1X / per-user-PSK / portal identity ONLY when the network already has one (stats_wireless_client.username, wired_client_response auth). Operational data, not collected by exp; dropped by the scrub. There is no name/email field anywhere."
+        },
+        "manufacture": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "stats_wireless_client.manufacture / client_wireless.mfg"
+        },
+        "os_family": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "stats_wireless_client.os / family"
+        },
+        "wired": {
+          "type": "boolean",
+          "description": "True when the client is a wired client behind a Mist switch."
+        },
+        "zone": {
+          "$ref": "common.schema.json#/$defs/zone_id"
+        },
+        "zone_source": {
+          "enum": [
+            "mist",
+            "dhcp",
+            "subnet",
+            "qr",
+            "unresolved"
+          ]
+        },
+        "site_id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "description": "Mist site id the client was found in (stats_wireless_client.site_id)"
+        },
+        "ap_mac": {
+          "$ref": "common.schema.json#/$defs/mac"
+        },
+        "ap_name": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "ssid": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "band": {
+          "enum": [
+            "24",
+            "5",
+            "5-dedicated",
+            "5-selectable",
+            "6",
+            "6-dedicated",
+            "6-selectable"
+          ]
+        },
+        "switch_mac": {
+          "$ref": "common.schema.json#/$defs/mac"
+        },
+        "switch_port": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+        },
+        "vlan": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4094
+        },
+        "candidates": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64,
+          "description": "How many distinct client MACs the lookup for this IP in the window returned (NAT guard: 0 or more than 1 fails closed)."
+        },
+        "nat_suspected": {
+          "type": "boolean",
+          "description": "True when identity resolution failed closed (A6.12)."
+        },
+        "nat_reason": {
+          "enum": [
+            "outside_subnets",
+            "translated_address",
+            "ambiguous",
+            "no_match"
+          ],
+          "description": "Why: observed IP outside every client_subnets entry while require_real_client_ip; equal to a configured translated/edge address; the Mist lookup returned > 1 MAC; or 0 MACs."
+        },
+        "scrubbed": {
+          "type": "boolean",
+          "description": "True after the privacy scrub dropped ip/mac/hostname/username (device_key and zone data are kept)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "kind=identity: client_ip + time -> device (12 5.1). Primary location mechanism for the single-box model."
+    },
+    "ev_identity": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "exp.evidence/1"
+        },
+        "test_id": {
+          "$ref": "common.schema.json#/$defs/st_id"
+        },
+        "kind": {
+          "const": "identity"
+        },
+        "source": {
+          "enum": [
+            "mist",
+            "ec",
+            "syslog",
+            "sse",
+            "exp"
+          ],
+          "description": "Where the data came from (allowed for this kind: mist, ec, syslog, exp)."
+        },
+        "collected_at": {
+          "$ref": "common.schema.json#/$defs/ts"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/ts"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/ts"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Correlation window [start - window_before_s, end + window_after_s] (default 5 min / 2 min)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "error"
+          ],
+          "description": "ok = full; partial = some calls failed / rate budget hit; unavailable = connector not configured or no data; error = the pull failed (data is {})."
+        },
+        "data": {
+          "$ref": "#/$defs/data_identity"
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+          },
+          "maxItems": 20,
+          "description": "Source ids of what was pulled (Mist client/event ids, EC flow ids, syslog line ids)."
+        }
+      },
+      "required": [
+        "schema",
+        "test_id",
+        "kind",
+        "source",
+        "collected_at",
+        "window",
+        "status",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

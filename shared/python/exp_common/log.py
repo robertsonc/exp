@@ -5,7 +5,7 @@ Diagnostics go to stderr via ``logging`` (stdout is reserved for program output)
 ``<N>`` priority prefix. ``SecretScrubFilter`` is attached to the handler so that records from
 every logger are scrubbed: message, formatted args, tracebacks and stack info.
 
-Redacted: ``exp[aeidn]_`` tokens, ``Bearer <x>``, Authorization header values, Slack/Teams/
+Redacted: ``exp[aeidnsrlktv]_`` tokens, ``Bearer <x>``, Authorization header values, Slack/Teams/
 Discord webhook URLs, URL query secrets (apiKey=, token=, key=, ...), PEM private keys,
 ``password=``/``secret=``/``token=`` assignments.
 """
@@ -37,7 +37,7 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # Bearer tokens anywhere
     (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"), "Bearer " + REDACTED),
     # exp tokens
-    (re.compile(r"\b(exp[aeidn]_)[A-Za-z0-9_-]{8,}"), r"\1" + REDACTED),
+    (re.compile(r"\b(exp[aeidnsrlktv]_)[A-Za-z0-9_-]{8,}"), r"\1" + REDACTED),
     # secrets in URL query strings
     (re.compile(r"(?i)([?&](?:api[-_]?key|key|token|access[-_]?token|secret|password|sig|signature|auth)=)[^&\s\"'<>]+"),
      r"\1" + REDACTED),

@@ -24,7 +24,9 @@ ALLOWED = {"$schema", "$id", "$ref", "$defs", "title", "description", "type", "p
 SCHEMA_FILES = sorted(f for f in os.listdir(SCHEMAS) if f.endswith(".schema.json"))
 DOC_SCHEMAS = {"measurement": "exp.measurement/1", "desired": "exp.desired/1", "status": "exp.status/1", "health": "exp.health/1",
                "state": "exp.state/1", "beats": "exp.beats/1", "manifest": "exp.manifest/1", "probe.config": "exp.probe.config/1",
-               "collector.config": "exp.collector.config/1", "dashboard.config": "exp.dashboard.config/1", "runner.config": "exp.runner.config/1"}
+               "collector.config": "exp.collector.config/1", "dashboard.config": "exp.dashboard.config/1", "runner.config": "exp.runner.config/1",
+               "speedtest": "exp.speedtest/1", "speedtest.submission": "exp.speedtest.submission/1", "evidence": "exp.evidence/1",
+               "speedtest.config": "exp.speedtest.config/1"}
 
 
 def load(path: str):
@@ -125,6 +127,8 @@ def test_index_shape():
 def test_every_index_entry_exists_and_every_fixture_is_indexed():
     on_disk = set()
     for dp, _, fs in os.walk(HERE):
+        if os.path.relpath(dp, HERE).split(os.sep)[0] == "cloudflare":
+            continue  # a live recording (not a schema fixture), see cloudflare/README.md
         for f in fs:
             if f.endswith(".json") and f != "INDEX.json":
                 on_disk.add(os.path.relpath(os.path.join(dp, f), HERE))
@@ -202,3 +206,107 @@ def test_gen_fixtures_is_deterministic_and_matches_committed(tmp_path):
     for p in INDEX:
         assert (tmp_path / p).read_bytes() == open(os.path.join(HERE, p), "rb").read(), p
     assert (tmp_path / "INDEX.json").read_bytes() == open(os.path.join(HERE, "INDEX.json"), "rb").read()
+
+
+# (f) M6 speedtest --------------------------------------------------------------------------------------------
+FORBIDDEN_PERSON_KEYS = {"name", "email", "full_name", "first_name", "last_name", "phone", "address", "person", "user_agent", "ua_raw"}
+
+
+def _property_names(node, found: set, where: str = "") -> None:
+    """Every property name a schema declares (schema-aware: only under 'properties' and 'patternProperties')."""
+    if not isinstance(node, dict):
+        return
+    for kw, val in node.items():
+        if kw == "properties":
+            for k, sub in val.items():
+                found.add((k, where))
+                _property_names(sub, found, where + "/" + k)
+        elif kw in ("$defs", "patternProperties"):
+            for k, sub in val.items():
+                _property_names(sub, found, where + "/" + kw + "/" + k)
+        elif kw in ("items", "additionalProperties", "propertyNames", "not"):
+            _property_names(val, found, where + "/" + kw)
+        elif kw in ("anyOf", "oneOf", "allOf", "prefixItems"):
+            for i, sub in enumerate(val):
+                _property_names(sub, found, "%s/%s/%d" % (where, kw, i))
+
+
+@pytest.mark.parametrize("name", ["speedtest.schema.json", "speedtest.submission.schema.json", "evidence.schema.json", "speedtest.config.schema.json"])
+def test_speedtest_schemas_have_no_person_identity_field(name):
+    """12 section 9 / SR-25: no name/email/phone field anywhere (and no raw user agent)."""
+    found: set = set()
+    _property_names(load(os.path.join(SCHEMAS, name)), found)
+    bad = sorted(w for k, w in found if k.lower() in FORBIDDEN_PERSON_KEYS or k.lower().endswith(("_email", "_name_full")))
+    # `name`/`hostname`/`ap_name`/`device_name` style keys that are NOT a person: only the bare person keys are forbidden
+    assert not bad, bad
+
+
+@pytest.mark.parametrize("name", ["speedtest.schema.json", "speedtest.submission.schema.json", "evidence.schema.json"])
+def test_speedtest_wire_schemas_are_closed(name):
+    """Every object in the result/submission/evidence schemas rejects unknown keys (additionalProperties false)."""
+    def walk(node, where=""):
+        if isinstance(node, dict):
+            if node.get("type") == "object" and "properties" in node and where != "":
+                assert node.get("additionalProperties") is False, (name, where)
+            for k, v in node.items():
+                if k in ("properties", "$defs"):
+                    for kk, vv in v.items():
+                        walk(vv, where + "/" + kk)
+                elif k in ("items", "additionalProperties"):
+                    walk(v, where + "/" + k)
+                elif k in ("anyOf", "oneOf", "allOf"):
+                    for i, vv in enumerate(v):
+                        walk(vv, "%s/%s%d" % (where, k, i))
+    walk(load(os.path.join(SCHEMAS, name)), "/")
+
+
+def test_speedtest_fixture_coverage():
+    kinds = {load(os.path.join(HERE, p))["kind"] for p in INDEX if p.startswith("evidence/")}
+    assert kinds == {"wifi", "wired", "flows", "wan", "security", "baseline", "dns", "identity"}
+    for p in ("speedtest/result.ok.json", "speedtest/result.policy-block.json", "speedtest/result.unresolved-nat.json",
+              "speedtest/result.internet-unavailable.json", "configs/speedtest.json", "configs/runner.correlation.json",
+              "desired/all-in-one-speedtest.json"):
+        assert p in INDEX and INDEX[p]["expected"] == "valid", p
+    assert sum(1 for p in INDEX if p.startswith("invalid/speedtest/")) >= 20
+    assert sum(1 for p in INDEX if p.startswith("invalid/evidence/")) >= 15
+
+
+def test_speedtest_fixtures_are_internally_consistent():
+    sys.path.insert(0, os.path.join(ROOT, "shared", "python"))
+    from exp_common import speedtest as st
+    ok = load(os.path.join(HERE, "speedtest", "result.ok.json"))
+    assert ok["score"] == st.compute_score(ok["legs"], {"down_mbps": 25, "up_mbps": 10})
+    nat = load(os.path.join(HERE, "speedtest", "result.unresolved-nat.json"))
+    assert nat["zone"] == "unresolved" and nat["zone_source"] == "unresolved" and "nat_suspected" in nat["flags"]
+    iu = load(os.path.join(HERE, "speedtest", "result.internet-unavailable.json"))
+    assert iu["legs"]["internet"]["status"] == "unavailable" and "internet_unavailable" in iu["flags"]
+    ident = load(os.path.join(HERE, "evidence", "identity.mist.json"))["data"]
+    aio = load(os.path.join(HERE, "desired", "all-in-one-speedtest.json"))
+    secret = [c for c in aio["components"] if c["type"] == "runner"][0]["creds"]["device_key_secret"]
+    assert ident["device_key"] == st.device_key(secret, ident["mac"])
+    # the collector and the runner share the same device_key secret in the all-in-one profile
+    assert secret == [c for c in aio["components"] if c["type"] == "collector"][0]["creds"]["device_key_secret"]
+    # evidence refers to the result it belongs to
+    assert load(os.path.join(HERE, "evidence", "wifi.ok.json"))["test_id"] == ok["id"]
+
+
+def test_all_in_one_runs_four_components_on_one_host():
+    aio = load(os.path.join(HERE, "desired", "all-in-one-speedtest.json"))
+    assert sorted(c["type"] for c in aio["components"]) == ["collector", "probe", "runner", "speedtest"]
+
+
+def test_cloudflare_recording_is_complete():
+    rec = load(os.path.join(HERE, "cloudflare", "recording-2026-11-20.json"))
+    labels = [e["label"] for e in rec["exchanges"]]
+    assert any("bytes=0" in e["request"]["url"] for e in rec["exchanges"]) and any("bytes=100000" in e["request"]["url"] for e in rec["exchanges"])
+    assert any(e["request"]["method"] == "POST" and "__up" in e["request"]["url"] for e in rec["exchanges"])
+    assert any("cdn-cgi/trace" in e["request"]["url"] for e in rec["exchanges"])
+    assert sum(1 for e in rec["exchanges"] if e["request"]["method"] == "OPTIONS") >= 2, labels
+    for e in rec["exchanges"]:
+        names = {k.lower() for k, _ in e["response"]["headers"]}
+        assert "set-cookie" not in names
+        assert any(k.lower() == "origin" and v == rec["origin_header"] for k, v in e["request"]["headers"]), e["label"]
+        assert e["response"]["status"] in (200, 204)
+    down = [e for e in rec["exchanges"] if "__down" in e["request"]["url"] and e["request"]["method"] == "GET"][0]
+    hs = {k.lower(): v for k, v in down["response"]["headers"]}
+    assert hs["access-control-allow-origin"] == "*" and hs["timing-allow-origin"] == "*"

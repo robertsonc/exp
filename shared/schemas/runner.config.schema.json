@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "runner.config.schema.json",
   "title": "exp.runner.config/1",
-  "description": "Runner config (01 section 9.4, M5). The runner re-checks every drill target against its own allowlist before acting. Creds (integrations.json, ingest_token) are never in this document.",
+  "description": "Runner config (01 section 9.4, M5). The runner re-checks every drill target against its own allowlist before acting. Creds (integrations.json, ingest_token) are never in this document. M6 adds the optional correlation block (base + correlation only; no drills in M6: drills_enabled stays false). M6 adds the optional correlation block (base + correlation only; no drills in M6: drills_enabled stays false).",
   "type": "object",
   "properties": {
     "schema": {
@@ -96,6 +96,275 @@
         "$ref": "common.schema.json#/$defs/drill_assignment"
       },
       "maxItems": 32
+    },
+    "correlation": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "window_before_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600,
+          "description": "default 300"
+        },
+        "window_after_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600,
+          "description": "default 120"
+        },
+        "poll_interval_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60,
+          "description": "New-test feed poll interval (default 5)."
+        },
+        "sources": {
+          "type": "object",
+          "properties": {
+            "mist": {
+              "type": "object",
+              "properties": {
+                "sites": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "site_id": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                        "description": "Mist site id (UUID)"
+                      },
+                      "name": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      }
+                    },
+                    "required": [
+                      "site_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 64
+                },
+                "zone_map": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "zone": {
+                        "$ref": "common.schema.json#/$defs/slug"
+                      },
+                      "site_id": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "ap_macs": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "common.schema.json#/$defs/mac"
+                        },
+                        "maxItems": 256
+                      },
+                      "ap_name_prefix": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      }
+                    },
+                    "required": [
+                      "zone"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 256,
+                  "description": "Mist AP / site -> exp zone. First match wins; absent = the zone stays at the subnet fallback."
+                },
+                "max_calls_per_test": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20,
+                  "description": "default 6 (Mist budget ~5,000 req/h/token)"
+                },
+                "cache_ttl_s": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 600,
+                  "description": "per AP cache (default 30)"
+                }
+              },
+              "additionalProperties": false,
+              "description": "Mist connector (credentials in integrations.json under 'mist')."
+            },
+            "ec": {
+              "type": "object",
+              "properties": {
+                "appliances": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ne_pk": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "hostname": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "wan_interfaces": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                        },
+                        "maxItems": 16
+                      }
+                    },
+                    "required": [
+                      "ne_pk"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 8
+                },
+                "max_flows": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50,
+                  "description": "top-N flows by bytes (default 50)"
+                },
+                "wan_util": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "interval_s": {
+                      "type": "integer",
+                      "minimum": 5,
+                      "maximum": 300,
+                      "description": "default 30"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Poll WAN utilization and push it to the speedtest for the internet-leg auto-pause."
+                }
+              },
+              "additionalProperties": false,
+              "description": "EdgeConnect Orchestrator connector (credentials under 'ec')."
+            },
+            "syslog": {
+              "type": "object",
+              "properties": {
+                "listen": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "pattern": "^(udp|tcp|tls):[0-9]{1,5}$"
+                  },
+                  "maxItems": 6,
+                  "uniqueItems": true,
+                  "description": "default udp:5514, tcp:5514, tls:6514 (no root port)"
+                },
+                "bind": {
+                  "$ref": "common.schema.json#/$defs/ipv4",
+                  "description": "Listen address (default 0.0.0.0)."
+                },
+                "allow": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/ipv4_cidr"
+                  },
+                  "maxItems": 64,
+                  "description": "Source allowlist (SR-24). Empty list = receive nothing."
+                },
+                "rate_limit_lines_per_s": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000,
+                  "description": "per source, default 200"
+                },
+                "max_line_bytes": {
+                  "type": "integer",
+                  "minimum": 128,
+                  "maximum": 16384,
+                  "description": "default 4096"
+                },
+                "ring_minutes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 60,
+                  "description": "ring buffer lifetime (default and maximum 60)"
+                },
+                "tls": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "self_signed",
+                        "provided"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "6514 certificate: generated locally, or syslog_tls.key/.crt creds."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Syslog receiver (12 5.2)."
+            },
+            "sse": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Always false: no local vendor documentation for an HPE Aruba SSE API connector; SSE logs can still arrive via syslog (CR-m6-spec-resolutions)."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Reports 'unavailable'."
+            }
+          },
+          "additionalProperties": false
+        },
+        "privacy": {
+          "type": "object",
+          "properties": {
+            "scrub_after_diagnosis": {
+              "type": "boolean",
+              "description": "Also drop the syslog-ring rows of the test's client IP after the final diagnosis (A6.6)."
+            }
+          },
+          "additionalProperties": false
+        },
+        "speedtest_channel": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^http://127\\.0\\.0\\.1:[0-9]{1,5}/local/v1$"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false,
+          "description": "The local speedtest's runner channel (127.0.0.1 only); token in creds speedtest_channel_token."
+        }
+      },
+      "additionalProperties": false,
+      "description": "M6 correlation (12 section 7.6): new-test feed from the collector, identity resolution, evidence pulls, syslog receiver. Credentials: integrations.json {ec, mist} (sse never), ingest_token (expi_), collector_token (expr_), speedtest_channel_token (expl_), device_key_secret (expk_). The runner computes device_key = HMAC-SHA256(secret, MAC) and posts evidence with its identity-bound token."
     }
   },
   "required": [

@@ -1,0 +1,65 @@
+{
+  "schema": "exp.speedtest/1",
+  "id": "st_01M7R3X9G0W0KWJYVZVN3EVNPE",
+  "site": "hall-b",
+  "zone": "hall-b",
+  "zone_source": "subnet",
+  "started": "2026-11-18T14:02:11.120Z",
+  "ended": "2026-11-18T14:02:27.540Z",
+  "client": {
+    "ip": "10.60.14.77",
+    "ua": {
+      "os_family": "iOS",
+      "os_version": "18.1",
+      "browser": "Safari",
+      "device_class": "phone"
+    },
+    "connection_hint": "wifi"
+  },
+  "consent": {
+    "text_version": 3
+  },
+  "legs": {
+    "local": {
+      "status": "ok",
+      "down_mbps": 310.0,
+      "up_mbps": 120.0,
+      "idle_ms": 4.8,
+      "jitter_ms": 0.7,
+      "loaded_down_ms": 22.0,
+      "loaded_up_ms": 25.0,
+      "rpm": 2400,
+      "cv": 0.05,
+      "failures": 0,
+      "bytes": 195000000,
+      "server": "spd-core"
+    },
+    "internet": {
+      "status": "unavailable",
+      "server": "cloudflare"
+    },
+    "dns": {
+      "warm_ms": null,
+      "cold_ms": null,
+      "resolver_ip": null,
+      "source": "probe"
+    }
+  },
+  "score": {
+    "total": 98,
+    "speed": 100,
+    "responsiveness": 100,
+    "stability": 90
+  },
+  "flags": [
+    "internet_unavailable",
+    "dns_fallback"
+  ],
+  "observed": {
+    "received_at": "2026-11-18T14:02:27.900Z",
+    "server_id": "spd-core",
+    "local_bytes_down": 190000000,
+    "local_bytes_up": 61000000,
+    "session_ms": 16780
+  }
+}
