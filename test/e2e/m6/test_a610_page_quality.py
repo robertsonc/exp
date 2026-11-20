@@ -2,16 +2,20 @@
 
 * self-contained: a capture of EVERY request the phone's browser made proves none left for a host other than the box, its DNS-leg names
   and (the fake) Cloudflare; nothing failed; no CSP violation;
-* weight: the page's own resources (HTML + the internet-engine worker file + fonts) <= 200 KB gzip (gzip -9 of what the box serves,
-  measured from the phone's namespace); the engine file /st/assets/cf-engine.js is fetched only when the internet leg starts, after the
-  load snapshot, so it is added to the load-time list explicitly (and must have been requested by the run);
+* weight: the page's own resources (HTML + the two worker files + fonts) <= 200 KB gzip (gzip -9 of what the box serves, measured
+  from the phone's namespace); the worker files /st/assets/local-leg.js (the on-network transfer, started after the idle pings) and
+  /st/assets/cf-engine.js (the internet engine, started with the internet leg) are fetched after the load snapshot, so they are
+  added to the load-time list explicitly (and each must have been requested by the run);
 * animation: a CDP performance trace with 4x CPU throttling (the usual stand-in for a mid-range phone) and the phone's link emulated at
   50 / 25 Mb/s (a mid-range phone on busy venue Wi-Fi; an unthrottled gigabit client would spend the 4x-slowed main thread on data
   delivery, not on the page). The rAF frame timeline of the whole run is bucketed per second; gate (CR-m6-e2-correlation-quality item 5):
-  median second >= 55 fps, EVERY phase (lasting >= 2 s) >= 50 fps, ZERO seconds under 10 fps. The vendored Cloudflare engine runs in a
-  dedicated worker (CR-m6-speedtest-server item 26): its string upload bodies are encoded by fetch() synchronously, which on the main
-  thread cost 770-830 ms tasks. The per-run report (per-phase fps, longest main-thread task from the trace) is printed and kept in
-  a610-fps.json; the trace file and its own frame count are kept;
+  median second >= 55 fps, EVERY phase (lasting >= 2 s) >= 50 fps, ZERO seconds under 10 fps. Both transfers run in dedicated
+  workers, the main thread only animates (CR-m6-speedtest-server item 26): the vendored Cloudflare engine (its string upload bodies
+  are encoded by fetch() synchronously: 770-830 ms main-thread tasks) and, since the item 26 follow-up of 2026-11-20, the on-network
+  transfer (/st/assets/local-leg.js: on the main thread its fetch() body reader loop and upload XMLHttpRequests kept the main thread
+  ~93 % busy, ~310 ms/s of loader / microtask work and 220-227 ms XHRLoad tasks, so On-network download fell to 47.0 fps). The
+  page's CDP link emulation also applies to its dedicated workers. The per-run report (per-phase fps, longest main-thread task from
+  the trace) is printed and kept in a610-fps.json; the trace file and its own frame count are kept;
 * reduced motion: `prefers-reduced-motion` runs no animation at all (document.getAnimations() empty during the entire run, gauge jumps)
   and shows the SAME numbers: in both modes every number the page displays equals the number it submitted;
 * layout at 390 px matches the reference prototype (docs/spec/prototypes/speed-check.html rendered with its own demo data, same fonts):
@@ -44,6 +48,7 @@ FPS_MEDIAN_MIN, PHASE_FPS_MIN, FREEZE_FPS, FREEZE_MAX_RUN = 55.0, 50.0, 10, 0
 PHASE_MIN_MS = 2000      # a phase shorter than this has too few frames for an fps figure
 GZ_BUDGET = 200 * 1024
 ENGINE_PATH = "/st/assets/cf-engine.js"      # the internet engine's worker file (CR-m6-speedtest-server item 26)
+LOCAL_PATH = "/st/assets/local-leg.js"       # the on-network transfer's worker file (item 26 follow-up 2026-11-20)
 SECTION_ORDER = [".top", "#stage", ".legs", ".res-top", "#speeds", "#wf", "#checks"]
 
 
@@ -146,13 +151,15 @@ def test_a610_capture_weight_fps_and_prototype(slate: M.Core, artifacts):
     assert M.CORE_IP in hosts and "speed.cloudflare.com" in hosts
     print(f"A6.10 capture: {len(urls)} requests, hosts {sorted(hosts)}")
 
-    # ---------------------------------------------------------------- weight: the page's own resources (HTML + engine + fonts), gzip -9
-    # loadWire is snapshotted at load, before Go; the engine worker file is fetched when the internet leg starts, so it is added here
-    engine = f"http://{M.CORE_IP}{ENGINE_PATH}"
+    # ---------------------------------------------------------------- weight: the page's own resources (HTML + workers + fonts), gzip -9
+    # loadWire is snapshotted at load, before Go; the two worker files are fetched during the run (the on-network transfer after the
+    # idle pings, the internet engine when the internet leg starts), so they are added here
+    engine, local = f"http://{M.CORE_IP}{ENGINE_PATH}", f"http://{M.CORE_IP}{LOCAL_PATH}"
     assert engine in urls, "the run never fetched the internet engine file"
+    assert local in urls, "the run never fetched the on-network transfer file"
     own = sorted({w["url"] for w in r["loadWire"] if w["url"].startswith(f"http://{M.CORE_IP}/") and "/st/api/" not in w["url"]
-                  and "/st/down" not in w["url"] and "/st/up" not in w["url"]} | {engine})
-    assert any(u.endswith(".woff2") for u in own) and len(own) >= 5, own
+                  and "/st/down" not in w["url"] and "/st/up" not in w["url"]} | {engine, local})
+    assert any(u.endswith(".woff2") for u in own) and len(own) >= 6, own
     sizes = gzip_sizes(ph, own)
     gz = sum(v[1] for v in sizes.values())
     print(f"A6.10 weight: {len(own)} files, raw {sum(v[0] for v in sizes.values())} B, gzip {gz} B (budget {GZ_BUDGET})")

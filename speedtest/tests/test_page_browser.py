@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -21,6 +22,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import dns.message
 import dns.query
@@ -152,9 +154,12 @@ def run_scenario(w: World, scenario: str, opts: dict[str, Any] | None = None, ti
                 print(line[:300], flush=True)
             if line.startswith("@@NEED "):
                 req = json.loads(line[7:])
+                reply: dict[str, Any] = {}
                 if req["op"] == "correlate":
                     w.correlate()
-                p.stdin.write("@@OK {}\n")  # type: ignore[union-attr]
+                elif req["op"] == "box":           # the box's own view of on-network traffic: bytes moved, transfers in flight
+                    reply = {"meter": w.box.core.meter.total(), "transfers": w.box.core._transfers}
+                p.stdin.write("@@OK " + json.dumps(reply) + "\n")  # type: ignore[union-attr]
                 p.stdin.flush()  # type: ignore[union-attr]
             elif line.startswith("@@RESULT "):
                 result.append(json.loads(line[9:]))
@@ -186,11 +191,60 @@ def check_run(r: dict[str, Any], w: World) -> dict[str, Any]:
     assert cf["down"] > 0 and cf["up"] > 0 and cf["trace"] >= 1, f"the fake Cloudflare did not serve the internet leg: {cf}"
     assert cf["by_path"].get("/__results", 0) == 0, "nothing may be posted to Cloudflare's results endpoint"
     assert not any("/__results" in u for u in r["requests"])
+    # as A6.10: aborting the in-flight streams at the end of a direction is by design (ERR_ABORTED), any other failure is not
+    hard = [f for f in r["failed"] if "ERR_ABORTED" not in f]
+    assert hard == [], hard[:5]
+    if r["submissions"] and r["submissions"][-1].get("status") == 202:
+        same_numbers(first, r["submissions"][-1])
     return first
 
 
 ENGINE_PATH = "/st/assets/cf-engine.js"
+LOCAL_PATH = "/st/assets/local-leg.js"      # the on-network transfer's worker file (CR-m6-speedtest-server item 26 follow-up)
 START_MS = 6000          # app.js EngineHost: a worker silent this long after start is replaced by the main-thread fallback
+LOCAL_START_MS = 4000    # app.js LocalHost: the same for the transfer worker (no 'ready' this long after it was created)
+TRANSFER = ("/st/down", "/st/up")
+
+
+def transfer_reqs(r: dict[str, Any]) -> list[str]:
+    """Every on-network transfer request of the run: /st/down, /st/up and the loaded-latency pings (/st/ping?n=900...)."""
+    out = []
+    for u in r["requests"]:
+        sp = urlsplit(u)
+        if sp.path in TRANSFER or (sp.path == "/st/ping" and re.fullmatch(r"n=9[0-9]{2,}", sp.query or "")):
+            out.append(u)
+    return out
+
+
+def on_main_thread(r: dict[str, Any], urls: list[str]) -> list[bool]:
+    """Per URL: was it requested by the page's main thread? The page target's CDP Network domain (mainReqs) reports the
+    main thread's requests only, Playwright's page.on("request") also those of dedicated workers."""
+    main = set(r["mainReqs"])
+    return [u in main for u in urls]
+
+
+def displayed(snap: dict[str, Any]) -> dict[str, float | None]:
+    """The numbers the results page shows, parsed (None for a dash)."""
+    def num(t: str) -> float | None:
+        m = re.search(r"[0-9]+(?:\.[0-9]+)?", t or "")
+        return float(m.group(0)) if m else None
+    sp = {x["k"]: num(x["v"]) for x in snap["speeds"]}
+    legs = {k: num(v["val"]) for k, v in snap["legs"].items()}
+    return {"score": num(snap["score"]), "local_down": sp["Local down"], "local_up": sp["Local up"], "internet_down": sp["Internet down"],
+            "internet_up": sp["Internet up"], "local_idle": legs["Wi-Fi and venue network"], "cf_idle": legs["Cloudflare"]}
+
+
+def same_numbers(snap: dict[str, Any], sub: dict[str, Any]) -> None:
+    """A6.10 'same numbers', page side: every number the results show equals the number submitted (display rounding only)."""
+    d, legs = displayed(snap), sub["req"]["legs"]
+    loc, inet = legs["local"], legs.get("internet") or {}
+    want = {"score": sub["res"]["score"]["total"], "local_down": loc.get("down_mbps"), "local_up": loc.get("up_mbps"),
+            "internet_down": inet.get("down_mbps"), "internet_up": inet.get("up_mbps"), "local_idle": loc.get("idle_ms"), "cf_idle": inet.get("idle_ms")}
+    for k, v in want.items():
+        if v is None:
+            assert d[k] is None or k in ("local_idle", "cf_idle"), f"{k}: page shows {d[k]}, nothing was submitted"
+            continue
+        assert d[k] is not None and abs(d[k] - v) <= (0.51 if abs(v) >= 10 else 0.06), f"{k}: page shows {d[k]}, submitted {v}"
 
 
 def engine_start_ms(r: dict[str, Any]) -> float:
@@ -208,13 +262,18 @@ def test_full_test_390(world: World):
                                      "keyboard": True, "contrast": True, "report": "video calls freeze at my booth", "zoneFix": "Hall B, row 9", "copy": True,
                                      "timeout": 150000})
     first = check_run(r, world)
-    # --- the internet engine ran in the dedicated worker (off the main thread), served by the box, with its own CSP
-    assert r["workers"] == [f"http://{HOST}{ENGINE_PATH}"], r["workers"]
-    assert any(u.endswith(ENGINE_PATH) for u in r["requests"])
-    # ... and it never fell back to the main thread (a silent fallback would pass everything else here): every fallback path
-    # (no Worker, a worker error or 'fatal' before the first snapshot, START_MS of silence) inserts the same file as a classic
+    # --- the on-network transfer and the internet engine ran in their dedicated workers (off the main thread), served by the box
+    assert r["workers"] == [f"http://{HOST}{LOCAL_PATH}", f"http://{HOST}{ENGINE_PATH}"], r["workers"]
+    assert any(u.endswith(ENGINE_PATH) for u in r["requests"]) and any(u.endswith(LOCAL_PATH) for u in r["requests"])
+    # ... and neither fell back to the main thread (a silent fallback would pass everything else here): every fallback path
+    # (no Worker, a worker error or 'fatal' before it got going, silence after start) inserts the same file as a classic
     # <script src>, which stays in the DOM; and the engine's first phase came well before the silent-worker fallback could fire
     assert first["scriptSrcs"] == [] and r["final"]["scriptSrcs"] == [], (first["scriptSrcs"], r["final"]["scriptSrcs"])
+    # every on-network transfer request (down, up, loaded pings) came from the worker: none from the page's main thread
+    xfer = transfer_reqs(r)
+    assert any("/st/down?" in u for u in xfer) and any(u.endswith("/st/up") for u in xfer) and any("/st/ping?n=9" in u for u in xfer), xfer[:5]
+    assert not any(on_main_thread(r, xfer)), [u for u in xfer if u in set(r["mainReqs"])][:5]
+    assert any("/st/ping?n=1" in u for u in r["mainReqs"]), "control: the idle pings stay on the main thread and CDP sees them"
     started_ms = engine_start_ms(r)
     assert started_ms < START_MS * 2 / 3, f"the engine's first phase came {started_ms:.0f} ms after the internet leg started"
     # --- the engine really measured: server-recomputed score shown, every leg present
@@ -222,6 +281,7 @@ def test_full_test_390(world: World):
     assert sub["status"] == 202 and sub["req"]["schema"] == "exp.speedtest.submission/1"
     legs = sub["req"]["legs"]
     assert legs["local"]["status"] == "ok" and legs["local"]["down_mbps"] > 0 and legs["local"]["up_mbps"] > 0
+    local_leg_sane(sub)
     assert legs["internet"]["status"] == "ok" and legs["internet"]["colo"] == "FRA" and legs["internet"]["down_mbps"] > 0
     assert legs["dns"]["source"] == "browser" and "cold_ms" in legs["dns"]
     # regression: internet stability is measured on steady-state samples per direction, not across every request size
@@ -267,6 +327,18 @@ def test_full_test_390(world: World):
     assert all(x["h"] >= 44 or x["id"] in ("shareLink",) for x in focus if x["id"] in ("reportBtn", "again", "copy", "cancel", "go")), focus
     assert r["contrast"]["fails"] == [], r["contrast"]["fails"]
     assert r["contrast"]["checked"] > 40
+
+
+def local_leg_sane(sub: dict[str, Any], budget: int = 30_000_000) -> dict[str, Any]:
+    """The on-network figures of a complete run: both directions measured over loopback, loaded latency for both, a stability
+    figure, bytes within the session budget and agreeing with the box's own counters (no counters_disagree flag)."""
+    loc = sub["req"]["legs"]["local"]
+    assert loc["status"] == "ok" and loc["down_mbps"] > 1 and loc["up_mbps"] > 1, loc
+    assert loc["loaded_down_ms"] is not None and loc["loaded_up_ms"] is not None and 0 <= loc["loaded_down_ms"] < 5000, loc
+    assert loc["cv"] is not None and loc["failures"] <= 2 and 0 < loc["bytes"] <= budget, loc
+    assert loc["idle_ms"] is not None and loc["rpm"] > 0, loc
+    assert "counters_disagree" not in (sub["res"].get("flags") or []), sub["res"].get("flags")
+    return loc
 
 
 def test_view_proof_matches_the_server_contract(world: World):
@@ -429,16 +501,20 @@ def test_dns_leg_without_delegation_is_labelled_the_hall_sensor(tmp_path: Path):
 
 
 def test_full_test_without_workers_falls_back_to_the_main_thread(world: World):
-    """No Worker available (init script deletes it): the same asset file runs as a classic script, the page still produces a
-    complete result with comparable internet figures (the fake Cloudflare is the same 400/100 Mb/s link, 15 ms)."""
+    """No Worker available (init script deletes it): both worker files run as classic scripts, the page still produces a
+    complete result with comparable figures (the fake Cloudflare is the same 400/100 Mb/s link, 15 ms; the on-network leg the
+    same loopback box) and shows the numbers it submitted."""
     r = run_scenario(world, "full", {"noWorker": True, "timeout": 150000})
     first = check_run(r, world)
     assert r["workers"] == []
-    assert sum(1 for u in r["requests"] if u.endswith(ENGINE_PATH)) == 1
-    # the opposite of test_full_test_390's worker-path proof: the fallback's classic script element is in the DOM, once
-    assert first["scriptSrcs"] == [ENGINE_PATH], first["scriptSrcs"]
+    assert sum(1 for u in r["requests"] if u.endswith(ENGINE_PATH)) == 1 and sum(1 for u in r["requests"] if u.endswith(LOCAL_PATH)) == 1
+    # the opposite of test_full_test_390's worker-path proof: the fallbacks' classic script elements are in the DOM, once each
+    assert first["scriptSrcs"] == [LOCAL_PATH, ENGINE_PATH], first["scriptSrcs"]
+    xfer = transfer_reqs(r)
+    assert xfer and all(on_main_thread(r, xfer)), "without workers every transfer request comes from the main thread"
     sub = r["submissions"][-1]
     assert sub["status"] == 202
+    local_leg_sane(sub)
     net = sub["req"]["legs"]["internet"]
     assert net["status"] == "ok" and net["colo"] == "FRA" and net["down_mbps"] > 0 and net["up_mbps"] > 0
     assert net["cv"] is not None and net["cv"] < 0.3, net
@@ -473,3 +549,67 @@ def test_engine_worker_misbehaving_ends_the_leg_or_falls_back_once(world: World,
     assert fw["sentAfterTerminate"] >= 2, fw                               # the late phase + finish really arrived ...
     assert not any("Internet upload" in p for p in r["phases"]) and first["phase"] == "Done", (r["phases"], first["phase"])
     assert first["speeds"][2]["v"].startswith("50.0") and first["speeds"][3]["v"].startswith("20.0"), first["speeds"]
+
+
+CANCEL_LINK = {"downKbps": 50_000, "upKbps": 25_000, "latencyMs": 5}     # A6.10's phone link: each direction lasts seconds
+
+
+@pytest.mark.parametrize(("where", "mode"), [("On-network download", "worker"), ("On-network upload", "worker"),
+                                             ("On-network download", "main"), ("On-network upload", "main")])
+def test_cancel_during_the_on_network_leg_stops_its_traffic(world: World, where: str, mode: str):
+    """Cancel while a direction of the on-network leg runs (in the transfer worker, or on the main thread without workers):
+    no transfer request (down, up, loaded ping) starts after the click + 500 ms, the box has no transfer in flight 1 s after it
+    and moves no byte between 1 s and 2.5 s after it (in-flight requests were aborted, not left to finish), nothing is submitted."""
+    want = "/st/down" if "download" in where else "/st/up"
+    r = run_scenario(world, "cancel", {"cancelIn": where, "cancelPath": want, "noWorker": mode == "main", "throttle": CANCEL_LINK, "timeout": 120000})
+    assert r["errors"] == [] and r["csp"] == [] and r["dialogs"] == [], (r["errors"], r["csp"])
+    c, snap = r["cancel"], r["snap"]
+    assert c["phaseAtClick"] == where, (c["phaseAtClick"], r["phases"])
+    assert snap["phase"] == "Test stopped" and "Nothing was sent" in (snap["notice"] or ""), (r["phases"], snap["notice"])
+    xfer = [q for q in r["reqLog"] if q["u"] in set(transfer_reqs(r))]
+    assert any(urlsplit(q["u"]).path == want and q["t"] <= c["tc"] for q in xfer), "the direction was moving data when Cancel was clicked"
+    late = [q for q in xfer if q["t"] > c["tc"] + 500]
+    assert late == [], late[:5]
+    assert c["before"]["meter"] > 0 and c["b1"]["transfers"] == 0 and c["b2"]["meter"] == c["b1"]["meter"], c
+    assert r["submissions"] == [] and not any(u.endswith("/result") for u in r["requests"])
+    assert not any(u.endswith(ENGINE_PATH) or "speed.cloudflare.com" in u for u in r["requests"]), "the internet leg never started"
+    if mode == "worker":
+        assert r["workers"] == [f"http://{HOST}{LOCAL_PATH}"] and snap["scriptSrcs"] == [], (r["workers"], snap["scriptSrcs"])
+        assert not any(on_main_thread(r, [q["u"] for q in xfer]))
+    else:
+        assert r["workers"] == [] and snap["scriptSrcs"] == [LOCAL_PATH], snap["scriptSrcs"]
+
+
+@pytest.mark.parametrize("mode", ["throw", "silent", "fatal_mid"])
+def test_local_worker_misbehaving_falls_back_once(world: World, mode: str):
+    """LocalHost robustness, with a scripted stand-in for the transfer worker (ui/page_scenarios.js fakeLocalWorker; the internet
+    engine's worker is the real one): new Worker throwing, or no 'ready' within LOCAL_START_MS, runs the whole on-network leg on
+    the main thread from the same file (one classic script); a 'fatal' after the download reported progress ends the download
+    with no figure and one failure (the malformed progress message and the late 'done' and error event change nothing) and the
+    upload runs on the main thread. The worker is terminated every time; the internet leg still runs in its own worker."""
+    r = run_scenario(world, "full", {"fakeLocal": mode, "timeout": 150000})
+    assert r["errors"] == [] and r["csp"] == [] and r["dialogs"] == [], (r["errors"], r["csp"])
+    fl, first = r["fakeLocal"], r["first"]
+    assert r["workers"] == [f"http://{HOST}{ENGINE_PATH}"], r["workers"]
+    assert first["scriptSrcs"] == [LOCAL_PATH], first["scriptSrcs"]                    # one fallback, never two
+    assert sum(1 for u in r["requests"] if u.endswith(LOCAL_PATH)) == 1
+    sub = r["submissions"][-1]
+    assert sub["status"] == 202 and sub["req"]["legs"]["internet"]["status"] == "ok"
+    same_numbers(first, sub)
+    loc = sub["req"]["legs"]["local"]
+    ups = [u for u in transfer_reqs(r) if u.endswith("/st/up")]
+    assert ups and all(on_main_thread(r, ups)), "the upload ran on the main thread"
+    if mode == "throw":
+        assert fl["made"] == 0
+        local_leg_sane(sub)
+        return
+    assert fl["made"] == 1 and fl["terminated"] == 1, fl
+    if mode == "silent":
+        assert fl["commands"] == [], fl                         # never ready: no transfer was ever handed to it
+        local_leg_sane(sub)
+        return
+    # fatal_mid: the download ended at the 'fatal' with no figure; nothing the stand-in sent after it reached the page
+    assert fl["commands"][:1] == ["transfer"] and fl["sentAfterTerminate"] >= 2, fl
+    assert "down_mbps" not in loc and loc["up_mbps"] > 0 and loc["status"] == "ok" and loc["failures"] >= 1, loc
+    assert first["speeds"][0]["v"] == "—" and first["speeds"][1]["v"] != "—", first["speeds"]
+    assert not any("/st/down?" in u for u in r["requests"]), "the stand-in moved the download, the page never re-ran it"

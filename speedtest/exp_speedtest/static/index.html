@@ -325,7 +325,6 @@ label { font-size: 13px; color: var(--muted); }
   var SCALE = [0, 5, 10, 25, 50, 100, 250, 500, 1000];       // piecewise-log gauge scale, 270 degrees
   var ARC = 565.5, CX = 150, CY = 150, R = 120, SCORE_ARC = 326.7;
   var API = '/st/api/v1';
-  var MAX_STREAMS_H1 = 5;                                     // 6 connections per host over HTTP/1.1, one is kept for pings
   var NS = document.querySelector('svg').namespaceURI; // SVG namespace taken from the page's own inline <svg> (no URL literal in the page)
   var $ = function (id) { return document.getElementById(id); };
   var ICONS = {
@@ -358,7 +357,6 @@ label { font-size: 13px; color: var(--muted); }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
   function median(a) { if (!a.length) return null; var b = a.slice().sort(function (x, y) { return x - y; }); var m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
-  function percentile(a, p) { if (!a.length) return null; var b = a.slice().sort(function (x, y) { return x - y; }); return b[Math.min(b.length - 1, Math.max(0, Math.ceil(p * b.length) - 1))]; }
   function mean(a) { return a.length ? a.reduce(function (s, x) { return s + x; }, 0) / a.length : null; }
   function cv(a) { if (a.length < 2) return 0; var m = mean(a); if (!m) return 0; var v = mean(a.map(function (x) { return (x - m) * (x - m); })); return Math.sqrt(v) / m; }
   function steadyCv(points) {
@@ -470,7 +468,7 @@ label { font-size: 13px; color: var(--muted); }
   var S = {
     cfg: null, key: null, proof: null, sess: null, running: false, cancelled: false, ac: null, path: null, pathTimer: null,
     pollTimer: null, viewMode: false, result: null, view: null, measured: null, t0: 0, zoneHint: null, animated: false,
-    report: '', zoneFix: '', note: '', wake: null, cf: null, slot: false, shareId: null
+    report: '', zoneFix: '', note: '', wake: null, cf: null, ll: null, slot: false, shareId: null
   };
   var legEls = {};
   var G = { shown: 0, target: 0, loop: false, mode: 'speed', samples: [] };
@@ -674,107 +672,98 @@ label { font-size: 13px; color: var(--muted); }
     var colds = [c1]; if (c2 != null) colds.push(c2);
     return { cold_ms: mean(colds), warm_ms: warm };
   }
-  var chunkBuf = null;
-  function uploadBlob(size) {
-    if (!chunkBuf) { chunkBuf = new Uint8Array(262144); for (var o = 0; o < chunkBuf.length; o += 65536) chunkBuf.set(randomBytes(65536), o); }
-    var parts = [], left = size;
-    while (left >= chunkBuf.length) { parts.push(chunkBuf); left -= chunkBuf.length; }
-    if (left > 0) parts.push(chunkBuf.subarray(0, left));
-    return new Blob(parts);
+  var LOCAL_URL = '/st/assets/local-leg.js', LOCAL_START_MS = 4000, LOCAL_SILENT_MS = 6000;
+  function legResult(r) {
+    r = r && typeof r === 'object' ? r : {};
+    var f = clampNum(r.failures, 10000), b = clampNum(r.bytes, 1099511627776), n = clampNum(r.samples, 100000);
+    return { mbps: clampNum(r.mbps, 100000), cv: clampNum(r.cv, 10), failures: f == null ? 0 : Math.round(f), bytes: b == null ? 0 : b,
+      loaded_ms: clampNum(r.loaded_ms, 60000), samples: n == null ? 0 : Math.round(n) };
   }
-  /**
-   * One direction of the on-network leg: parallel streams (start 4, grow while throughput keeps rising, capped for
-   * HTTP/1.1), request sizes ramping 100 kB -> ramp_max, ending when a request takes >= 1 s (ramp over) and enough samples
-   * were gathered, after 8 s, or when the direction's byte budget is spent. Speed = p90 of 250-ms aggregate samples taken
-   * after the ramp. Loaded latency is pinged on its own connection while this runs.
-   */
-  async function transferLeg(dir, budget) {
-    var lim = S.sess.limits, startN = Math.max(1, lim.streams_start || 4), maxN = Math.min(lim.streams_max || 8, MAX_STREAMS_H1);
-    var minB = 100000, maxB = Math.max(minB, Math.min(25000000, lim.ramp_max_bytes || 25000000));
-    var T = { dir: dir, bytes: 0, used: 0, inflight: 0, size: minB, streams: 0, stop: false, rampAt: null, bins: [], failures: 0, t0: now(), last: 0, lastT: 0 };
-    var ctrls = [], pings = [], pingStop = false;
-    function remaining() { return budget - T.used - T.inflight; }
-    function nextSize() { var share = Math.floor(remaining() / Math.max(1, T.streams)); return Math.min(T.size, share); }
-    function add(n) { T.bytes += n; }
-    function done(size, dur, moved) {
-      T.used += moved; T.inflight -= size;
-      if (moved >= size) {
-        if (dur >= 1000 && T.rampAt == null) T.rampAt = now() - T.t0;
-        else if (dur < 1000 && T.size < maxB) T.size = Math.min(maxB, T.size * 4);
-      } else if (!T.stop) T.failures++;
+  function LocalHost(token, limits) {
+    var me = this, w = null, ready = false, fell = false, closed = false, lib = null, libFailed = false, timer = null, wd = null;
+    var waiters = [], job = null, seq = 0, cancelAc = new AbortController();
+    me.mode = 'worker';
+    function wake() { var ws = waiters; waiters = []; ws.forEach(function (f) { f(); }); }
+    function usable() { return closed || (ready && !fell) || !!lib || libFailed; }
+    function stopWorker() {
+      clearTimeout(timer); clearTimeout(wd); timer = wd = null;
+      if (w) { w.onmessage = null; w.onerror = null; try { w.terminate(); } catch (e) { /* ignore */ } w = null; }
     }
-    async function downReq(size, ctrl) {
-      var r = await fetch('/st/down?bytes=' + size, { headers: legHeaders(), cache: 'no-store', credentials: 'omit', signal: ctrl.signal });
-      if (r.status === 413) { var j = null; try { j = await r.json(); } catch (e) { /* ignore */ } return { moved: 0, refused: j && j.error && j.error.details && j.error.details.remaining }; }
-      if (!r.ok || !r.body) throw new Error('down ' + r.status);
-      var rd = r.body.getReader(), got = 0;
-      for (;;) { var c = await rd.read(); if (c.done) break; got += c.value.length; add(c.value.length); }
-      return { moved: got };
+    function toMain() {
+      if (fell || closed) return;
+      fell = true;                        // set before anything else: a second trigger can never insert a second script
+      stopWorker(); me.mode = 'main';
+      var sc = document.createElement('script');
+      sc.src = LOCAL_URL;
+      sc.onload = function () { var L = window.ExpLocalLeg; if (L && typeof L.transfer === 'function') lib = L; else libFailed = true; wake(); };
+      sc.onerror = function () { libFailed = true; wake(); };
+      document.head.appendChild(sc);
     }
-    function upReq(size, ctrl) {
-      return new Promise(function (resolve, reject) {
-        var x = new XMLHttpRequest(), prev = 0;
-        x.open('POST', '/st/up'); x.timeout = 30000;
-        x.setRequestHeader('X-Exp-Leg-Token', S.sess.leg_token);
-        x.upload.onprogress = function (e) { add(e.loaded - prev); prev = e.loaded; };
-        x.onload = function () {
-          if (x.status === 204) { add(size - prev); resolve({ moved: size }); }
-          else if (x.status === 413) { var j = null; try { j = JSON.parse(x.responseText); } catch (e) { /* ignore */ } resolve({ moved: prev, refused: j && j.error && j.error.details && j.error.details.remaining }); }
-          else reject(new Error('up ' + x.status));
-        };
-        x.onerror = function () { reject(new Error('up network')); }; x.ontimeout = x.onerror; x.onabort = function () { resolve({ moved: prev, aborted: true }); };
-        ctrl.signal.addEventListener('abort', function () { x.abort(); }, { once: true });
-        x.send(uploadBlob(size));
-      });
+    function runMain(dir, budget, onSample) {
+      var ctx = { token: token, limits: limits, signal: cancelAc.signal,
+        onSample: function (mbps) { var v = clampNum(mbps, 100000); if (v != null && !closed) onSample(v); } };
+      var p;
+      try { p = lib.transfer(dir, budget, ctx); } catch (e) { p = Promise.reject(e); }
+      return p.then(legResult, function () { return legResult({ failures: 1 }); });
     }
-    async function stream() {
-      T.streams++;
-      while (!T.stop && !S.cancelled) {
-        var size = nextSize();
-        if (size < 50000) break;
-        var ctrl = new AbortController(); ctrls.push(ctrl); T.inflight += size;
-        var t = now(), res;
-        try { res = await (dir === 'down' ? downReq(size, ctrl) : upReq(size, ctrl)); }
-        catch (e) { T.inflight -= size; if (!T.stop) T.failures++; if (T.failures > 5) break; await sleep(100); continue; }
-        done(size, now() - t, res.moved);
-        if (res.refused != null && res.refused < 50000) break;
-        if (res.refused != null) T.size = Math.max(minB, Math.floor(res.refused / 2));
+    function failed() {
+      var j = job; job = null;
+      toMain();
+      if (!j) return;
+      if (!j.progressed) whenUsable().then(function () { j.resolve(closed || !lib ? legResult({ failures: 1 }) : runMain(j.dir, j.budget, j.onSample)); });
+      else j.resolve(legResult({ failures: 1, bytes: j.bytes }));
+    }
+    function arm() { clearTimeout(wd); wd = setTimeout(function () { if (job && !fell && !closed) failed(); }, LOCAL_SILENT_MS); }
+    function onMsg(ev) {
+      var m = ev.data;
+      if (closed || fell || !m || typeof m !== 'object') return;
+      if (m.t === 'ready') { if (!ready) { ready = true; clearTimeout(timer); timer = null; wake(); } return; }
+      if (m.t === 'fatal') { failed(); return; }
+      if (!job || m.id !== job.id) return;                // a late message of a transfer that already ended
+      arm();
+      if (m.t === 'progress') {
+        var b = clampNum(m.bytes, 1099511627776), v = clampNum(m.mbps, 100000);
+        if (b == null || v == null) return;
+        job.progressed = true; job.bytes = b; job.onSample(v);
+      } else if (m.t === 'done') {
+        var j = job; job = null; clearTimeout(wd); wd = null;
+        j.resolve(legResult(m.res));
       }
-      T.streams--;
     }
-    async function pinger() {
-      var i = 0;
-      while (!pingStop && !S.cancelled) { try { pings.push([now(), await pingOnce(900 + (i++))]); } catch (e) { /* token ended or aborted */ } await sleep(220); }
-    }
-    var workers = [];
-    for (var i = 0; i < startN && i < maxN; i++) workers.push(stream());
-    var pingP = pinger();
-    var prevRate = 0, lastGrow = 0;
-    T.last = T.bytes; T.lastT = now();
-    await new Promise(function (resolve) {
-      var timer = setInterval(function () {
-        var tn = now(), dt = tn - T.lastT, rate = (T.bytes - T.last) * 8 / (dt / 1000) / 1e6;
-        T.last = T.bytes; T.lastT = tn;
-        var el0 = tn - T.t0;
-        T.bins.push({ t: el0, mbps: rate }); feedGauge(rate);
-        if (T.streams < maxN && T.rampAt == null && el0 - lastGrow > 500 && rate > prevRate * 1.1 && T.bins.length > 2) { workers.push(stream()); lastGrow = el0; }
-        prevRate = rate;
-        var after = T.bins.filter(function (b) { return b.t >= (T.rampAt != null ? T.rampAt : 1500); }).length;
-        if (S.cancelled || el0 >= 8000 || T.streams === 0 || (T.rampAt != null && after >= 8)) { clearInterval(timer); resolve(); }
-      }, 250);
-    });
-    T.stop = true; pingStop = true;
-    var grace = now() + 1500;
-    while (T.streams > 0 && now() < grace) await sleep(50);
-    ctrls.forEach(function (c) { try { c.abort(); } catch (e) { /* ignore */ } });
-    await Promise.all(workers.map(function (w) { return w.catch(function () {}); })); await pingP;
-    var from = T.rampAt != null ? T.rampAt : 1500;
-    var post = T.bins.filter(function (b) { return b.t >= from; }).map(function (b) { return b.mbps; });
-    if (post.length < 3) post = T.bins.slice(Math.floor(T.bins.length / 2)).map(function (b) { return b.mbps; });
-    var secs = Math.max(0.25, (now() - T.t0) / 1000);
-    var speed = post.length ? percentile(post, 0.9) : T.bytes * 8 / secs / 1e6;
-    var lat = pings.filter(function (p) { return p[0] - T.t0 >= 500 || pings.length < 4; }).map(function (p) { return p[1]; });
-    return { mbps: speed, cv: cv(post), failures: T.failures, bytes: T.bytes, loaded_ms: median(lat), samples: post.length };
+    function whenUsable() { return new Promise(function (res) { if (usable()) res(); else waiters.push(res); }); }
+    me.boot = function () {
+      if (!window.Worker) { toMain(); return; }
+      try {
+        w = new Worker(LOCAL_URL);
+        w.onmessage = onMsg;
+        w.onerror = function () { if (!closed && !fell) failed(); };
+        timer = setTimeout(function () { if (!ready && !closed) failed(); }, LOCAL_START_MS);
+      } catch (e) { w = null; toMain(); }
+    };
+    /** One direction -> legResult; onSample(mbps) per 250-ms sample. Never rejects. */
+    me.transfer = function (dir, budget, onSample) {
+      return whenUsable().then(function () {
+        if (closed) return legResult(null);
+        if (!lib && ready && !fell && w) {
+          return new Promise(function (resolve) {
+            job = { id: ++seq, dir: dir, budget: budget, onSample: onSample, resolve: resolve, progressed: false, bytes: 0 };
+            arm();
+            try { w.postMessage({ cmd: 'transfer', id: job.id, dir: dir, budget: budget, token: token, limits: limits }); } catch (e) { failed(); }
+          });
+        }
+        return lib ? runMain(dir, budget, onSample) : legResult({ failures: 1 });
+      });
+    };
+    me.close = function () {
+      if (closed) return;
+      closed = true;
+      try { cancelAc.abort(); } catch (e) { /* ignore */ }
+      if (w) { try { w.postMessage({ cmd: 'cancel' }); } catch (e) { /* ignore */ } }
+      stopWorker();
+      var j = job; job = null;
+      if (j) j.resolve(legResult(null));
+      wake();
+    };
   }
   async function localLeg(sess) {
     var out = { status: 'ok' }, lim = sess.limits;
@@ -782,6 +771,13 @@ label { font-size: 13px; color: var(--muted); }
     var idle = await pingSeries(Math.max(5, Math.min(20, lim.ping_count || 20)), function (v) { showMs(v); });
     out.idle_ms = median(idle); out.jitter_ms = jitterOf(idle);
     legSet('lan', fmtMs(out.idle_ms) + ' ms', 'idle', grade(out.idle_ms, 30, 100));
+    checkCancel();
+    var host = new LocalHost(String(sess.leg_token), { streams_start: lim.streams_start, streams_max: lim.streams_max, ramp_max_bytes: lim.ramp_max_bytes });
+    S.ll = host; host.boot();
+    try { return await localRest(sess, out, host); } finally { host.close(); if (S.ll === host) S.ll = null; }
+  }
+  async function localRest(sess, out, host) {
+    var lim = sess.limits;
     legActive('dns'); phase('Timing name lookups'); showMs(null);
     var dns = null;
     try { dns = await dnsLeg(sess); } catch (e) { dns = null; }
@@ -796,13 +792,13 @@ label { font-size: 13px; color: var(--muted); }
     var budget = Math.max(200000, lim.bytes_local || 50000000), downB = Math.floor(budget * 0.6);
     setSpeedMode(true); loopOn(); legActive('lan');
     gaugeMode('down'); phase('On-network download', 'From the venue test box'); $('lgL').textContent = 'Download · live'; G.samples = []; G.target = 0;
-    var d = await transferLeg('down', downB);
+    var d = await host.transfer('down', downB, feedGauge);
     checkCancel();
     out.down_mbps = d.mbps; out.loaded_down_ms = d.loaded_ms; out.bytes = d.bytes; var failures = d.failures, cvs = [d.cv];
     G.target = d.mbps; feedGauge(d.mbps);
     await sleep(reduced() ? 0 : 250);
     gaugeMode('up'); phase('On-network upload', 'To the venue test box'); $('lgL').textContent = 'Upload · live'; G.samples = []; G.target = 0;
-    var u = await transferLeg('up', Math.max(200000, budget - d.bytes));
+    var u = await host.transfer('up', Math.max(200000, budget - d.bytes), feedGauge);
     checkCancel();
     out.up_mbps = u.mbps; out.loaded_up_ms = u.loaded_ms; out.bytes += u.bytes; failures += u.failures; cvs.push(u.cv);
     G.target = u.mbps; feedGauge(u.mbps);
@@ -1076,6 +1072,7 @@ label { font-size: 13px; color: var(--muted); }
   function releaseSlotQuiet() { if (S.slot && S.sess) { S.slot = false; slotCall('release').catch(function () {}); } }
   function cancelTest() {
     S.cancelled = true; try { if (S.ac) S.ac.abort(); } catch (e) { /* ignore */ } try { if (S.cf) S.cf.pause(); } catch (e) { /* ignore */ }
+    try { if (S.ll) S.ll.close(); } catch (e) { /* ignore */ }         // the on-network transfer: every request stops now
   }
   function bestLeg(legs) {
     var i = legs && legs.internet, l = legs && legs.local;

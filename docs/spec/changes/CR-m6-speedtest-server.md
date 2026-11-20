@@ -56,7 +56,7 @@ will NOT verify against a verifier created from the sentinel proof.
 | 23 | Download payload | 32 MiB of `os.urandom` at `<state>/payload.bin`, served with `sendfile` at rotating offsets (a temp file when the state dir is not writable). Over TLS (`provided`) the box uses `pread` + `send` (no kTLS), so the 2 Gb/s figure is a plain-HTTP figure. |
 | 24 | Health | `exp.health/1` from `/run/exp/speedtest/status.json` (2 s): `fail` = daemon not running, HTTP listener down, collector `auth_failed` / `tls_pin_mismatch`; `degraded` = collector unreachable (spooling), DNS-leg server or runner channel not bound, no ICMP mechanism, spool > half full. `local_leg_gbps_p95` = p95 of per-second aggregate box throughput (seconds with traffic) over the last hour. |
 | 25 | Packaging hooks | `speedtest/systemd/exp-speedtest.service`, `speedtest/requirements.apt`, `speedtest/bin/exp-speedtest` follow the other components' layout (`@PREFIX@ @CONFIG@ @CREDS@ @VERSION@` placeholders). The root `Makefile` (`COMPONENTS`, `LINT_DIRS`) and `pyproject.toml` `testpaths` now list `speedtest` (surgical additive edits by this step). `packaging/pack.py` `COMPONENTS` / `PER_ARCH_COMPONENTS` and the vendor lock (`dnspython` is declared for `probe` only: the speedtest needs it too) do **not** list `speedtest` yet; the platform step must add them. |
-| 26 | Internet engine in a worker (A6.10) | The vendored Cloudflare engine no longer runs on the page's main thread (its string upload bodies are encoded synchronously by `fetch()`: 770-830 ms main-thread tasks, 35.6 fps in the upload phase). `page/build.py` writes ONE file, `static/assets/cf-engine.js` (~63 KB: `src/engine-prelude.js` + the verbatim library wrapper, library file sha256 4b4ec8c0... asserted by `build.py` (`LIB_SHA256`; the upstream archive hash 08e3c0b4... is pinned in vendor.lock and `test_vendored_files_match_vendor_lock`) + `src/engine-bridge.js`); the library is no longer inlined in `index.html` (one inline script left: `app.js`). In a `DedicatedWorkerGlobalScope` the prelude sets `self.window = self` (the library only reads `window.location.origin`; it touches no `document`/`localStorage`) and the bridge answers `{cmd:"start", config}` / `{cmd:"pause"}` with `started`, `phase`, `results`, `error`, `running`, `finish`, `fatal` messages carrying plain snapshots (bandwidth/latency points with bps, bytes, duration, transferSize, ping; down/up/idle/jitter/loaded latencies). On the main thread the file only exposes `window.CFSpeedTest`. `app.js` `EngineHost` has the engine's callback/play/pause/results surface; **fallback**: `new Worker` throws, the worker errors or says nothing for 6 s after start -> the same file is loaded as a classic `<script src>` and the engine runs on the main thread as before. `logAimApiUrl`/`logMeasurementApiUrl` stay null and the internet plan stays latency/download/upload. Served via `/st/assets/cf-engine.js` (only from the packaged `static/assets/`, never the operator's assets dir), `Content-Type: text/javascript; charset=utf-8`, `nosniff`, `Cache-Control: public, max-age=300` like the other assets, and **its own CSP** (CSP3: a dedicated worker takes its policy from its script response, not the page): `default-src 'none'; <the page's connect-src>; frame-ancestors 'none'` (`StaticSite.worker_csp`, built from the same inputs as `build_csp`). **Page CSP change**: `worker-src 'self'` (never `blob:`/`data:`) and `script-src <hashes> 'self'`; `'self'` is needed ONLY for the same-origin engine file (worker start, and the main-thread fallback `<script src>`); no `unsafe-inline`/`unsafe-eval`. `build.py --out DIR` now also writes `assets/cf-engine.js` (reproducible; the packaging hook overlays the whole tree). Page weight counts the worker file (HTML + engine, gzip -9, + fonts <= 200 KB). Tests: `test_page_browser.py::test_full_test_390` (a worker with that URL ran; internet cv < 0.3, stability >= 40) and `::test_full_test_without_workers_falls_back_to_the_main_thread` (init script deletes `window.Worker`; complete result, comparable figures), `test_page_build.py` (verbatim-once library, worker CSP exact, host/URL-template checks cover the engine file). *(Follow-up 2026-11-20 at the end of this file: switched-off internet leg on the results page, engine-host robustness, worker-path proof, A6.10 weight.)* |
+| 26 | Internet engine in a worker (A6.10) | The vendored Cloudflare engine no longer runs on the page's main thread (its string upload bodies are encoded synchronously by `fetch()`: 770-830 ms main-thread tasks, 35.6 fps in the upload phase). `page/build.py` writes ONE file, `static/assets/cf-engine.js` (~63 KB: `src/engine-prelude.js` + the verbatim library wrapper, library file sha256 4b4ec8c0... asserted by `build.py` (`LIB_SHA256`; the upstream archive hash 08e3c0b4... is pinned in vendor.lock and `test_vendored_files_match_vendor_lock`) + `src/engine-bridge.js`); the library is no longer inlined in `index.html` (one inline script left: `app.js`). In a `DedicatedWorkerGlobalScope` the prelude sets `self.window = self` (the library only reads `window.location.origin`; it touches no `document`/`localStorage`) and the bridge answers `{cmd:"start", config}` / `{cmd:"pause"}` with `started`, `phase`, `results`, `error`, `running`, `finish`, `fatal` messages carrying plain snapshots (bandwidth/latency points with bps, bytes, duration, transferSize, ping; down/up/idle/jitter/loaded latencies). On the main thread the file only exposes `window.CFSpeedTest`. `app.js` `EngineHost` has the engine's callback/play/pause/results surface; **fallback**: `new Worker` throws, the worker errors or says nothing for 6 s after start -> the same file is loaded as a classic `<script src>` and the engine runs on the main thread as before. `logAimApiUrl`/`logMeasurementApiUrl` stay null and the internet plan stays latency/download/upload. Served via `/st/assets/cf-engine.js` (only from the packaged `static/assets/`, never the operator's assets dir), `Content-Type: text/javascript; charset=utf-8`, `nosniff`, `Cache-Control: public, max-age=300` like the other assets, and **its own CSP** (CSP3: a dedicated worker takes its policy from its script response, not the page): `default-src 'none'; <the page's connect-src>; frame-ancestors 'none'` (`StaticSite.worker_csp`, built from the same inputs as `build_csp`). **Page CSP change**: `worker-src 'self'` (never `blob:`/`data:`) and `script-src <hashes> 'self'`; `'self'` is needed ONLY for the same-origin engine file (worker start, and the main-thread fallback `<script src>`); no `unsafe-inline`/`unsafe-eval`. `build.py --out DIR` now also writes `assets/cf-engine.js` (reproducible; the packaging hook overlays the whole tree). Page weight counts the worker file (HTML + engine, gzip -9, + fonts <= 200 KB). Tests: `test_page_browser.py::test_full_test_390` (a worker with that URL ran; internet cv < 0.3, stability >= 40) and `::test_full_test_without_workers_falls_back_to_the_main_thread` (init script deletes `window.Worker`; complete result, comparable figures), `test_page_build.py` (verbatim-once library, worker CSP exact, host/URL-template checks cover the engine file). *(Follow-ups 2026-11-20 at the end of this file: switched-off internet leg on the results page, engine-host robustness, worker-path proof, A6.10 weight; then the on-network transfer in its own worker, `assets/local-leg.js`.)* |
 
 ## 3. Not done / handed on
 
@@ -115,3 +115,76 @@ will NOT verify against a verifier created from the sentinel proof.
   `dns_cold_split`): now item 26. The `packaging/vendor.lock` note for `@cloudflare/speedtest` said `build.py` wraps the library
   "inside the single self-contained page"; it now names the separate engine file `assets/cf-engine.js` (note text only, no hash
   changed).
+
+## Item 26 follow-up 2 (2026-11-20): the on-network transfer in a dedicated worker (A6.10)
+
+* **Why.** With the internet engine in its worker the internet phases ran at 60 fps, but A6.10 (4x CPU throttle, link 50 / 25 Mb/s;
+  gate: median >= 55, EVERY phase >= 50, 0 s under 10 fps) then failed on the ON-NETWORK phases: On-network download 47.0 fps
+  (earlier runs 53-59), upload 53.6. The CDP trace of the failing run had the main thread ~93 % busy in those seconds (890-976 ms
+  per second, against ~530 ms/s once the internet worker runs): ~310 ms/s more in loader / data-pipe tasks and microtask checkpoints
+  from the `fetch()` body `ReadableStream` reader loop of `transferLeg`'s download requests, plus 220-227 ms `XHRLoad` tasks at the
+  end of the upload `XMLHttpRequest`s (Blob bodies). Layout / paint work was the same in fast and slow seconds: the cost was the
+  transfer I/O on the main thread, not the gauge.
+* **What moved.** `transferLeg` and its loaded-latency pinger now live in `page/src/local-leg.js` (`ExpLocalLeg.transfer(dir, budget,
+  ctx)`), the ONE implementation of the on-network measurement, with the algorithm unchanged: streams start at
+  `limits.streams_start` (4), grow while the aggregate rate rises, capped at `min(limits.streams_max, 5)` (HTTP/1.1); request sizes
+  100 kB x4 up to `min(25 MB, limits.ramp_max_bytes)`; a direction ends when a request takes >= 1 s and >= 8 samples followed, after
+  8 s, or when its byte budget is spent; speed = p90 of the 250-ms aggregate samples after the ramp; the 413 `details.remaining`
+  handling, failure counting, `X-Exp-Leg-Token`, `cache: no-store`, `credentials: omit` and the per-test budget (60 % down, the rest
+  up) as before. Its inputs replace the page globals (`ctx.token`, `ctx.limits`, a cancel `AbortSignal` for `S.cancelled`, a
+  per-sample callback for `feedGauge`). Two deliberate differences, both outside a measurement that is submitted: a Cancel aborts
+  every in-flight request of the direction at once (before, they were left up to the 1.5 s end-of-direction grace, which still
+  applies to a normal end so the byte counters agree), and an exception in the display callback cannot stop the measurement. The idle
+  pings, the DNS leg (the page's own Resource Timing) and everything displayed stay on the main thread. `build.py` writes
+  `local-leg.js` + the worker bridge `page/src/local-bridge.js` as `static/assets/local-leg.js` (11.6 KB, 4.0 KB gzip -9); `app.js`
+  carries no copy (`build.py` refuses an `app.js` containing `getReader`, `XMLHttpRequest` or `/st/down`).
+* **Protocol.** Page -> worker: `{cmd: "transfer", id, dir, budget, token, limits}`, `{cmd: "cancel"}`. Worker -> page: `ready`
+  (once), `progress {id, mbps, bytes, at}` once per 250-ms sample (the cadence the gauge was fed at before; never per chunk),
+  `alive {id}` every second while a transfer runs (its end can be quiet: grace, last ping), `done {id, res}` and `fatal {id, msg}`.
+  `res` is the object `transferLeg` returned before, `{mbps, cv, failures, bytes, loaded_ms, samples}`, used by `localLeg` exactly
+  as before (down/up Mb/s, loaded latency per direction, max cv, bytes, failures).
+* **Untrusted shapes.** `app.js` `LocalHost` treats every message as untrusted: numbers go through `clampNum` before they reach the
+  gauge, the leg rows or the submission (`legResult`: Mb/s 0..100000, cv 0..10, latency 0..60000 ms, bytes 0..2^40, integer
+  failures / samples; a progress message with a non-number is dropped), and a message whose `id` is not the running transfer's is
+  ignored. The fallback's result goes through the same `legResult`; displayed and submitted figures still come from the same
+  `numLeg` object, so they are equal (asserted for every full browser run, see Tests).
+* **Fallback** (the `EngineHost` patterns). The worker is created after the idle pings, so it is ready by the throughput phase.
+  No `Worker`, `new Worker` throwing, an `error` event or `fatal` before the running transfer reported progress, or no `ready`
+  within 4 s (`LOCAL_START_MS`) -> the worker is terminated and the same file is inserted ONCE as a classic
+  `<script src="/st/assets/local-leg.js">` (the guard is set before anything else); `ExpLocalLeg.transfer` then runs on the main
+  thread as before this follow-up (a transfer that had not started runs there). A worker failure after the running transfer
+  reported progress (`error`, `fatal`, or 6 s without any message: `LOCAL_SILENT_MS`) ends that direction with no figure and one
+  failure (bytes as last reported; it is not re-run) and later directions use the fallback. Never both at once; every end is
+  terminal: the worker is terminated on fallback, at the end of the leg (`finally`), on error and on Cancel, and nothing it still
+  sends is used.
+* **Cancel.** `cancelTest` closes the host: the worker is terminated (its in-flight requests end with it); on the main thread the
+  cancel signal aborts every in-flight request; a pending transfer resolves at once and the run stops as before ("Nothing was sent").
+* **CSP: no new source.** The page keeps `worker-src 'self'` and `script-src <hash> 'self'` (never `blob:`, `data:`, `unsafe-*`).
+  `static.ENGINE_ASSETS = {"cf-engine.js", "local-leg.js"}` replaces the single engine name: an allowlist of worker files, not "any
+  .js". Only these are served as `text/javascript; charset=utf-8`, only from the packaged `static/assets/` (an operator file of the
+  same name never shadows them; any other `.js` is a 404), with `nosniff`, `Cache-Control: public, max-age=300`,
+  `Cross-Origin-Resource-Policy: same-origin` and the worker policy `default-src 'none'; <the page's connect-src>; frame-ancestors
+  'none'` (the existing `routes._asset` branch). The file needs only fetch, XMLHttpRequest, AbortController, Blob,
+  `crypto.getRandomValues`, `performance` and timers (no `document`, `window`, `localStorage`) and requests only `/st/ping`,
+  `/st/down` and `/st/up` of the box.
+* **Weight.** HTML 28.0 kB + `cf-engine.js` 15.3 kB + `local-leg.js` 4.0 kB (gzip -9) + fonts 102.6 kB = 150.0 kB (146.5 KiB)
+  <= 200 KB (`test_page_build.py::test_page_weight_budget` counts all three; the HTML lost 0.7 kB). A6.10 adds
+  `/st/assets/local-leg.js` to its weight list the same way as the engine file and asserts that the run fetched it.
+* **Tests** (`speedtest/tests`). The worker path is proven without a product hook: the page target's own CDP `Network` domain
+  reports the main thread's requests only, Playwright's `page.on("request")` also those of dedicated workers (checked with this
+  repository's Chromium; the page's CDP link emulation does apply to worker fetches, so A6.10's 50 / 25 Mb/s still covers the
+  on-network leg). `test_full_test_390`: workers `[local-leg.js, cf-engine.js]`, no `<script src>` after the run, every
+  `/st/down`, `/st/up` and loaded ping (`n >= 900`) from a worker and the idle pings from the main thread (control), sane local
+  figures (both directions, loaded latency, cv, bytes within the budget, no `counters_disagree`).
+  `test_full_test_without_workers_falls_back_to_the_main_thread`: both fallback scripts (`local-leg.js`, `cf-engine.js`), every
+  transfer request from the main thread, the same figure checks. New `test_cancel_during_the_on_network_leg_stops_its_traffic`
+  (download / upload x worker / main thread, link emulated at 50 / 25 Mb/s so a direction lasts seconds; the phase is read in the
+  same task as the click): no transfer request starts > 500 ms after Cancel, the box has no transfer in flight 1 s after it and
+  moves no byte between 1 s and 2.5 s after it, nothing is submitted, the internet leg never starts. New
+  `test_local_worker_misbehaving_falls_back_once[throw|silent|fatal_mid]` (a scripted stand-in for the transfer worker only; the
+  engine worker is real): one fallback script each time, the stand-in terminated, a malformed progress message and the late `done`
+  / error event after `fatal` change nothing, a `fatal` mid-download leaves Local down as "—" and the upload measured on the main
+  thread. `check_run` now asserts that every number the results show equals the submitted one (A6.10's `same_numbers`, page side)
+  and, as A6.10 does, that no request failed other than with `ERR_ABORTED`.
+  `test_page_build.py`: reproducible incl. `local-leg.js`, one implementation (page has none of it, the file is src + bridge),
+  served with the worker CSP, other `.js` 404, host checks; `test_units.py`: the allowlist and no shadowing.

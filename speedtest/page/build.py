@@ -10,6 +10,8 @@ and ``vendor/speedtest.js`` (the unmodified ``@cloudflare/speedtest`` 1.16.0 dis
 ``packaging/vendor.lock``). The vendored ES module is wrapped into a classic script (its single ``export default`` becomes
 ``return``), preceded by its MIT licence header. It is NOT inlined in the page: it goes into ``assets/cf-engine.js`` (prelude +
 library + bridge, ``src/engine-*.js``) which the page runs in a dedicated worker (main-thread fallback: same file as a script).
+The on-network transfer is ``src/local-leg.js`` (the one implementation) + ``src/local-bridge.js``, written as
+``assets/local-leg.js``: the page runs it in a dedicated worker too, with the same kind of fallback; ``app.js`` has no copy.
 
 CSP: the page has exactly one inline ``<script>`` block and one ``<style>`` block; their sha256 hashes are written to
 ``csp-hashes.json`` (``exp.speedtest.csp/1``), which ``exp_speedtest/static.py`` reads to build ``script-src``/``style-src``.
@@ -31,6 +33,7 @@ OUT_DIR = HERE.parent / "exp_speedtest" / "static"
 LIB_EXPORT = "export { SpeedTestEngine as default };"
 HASH_SCHEMA = "exp.speedtest.csp/1"
 ENGINE_REL = "assets/cf-engine.js"
+LOCAL_REL = "assets/local-leg.js"
 # sha256 of vendor/speedtest.js (the @cloudflare/speedtest 1.16.0 dist; pinned in packaging/vendor.lock; the upstream
 # archive hash 08e3c0b4... is recorded there as archive_sha256). The build refuses any other library bytes.
 LIB_SHA256 = "4b4ec8c0388a27fd7450ce598460f2c6097918fea8888e256966a0071aea3da5"
@@ -78,6 +81,13 @@ def engine_file(lib: str) -> str:
     return "\n".join(parts) + "\n"
 
 
+def local_file() -> str:
+    """``/st/assets/local-leg.js``: the on-network transfer (``src/local-leg.js``, ONE implementation) + its worker bridge.
+    Loaded as a dedicated worker (normal) or as a classic script on the main thread (fallback; the bridge is inert there)."""
+    parts = [tidy_js(_read(HERE / "src" / "local-leg.js")), tidy_js(_read(HERE / "src" / "local-bridge.js"))]
+    return "\n".join(parts) + "\n"
+
+
 def build() -> dict[str, str]:
     tpl = _read(HERE / "src" / "index.html")
     css = minify_css(_read(HERE / "src" / "style.css"))
@@ -100,7 +110,11 @@ def build() -> dict[str, str]:
     if len(scripts) != 1 or len(styles) != 1 or re.search(r"<script[^>]*\ssrc=", html, flags=re.I):
         raise SystemExit("unexpected inline block layout")
     hashes = {"schema": HASH_SCHEMA, "script": [csp_hash(s) for s in scripts], "style": [csp_hash(s) for s in styles]}
-    return {"index.html": html, "csp-hashes.json": json.dumps(hashes, indent=1, sort_keys=True) + "\n", ENGINE_REL: engine}
+    local = local_file()
+    if "ExpLocalLeg" not in local or "getReader" in app or "/st/down" in app or "XMLHttpRequest" in app:
+        raise SystemExit("app.js: the on-network transfer belongs in src/local-leg.js only (one implementation)")
+    return {"index.html": html, "csp-hashes.json": json.dumps(hashes, indent=1, sort_keys=True) + "\n", ENGINE_REL: engine,
+            LOCAL_REL: local}
 
 
 def asset_files() -> dict[str, bytes]:

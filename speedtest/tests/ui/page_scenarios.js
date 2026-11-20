@@ -32,12 +32,14 @@ async function launch() {
 // A stand-in for the engine worker that misbehaves on cue (test_page_browser.py::test_engine_worker_misbehaving_*), installed by an
 // init script: no product hook. Messages and the error event go to the handlers the page set when it started the worker, captured
 // at that moment, so they still arrive after the page terminated it (events already queued at that point); the page must ignore
-// every one of them once the leg ended or fell back to the main thread.
+// every one of them once the leg ended or fell back to the main thread. Other workers (the on-network transfer) are the real ones.
 function fakeWorker(mode) {
+  const Real = window.Worker;
   const F = window.__fakeWorker = { mode, made: 0, terminated: 0, sentAfterTerminate: 0 };
   const pts = (bps) => [0, 1, 2, 3].map(() => ({ bps, bytes: 1e6, duration: 1600, transferSize: 1e6, ping: null }));
   const snap = { down: 50e6, up: 20e6, idle: 12, jitter: 1, ldown: 30, lup: 35, dp: pts(50e6), upp: pts(20e6), lp: [12, 13, 12] };
-  window.Worker = function () {
+  window.Worker = function (url, opts) {
+    if (!/\/cf-engine\.js$/.test(String(url))) return new Real(url, opts);
     const w = this;
     let dead = false;
     F.made++;
@@ -58,6 +60,39 @@ function fakeWorker(mode) {
   };
 }
 
+// A stand-in for the on-network transfer worker (/st/assets/local-leg.js) that misbehaves on cue
+// (test_page_browser.py::test_local_worker_misbehaving_*), installed by an init script: no product hook. Every other worker (the
+// internet engine) is the real one. "throw": new Worker throws; "silent": never says ready (the page's start timeout);
+// "fatal_mid": ready, one valid and one malformed progress message, then 'fatal', a late 'done' and an error event, all to the
+// handlers captured when the transfer was sent (they still arrive after terminate(), as queued events would).
+function fakeLocalWorker(mode) {
+  const Real = window.Worker;
+  const F = window.__fakeLocal = { mode, made: 0, terminated: 0, sentAfterTerminate: 0, commands: [] };
+  window.Worker = function (url, opts) {
+    if (!/\/local-leg\.js$/.test(String(url))) return new Real(url, opts);
+    if (mode === "throw") throw new Error("no worker today");
+    const w = this;
+    let dead = false;
+    F.made++;
+    w.terminate = () => { if (!dead) F.terminated++; dead = true; };
+    const send = (h, data) => { if (dead) F.sentAfterTerminate++; if (h) h({ data }); };
+    w.postMessage = (m) => {
+      F.commands.push(m && m.cmd);
+      if (mode !== "fatal_mid" || !m || m.cmd !== "transfer") return;
+      const onmsg = w.onmessage, onerr = w.onerror;
+      setTimeout(() => send(onmsg, { t: "progress", id: m.id, mbps: 123.4, bytes: 2e6, at: 250 }), 100);
+      setTimeout(() => send(onmsg, { t: "progress", id: m.id, mbps: "9999", bytes: -5, at: "x" }), 150);
+      setTimeout(() => {
+        send(onmsg, { t: "fatal", id: m.id, msg: "broke" });
+        send(onmsg, { t: "done", id: m.id, res: { mbps: 999, cv: 0, failures: 0, bytes: 1e6, loaded_ms: 1, samples: 9 } });
+        if (dead) F.sentAfterTerminate++;
+        if (onerr) onerr(new Event("error"));
+      }, 400);
+    };
+    if (mode === "fatal_mid") setTimeout(() => send(w.onmessage, { t: "ready" }), 30);
+  };
+}
+
 async function open(browser, o) {
   o = o || {};
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: o.viewport || { width: 390, height: 844 }, deviceScaleFactor: o.dpr || 2,
@@ -67,8 +102,9 @@ async function open(browser, o) {
   page.on("dialog", async (d) => { seen.dialogs.push(d.message()); await d.dismiss(); });
   page.on("console", (m) => { const t = m.text(); seen.console.push(t); if (/Content Security Policy|Refused to/i.test(t)) seen.csp.push(t); });
   page.on("pageerror", (e) => seen.errors.push(String(e)));
+  seen.reqLog = [];                     // [{u, t}] every request (page AND workers), with its wall-clock time
   page.on("request", (r) => {
-    seen.requests.push(r.url());
+    seen.requests.push(r.url()); seen.reqLog.push({ u: r.url(), t: Date.now() });
     if (/\/result$/.test(r.url()) && r.method() === "POST") seen.submissions.push({ req: JSON.parse(r.postData() || "null") });
   });
   page.on("requestfailed", (r) => seen.failed.push(r.url() + " " + (r.failure() || {}).errorText));
@@ -77,8 +113,18 @@ async function open(browser, o) {
   });
   seen.workers = [];
   page.on("worker", (w) => seen.workers.push(w.url()));
+  // The page target's own CDP Network domain reports the requests of the page's main thread only, not those of its dedicated
+  // workers (Playwright's page.on("request") reports both): a request in seen.requests but not in seen.mainReqs came from a worker.
+  seen.mainReqs = [];
+  const cdp = await ctx.newCDPSession(page);
+  await cdp.send("Network.enable");
+  cdp.on("Network.requestWillBeSent", (e) => seen.mainReqs.push(e.request.url));
+  // link emulation (it applies to the page's dedicated workers too): keeps a direction of the on-network leg running for seconds
+  if (o.throttle) await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: o.throttle.latencyMs || 0,
+    downloadThroughput: o.throttle.downKbps * 1000 / 8, uploadThroughput: o.throttle.upKbps * 1000 / 8 });
   if (o.noWorker) await page.addInitScript(() => { delete window.Worker; });      // the fallback path: no dedicated workers at all
   if (o.fakeWorker) await page.addInitScript(fakeWorker, o.fakeWorker);           // a worker that errors / says fatal on cue
+  if (o.fakeLocal) await page.addInitScript(fakeLocalWorker, o.fakeLocal);        // the transfer worker misbehaving on cue
   await page.addInitScript(() => {
     window.__csp = [];
     document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + e.blockedURI));
@@ -159,6 +205,7 @@ async function full(browser, o) {
   await sleep(1800);                                   // let the sweep-in finish
   const first = await snapshot(page); step('first snapshot');
   const fakeWorkerStats = o.fakeWorker ? await page.evaluate(() => window.__fakeWorker) : null;
+  const fakeLocalStats = o.fakeLocal ? await page.evaluate(() => window.__fakeLocal || null) : null;
   if (o.shotResults) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotResults); await shot(page, o.shotResults + "-full", true); }
   let flipped = null;
   if (o.correlate) {
@@ -169,7 +216,8 @@ async function full(browser, o) {
     if (o.shotFinal) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotFinal, true); }
   }
   const final = flipped || first;
-  const res = { cspHeader, pre, first, flipped, phases, phaseTimes, fakeWorker: fakeWorkerStats, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), workers: seen.workers, requests: seen.requests, csp: seen.csp, cspEvents: final.csp,
+  const res = { cspHeader, pre, first, flipped, phases, phaseTimes, fakeWorker: fakeWorkerStats, fakeLocal: fakeLocalStats, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), workers: seen.workers, requests: seen.requests,
+    mainReqs: seen.mainReqs, csp: seen.csp, cspEvents: final.csp,
     errors: seen.errors, dialogs: seen.dialogs, submissions: seen.submissions, failed: seen.failed, midAnimsMax: Math.max(0, ...midAnims), midAnimsMin: midAnims.length ? Math.min(...midAnims) : null };
   step('flipped'); if (o.report) {
     await page.click("#reportBtn"); await page.fill("#rText", o.report); await page.click("#report button[type=submit]");
@@ -207,6 +255,33 @@ async function full(browser, o) {
   if (o.contrast) res.contrast = await contrast(page);
   if (o.keyboard) res.keyboard = await keyboardWalk(page);
   res.final = await snapshot(page);
+  await ctx.close();
+  return res;
+}
+
+// Cancel during the on-network leg (test_page_browser.py::test_cancel_during_the_on_network_leg_*): once the phase o.cancelIn shows
+// and its first transfer request (o.cancelPath) went out, wait o.cancelAfterMs, click Cancel (the phase is read in the same task as
+// the click), then ask the box twice ("box": its byte meter and in-flight transfers) 1 s and 2.5 s later.
+async function cancelRun(browser, o) {
+  const { ctx, page, seen } = await open(browser, o);
+  await page.goto(BASE + "/", { waitUntil: "load" });
+  await startTest(page);
+  const want = o.cancelIn || "On-network download", path = o.cancelPath || "/st/down";
+  await page.waitForFunction((w) => document.getElementById("phaseText").textContent === w, want, { timeout: 60000 });
+  for (let i = 0; i < 200 && !seen.reqLog.some((q) => new URL(q.u).pathname === path); i++) await sleep(25);
+  await sleep(o.cancelAfterMs || 600);
+  const before = await need("box");
+  const tc = Date.now();
+  const phaseAtClick = await page.evaluate(() => { const p = document.getElementById("phaseText").textContent; document.getElementById("cancel").click(); return p; });
+  await sleep(1000);
+  const b1 = await need("box");
+  await sleep(1500);
+  const b2 = await need("box");
+  await page.waitForFunction(() => document.getElementById("phaseText").textContent === "Test stopped", null, { timeout: 10000 }).catch(() => {});
+  const snap = await snapshot(page);
+  const phases = await page.evaluate(() => window.__phases);
+  const res = { cancel: { tc, before, b1, b2, phaseAtClick }, snap, phases, reqLog: seen.reqLog, mainReqs: seen.mainReqs, workers: seen.workers, requests: seen.requests,
+    submissions: seen.submissions, errors: seen.errors, csp: seen.csp, dialogs: seen.dialogs, failed: seen.failed };
   await ctx.close();
   return res;
 }
@@ -306,6 +381,7 @@ async function main() {
   try {
     const o = cfg.opts || {};
     if (scenario === "full") res = await full(browser, o);
+    else if (scenario === "cancel") res = await cancelRun(browser, o);
     else if (scenario === "viewproof") res = await viewproof(browser);
     else if (scenario === "plain") res = await plainHttp(browser);
     else if (scenario === "insecure") res = await sha256Check(browser);

@@ -17,6 +17,7 @@ build_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build_mod)
 HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 ENGINE = (STATIC_DIR / "assets" / "cf-engine.js").read_text(encoding="utf-8")
+LOCAL = (STATIC_DIR / "assets" / "local-leg.js").read_text(encoding="utf-8")       # the on-network transfer's worker file
 FONTS = sorted((STATIC_DIR / "assets").glob("*.woff2"))
 
 
@@ -31,8 +32,31 @@ def test_build_is_deterministic_and_the_committed_output_is_fresh(tmp_path):
     build_mod.write(tmp_path / "x")
     build_mod.write(tmp_path / "y")
     assert a["assets/cf-engine.js"].encode() == (STATIC_DIR / "assets" / "cf-engine.js").read_bytes()
-    for rel in ("index.html", "csp-hashes.json", "assets/cf-engine.js", "assets/archivo.woff2", "assets/OFL-inter.txt"):
+    assert a["assets/local-leg.js"].encode() == (STATIC_DIR / "assets" / "local-leg.js").read_bytes()
+    for rel in ("index.html", "csp-hashes.json", "assets/cf-engine.js", "assets/local-leg.js", "assets/archivo.woff2", "assets/OFL-inter.txt"):
         assert (tmp_path / "x" / rel).read_bytes() == (tmp_path / "y" / rel).read_bytes()
+        assert (tmp_path / "x" / rel).read_bytes() == (STATIC_DIR / rel).read_bytes(), rel
+
+
+def test_on_network_transfer_has_one_implementation_in_the_worker_file():
+    """CR-m6-speedtest-server item 26 follow-up: the transfer (src/local-leg.js) exists once, in assets/local-leg.js, which runs as
+    the dedicated worker or, as the fallback, as a classic script on the page; the inline page has no copy of it. The file
+    uses only what a dedicated worker has (no document, window, localStorage) and nothing that evaluates strings."""
+    src = build_mod.tidy_js((PAGE / "src" / "local-leg.js").read_text(encoding="utf-8"))
+    bridge = build_mod.tidy_js((PAGE / "src" / "local-bridge.js").read_text(encoding="utf-8"))
+    assert LOCAL == src + "\n" + bridge + "\n" and LOCAL.count("async function transferLeg(") == 1
+    for marker in ("transferLeg", "getReader", "XMLHttpRequest", "/st/down", "/st/up", "ExpLocalLeg.transfer(m.dir"):
+        assert marker not in HTML, marker                    # the page only hosts it (LocalHost), it never carries a copy
+    assert "ExpLocalLeg" in HTML and "'/st/assets/local-leg.js'" in HTML
+    code = re.sub(r"/\*.*?\*/", "", LOCAL, flags=re.S)       # comments may name what the file must not touch
+    for bad in ("document", "window", "localStorage", "sessionStorage", "innerHTML", "eval(", "new Function", "importScripts",
+                "setTimeout('", 'setTimeout("'):
+        assert bad not in code, bad
+    # the algorithm's fixed points (CR-m6-speedtest-server item 26 follow-up; the browser tests check the behaviour)
+    for want in ("lim.streams_start || 4", "Math.min(lim.streams_max || 8, MAX_STREAMS_H1)", "MAX_STREAMS_H1 = 5", "minB = 100000",
+                 "Math.min(25000000, lim.ramp_max_bytes || 25000000)", "T.size * 4", "el0 >= 8000", "after >= 8", "percentile(post, 0.9)",
+                 "r.status === 413", "'X-Exp-Leg-Token'", "cache: 'no-store', credentials: 'omit'", "}, 250);"):
+        assert want in code, want
 
 
 def test_csp_hashes_match_the_built_inline_blocks():
@@ -64,7 +88,7 @@ def test_no_inline_handlers_style_attributes_or_third_party_hosts():
 
 
 def test_page_weight_budget():
-    gz = len(gzip.compress(HTML.encode(), 9)) + len(gzip.compress(ENGINE.encode(), 9))     # the worker file counts
+    gz = sum(len(gzip.compress(t.encode(), 9)) for t in (HTML, ENGINE, LOCAL))     # the two worker files count
     fonts = sum(p.stat().st_size for p in FONTS)
     assert fonts <= 120 * 1024, fonts
     assert gz + fonts <= 200 * 1024, (gz, fonts)
@@ -122,12 +146,16 @@ def test_served_page_and_fonts(box):
         assert f"'{h}'" in r.h("content-security-policy")
     csp = r.h("content-security-policy")
     assert "worker-src 'self'" in csp and "script-src 'sha256-" in csp and "' 'self';" in csp and "blob:" not in csp and "data:" not in csp.replace("img-src 'self' data:", "")
-    e = box.get("/st/assets/cf-engine.js")
-    assert e.status == 200 and e.body == ENGINE.encode() and e.h("content-type") == "text/javascript; charset=utf-8"
-    assert e.h("x-content-type-options") == "nosniff" and e.h("cache-control") == "public, max-age=300"
-    ecsp = e.h("content-security-policy")
     page_connect = next(d for d in csp.split("; ") if d.startswith("connect-src "))
-    assert page_connect in ecsp.split("; ") and ecsp.startswith("default-src 'none'; ") and "script-src" not in ecsp, ecsp
+    for path, text in (("/st/assets/cf-engine.js", ENGINE), ("/st/assets/local-leg.js", LOCAL)):
+        e = box.get(path)
+        assert e.status == 200 and e.body == text.encode() and e.h("content-type") == "text/javascript; charset=utf-8", path
+        assert e.h("x-content-type-options") == "nosniff" and e.h("cache-control") == "public, max-age=300", path
+        assert e.h("cross-origin-resource-policy") == "same-origin" and e.h("referrer-policy") == "no-referrer", path
+        ecsp = e.h("content-security-policy")
+        assert ecsp == f"default-src 'none'; {page_connect}; frame-ancestors 'none'", (path, ecsp)
+    for other in ("app.js", "local-bridge.js", "engine-bridge.js", "x.js"):
+        assert box.get(f"/st/assets/{other}").status == 404, other      # an allowlist of worker files, not "any .js"
     for p in FONTS:
         a = box.get(f"/st/assets/{p.name}")
         assert a.status == 200 and a.h("content-type") == "font/woff2" and a.body == p.read_bytes()
@@ -149,6 +177,7 @@ def test_page_contacts_only_the_box_and_cloudflare():
     html = (root / "exp_speedtest" / "static" / "index.html").read_text(encoding="utf-8")
     engine = (root / "exp_speedtest" / "static" / "assets" / "cf-engine.js").read_text(encoding="utf-8")
     brg = (root / "page" / "src" / "engine-bridge.js").read_text(encoding="utf-8")
+    local = (root / "exp_speedtest" / "static" / "assets" / "local-leg.js").read_text(encoding="utf-8")
 
     # 1. concrete hosts
     hosts = {u.split("//", 1)[1] for u in re.findall(r"https?://[A-Za-z0-9][A-Za-z0-9.-]*", html)}
@@ -158,6 +187,9 @@ def test_page_contacts_only_the_box_and_cloudflare():
     wh = {u.split("//", 1)[1] for u in re.findall(r"https?://[A-Za-z0-9][A-Za-z0-9.-]*", engine)}
     assert wh <= {"speed.cloudflare.com"}, sorted(wh)          # the worker asset: same host check (its own code names none)
     assert not re.findall(r"https?://[A-Za-z0-9]", brg), "the bridge names no host"
+    assert not re.findall(r"https?://|//[A-Za-z0-9-]+\.[A-Za-z]", re.sub(r"/\*.*?\*/", "", local, flags=re.S)), \
+        "the on-network transfer file names no host: it only requests the box's own /st/ping, /st/down, /st/up"
+    assert set(re.findall(r"'(/st/[a-z]+)", local)) == {"/st/ping", "/st/down", "/st/up"}
     templates = set(re.findall(r"`https?://\$\{[^}]+\}`", engine))
     assert templates and templates <= set(re.findall(r"`https?://\$\{[^}]+\}`", lib)), \
         "absolute-URL templates may only come from the verbatim vendored library"

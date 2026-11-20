@@ -6,7 +6,8 @@
   from the inline blocks of ``index.html`` at load time (so a placeholder page works); a page that changes after the build
   simply stops being allowed to run, which is the point of hashing. There is never ``unsafe-inline``/``unsafe-eval``.
 * Assets: ``/st/assets/<name>`` serves ``<assets_dir>/<name>`` (the branding ``logo`` the agent installs) and
-  ``static/assets/<name>`` (fonts), only for known image/font types, never following symlinks, with a locked-down CSP.
+  ``static/assets/<name>`` (fonts), only for known image/font types, never following symlinks, with a locked-down CSP. The two
+  worker files (``ENGINE_ASSETS``: ``cf-engine.js``, ``local-leg.js``) are the only JavaScript, from ``static/assets`` only.
 * The payload for ``/st/down`` is a 32 MiB file of random (incompressible) bytes created once in the state directory.
 """
 from __future__ import annotations
@@ -25,11 +26,13 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-ENGINE_ASSET = "cf-engine.js"
+# the page's worker scripts (built by speedtest/page/build.py): the internet engine and the on-network transfer. Only these names
+# are ever served as JavaScript, only from the packaged static/assets/ (never the operator's assets_dir), with worker_csp().
+ENGINE_ASSETS = frozenset({"cf-engine.js", "local-leg.js"})
 JS_TYPE = "text/javascript; charset=utf-8"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 PAYLOAD_SIZE = 32 * 1024 * 1024
-MAX_ASSET_BYTES = 1024 * 1024        # the engine file is ~63 KB
+MAX_ASSET_BYTES = 1024 * 1024        # the engine file is ~63 KB, the transfer file ~12 KB
 _ASSET_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 _HASH = re.compile(r"sha256-[A-Za-z0-9+/]{43}=\Z")
 _SCRIPT = re.compile(r"<script(?P<attrs>[^>]*)>(?P<body>.*?)</script>", re.I | re.S)
@@ -81,8 +84,9 @@ class StaticSite:
         return "connect-src " + " ".join(connect)
 
     def build_csp(self, script: list[str], style: list[str]) -> str:
-        """The page's policy. ``script-src 'self'`` + ``worker-src 'self'`` exist for the engine worker (and its main-thread
-        fallback script) at ``/st/assets/cf-engine.js``: same-origin file only, never blob:/data:."""
+        """The page's policy. ``script-src 'self'`` + ``worker-src 'self'`` exist for the two worker files (and their
+        main-thread fallback scripts) ``/st/assets/cf-engine.js`` and ``/st/assets/local-leg.js``: same-origin files only,
+        never blob:/data:."""
         def quote(hs: list[str]) -> str:
             return " ".join(f"'{h}'" for h in hs)
         return "; ".join([
@@ -91,7 +95,7 @@ class StaticSite:
             "font-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"])
 
     def worker_csp(self) -> str:
-        """A dedicated worker takes its policy from its OWN script response (CSP3), so the engine file carries one whose
+        """A dedicated worker takes its policy from its OWN script response (CSP3), so each worker file carries one whose
         connect-src equals the page's: the worker may fetch the box, the DNS-leg names and Cloudflare, nothing else."""
         return f"default-src 'none'; {self.connect_src()}; frame-ancestors 'none'"
 
@@ -133,7 +137,7 @@ class StaticSite:
     def asset(self, name: str) -> tuple[bytes, str] | None:
         if not _ASSET_NAME.match(name) or name.startswith("."):
             return None
-        if name == ENGINE_ASSET:                      # built with the page; never taken from the operator's assets_dir
+        if name in ENGINE_ASSETS:                     # built with the page; never taken from the operator's assets_dir
             return self._read(self.static_dir / "assets", name, JS_TYPE)
         for base in (self.assets_dir, self.static_dir / "assets"):
             hit = self._read(base, name, None)

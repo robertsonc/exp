@@ -343,6 +343,29 @@ def test_assets_are_sniffed_bounded_and_not_symlinks(tmp_path: Path):
         assert site.asset(bad) is None, bad
 
 
+def test_worker_files_are_an_allowlist_served_from_the_packaged_tree_only(tmp_path: Path):
+    """/st/assets/cf-engine.js and /st/assets/local-leg.js (static.ENGINE_ASSETS) are JavaScript, read from the packaged
+    static/assets only: an operator file of the same name never shadows them, and no other .js is ever served."""
+    from exp_speedtest.static import ENGINE_ASSETS, JS_TYPE
+    assert ENGINE_ASSETS == {"cf-engine.js", "local-leg.js"}
+    ops, static = tmp_path / "ops", tmp_path / "static"
+    (static / "assets").mkdir(parents=True)
+    ops.mkdir()
+    for name in ENGINE_ASSETS:
+        (static / "assets" / name).write_text(f"/* packaged {name} */")
+        (ops / name).write_text("alert('operator')")
+    for name in ("app.js", "other.js", "local-bridge.js"):
+        (static / "assets" / name).write_text("var x;")
+        (ops / name).write_text("var y;")
+    site = StaticSite(None, "none", ops, static)
+    for name in ENGINE_ASSETS:
+        assert site.asset(name) == (f"/* packaged {name} */".encode(), JS_TYPE), name
+    for name in ("app.js", "other.js", "local-bridge.js", "LOCAL-LEG.JS"):
+        assert site.asset(name) is None, name
+    (static / "assets" / "local-leg.js").unlink()
+    assert site.asset("local-leg.js") is None, "missing from the packaged tree: 404, never the operator's copy"
+
+
 def test_ipv4_helpers_sanity():
     assert ipaddress.ip_address("127.0.0.2") != ipaddress.ip_address("127.0.0.1")
 
