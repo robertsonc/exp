@@ -162,3 +162,27 @@ def test_bare_mac_inside_longer_hex_is_kept(ring):
     put(ring, "mac f01898aabb01 here", NOW)
     assert ring.delete_mentions(["f01898aabb01"]) == 1
     assert len(_left(ring)) == 2
+
+
+def test_mac_after_its_own_separator_char_is_deleted_but_longer_mac_kept(ring):
+    put(ring, "client addr:f0:18:98:aa:bb:01 assoc", NOW)
+    put(ring, "id 11:f0:18:98:aa:bb:01:22 x", NOW)
+    assert ring.delete_mentions(["f0:18:98:aa:bb:01"]) == 1
+    assert len(_left(ring)) == 1
+
+
+def test_mac_prefix_ending_in_hex_letters_is_still_the_devices_own_line(ring):
+    """Regression (p3 validator): "mac:" ends in the hex pair "ac"; it must not read as a 7th octet of a longer MAC."""
+    mac = "f0:18:98:aa:bb:01"
+    for pre in ("mac:", "mac=", "dev-", "addr:", "bssid "):
+        put(ring, f"{pre}{mac} assoc", NOW)
+    put(ring, f"id 11:{mac}:22 x", NOW)  # a genuinely longer MAC-like run stays
+    assert ring.delete_mentions([mac]) == 5
+    assert len(_left(ring)) == 1
+
+
+def test_ring_sql_has_no_interpolated_execute():
+    import pathlib
+    import re as _re
+    src = (pathlib.Path(__file__).parents[1] / "exp_runner" / "ring.py").read_text()
+    assert not _re.search(r"execute\(\s*(f[\"']|[\"'][^\"']*[\"']\s*[%+])", src)

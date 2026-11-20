@@ -5,11 +5,11 @@
 * weight: the page's own resources (HTML + fonts) <= 200 KB gzip (gzip -9 of what the box serves, measured from the phone's namespace);
 * animation: a CDP performance trace with 4x CPU throttling (the usual stand-in for a mid-range phone) and the phone's link emulated at
   50 / 25 Mb/s (a mid-range phone on busy venue Wi-Fi; an unthrottled gigabit client would spend the 4x-slowed main thread on data
-  delivery, not on the page). The rAF frame timeline of the whole run is bucketed per second; REPORTED per phase; gate: median second
-  >= 50 fps (target 60) and no freeze (never more than 2 consecutive seconds under 10 fps). KNOWN LIMIT (CR-m6-e2-correlation-quality): the
-  vendored Cloudflare engine posts each upload body as a JS string; `fetch()` encodes it on the main thread (a CPU profile of the run shows
-  ~3 s of native `fetch` self time at 4x), so the INTERNET UPLOAD phase drops to ~30-35 fps with isolated sub-10-fps seconds; the other
-  phases run 50-60 fps. The trace file and its own frame count are kept;
+  delivery, not on the page). The rAF frame timeline of the whole run is bucketed per second; gate (CR-m6-e2-correlation-quality item 5):
+  median second >= 55 fps, EVERY phase (lasting >= 2 s) >= 50 fps, ZERO seconds under 10 fps. The vendored Cloudflare engine runs in a
+  dedicated worker (CR-m6-speedtest-server item 9): its string upload bodies are encoded by fetch() synchronously, which on the main
+  thread cost 770-830 ms tasks. The per-run report (per-phase fps, longest main-thread task from the trace) is printed and kept in
+  a610-fps.json; the trace file and its own frame count are kept;
 * reduced motion: `prefers-reduced-motion` runs no animation at all (document.getAnimations() empty during the entire run, gauge jumps)
   and shows the SAME numbers: in both modes every number the page displays equals the number it submitted;
 * layout at 390 px matches the reference prototype (docs/spec/prototypes/speed-check.html rendered with its own demo data, same fonts):
@@ -38,7 +38,8 @@ SECTION_DIFF_DATA = {"#wf": 0.35}          # the waterfall is a 34-px stacked ba
 HEIGHT_RATIO = (0.75, 1.30)
 DATA_DRIVEN, DATA_RATIO = {".top", "#checks"}, (0.4, 1.6)      # sections whose height follows the data, not the layout
 DOC_RATIO = (0.80, 1.30)
-FPS_MEDIAN_MIN, FREEZE_FPS, FREEZE_MAX_RUN = 50.0, 10, 2
+FPS_MEDIAN_MIN, PHASE_FPS_MIN, FREEZE_FPS, FREEZE_MAX_RUN = 55.0, 50.0, 10, 0
+PHASE_MIN_MS = 2000      # a phase shorter than this has too few frames for an fps figure
 GZ_BUDGET = 200 * 1024
 SECTION_ORDER = [".top", "#stage", ".legs", ".res-top", "#speeds", "#wf", "#checks"]
 
@@ -66,6 +67,22 @@ def trace_frames(path: str) -> int | None:
     ev = doc["traceEvents"] if isinstance(doc, dict) else doc
     n = sum(1 for e in ev if e.get("name") == "PipelineReporter" and e.get("ph") == "b")
     return n or sum(1 for e in ev if e.get("name") == "DrawFrame")
+
+
+def longest_main_task(path: str) -> dict | None:
+    """The longest single task on the renderer main thread (CrRendererMain) in the CDP trace: {ms, name, ts_s}, None when absent."""
+    try:
+        doc = json.load(open(path))
+    except (OSError, ValueError):
+        return None
+    ev = doc["traceEvents"] if isinstance(doc, dict) else doc
+    mains = {(e["pid"], e["tid"]) for e in ev if e.get("ph") == "M" and e.get("name") == "thread_name" and e.get("args", {}).get("name") == "CrRendererMain"}
+    best = None
+    for e in ev:
+        if e.get("ph") == "X" and (e.get("pid"), e.get("tid")) in mains and "toplevel" in e.get("cat", ""):
+            if best is None or e.get("dur", 0) > best["dur"]:
+                best = e
+    return {"ms": round(best["dur"] / 1000, 1), "name": best.get("name"), "ts_s": round(best["ts"] / 1e6, 2)} if best else None
 
 
 def gzip_sizes(phone: M.Client, urls: list[str]) -> dict[str, list[int]]:
@@ -146,20 +163,23 @@ def test_a610_capture_weight_fps_and_prototype(slate: M.Core, artifacts):
         pp = [x for x in r["phases"] if x[0] <= t]
         by_phase.setdefault(pp[-1][1] if pp else "?", []).append(t)
     print("A6.10 fps (4x CPU, link 50/25 Mb/s): mean %.1f, median %.1f, p10 %s, min %s over %d s" % (mean, med, p10, min(buckets), len(buckets)))
+    phase_fps: dict[str, float] = {}
     for k, v in by_phase.items():
-        if len(v) > 40:
-            print("A6.10 fps phase %-26s %5.1f fps (%d frames)" % (k, len(v) / ((v[-1] - v[0]) / 1000), len(v)))
+        if len(v) > 2 and v[-1] - v[0] >= PHASE_MIN_MS:
+            phase_fps[k] = len(v) / ((v[-1] - v[0]) / 1000)
+            print("A6.10 fps phase %-26s %5.1f fps (%d frames)" % (k, phase_fps[k], len(v)))
     tf = trace_frames(trace)
-    print("A6.10 trace:", trace, "frames in trace:", tf)
+    lt = longest_main_task(trace)
+    print("A6.10 trace:", trace, "frames in trace:", tf, "longest main-thread task:", lt)
     (M.ARTIFACTS / "a610-fps.json").write_text(json.dumps({"mean": mean, "median": med, "p10": p10, "min": min(buckets), "per_second": buckets,
-                                                           "trace_frames": tf, "cpu_throttle": 4, "link_kbps": LINK}))
+                                                           "trace_frames": tf, "cpu_throttle": 4, "link_kbps": LINK,
+                                                           "phase_fps": phase_fps, "longest_main_task": lt}))
     assert med >= FPS_MEDIAN_MIN, f"median {med} fps < {FPS_MEDIAN_MIN} (target 60)"
-    run = longest = 0
-    for b in buckets:
-        run = run + 1 if b < FREEZE_FPS else 0
-        longest = max(longest, run)
-    print(f"A6.10 fps: {sum(1 for b in buckets if b < FREEZE_FPS)} seconds under {FREEZE_FPS} fps, longest run {longest} s")
-    assert longest <= FREEZE_MAX_RUN, f"the animation froze for {longest} consecutive seconds"
+    slow = {k: round(v, 1) for k, v in phase_fps.items() if v < PHASE_FPS_MIN}
+    assert phase_fps and not slow, f"phases under {PHASE_FPS_MIN} fps: {slow} (all: {phase_fps})"
+    under = sum(1 for b in buckets if b < FREEZE_FPS)
+    print(f"A6.10 fps: {under} seconds under {FREEZE_FPS} fps")
+    assert under <= FREEZE_MAX_RUN, f"{under} seconds under {FREEZE_FPS} fps (per second: {buckets})"
     assert r["animMax"] > 0, "control: the normal run does animate"
     same_numbers(r["first"], r["submissions"][-1]["req"])
 

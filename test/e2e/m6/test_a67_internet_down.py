@@ -33,6 +33,8 @@ def test_a67_internet_down_page_and_local_legs_work(core: M.Core, phone: M.Clien
         assert "internet" in text, d
         shown = (first["why"] or "") + " " + (first["verdict"] or "") + " " + (first["notice"] or "") + " " + " ".join(first["checks"])
         print("A6.7 page text:", shown[:300])
+        # the page must not promise what needs the internet (calls, streaming) while the internet is down
+        assert "video calls and streaming" not in shown.lower() and "internet is back" in (first["verdict"] or ""), first["verdict"]
         # results reach the dashboard on the LAN (its federated query API, local-user session)
         dash = core.dash()
         rows = M.wait_for(lambda: [x for x in dash.get("speedtests", limit=50).get("items", []) if x["id"] == tid], 30, 2, "the test on the dashboard")

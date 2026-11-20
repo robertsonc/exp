@@ -31,6 +31,9 @@ OUT_DIR = HERE.parent / "exp_speedtest" / "static"
 LIB_EXPORT = "export { SpeedTestEngine as default };"
 HASH_SCHEMA = "exp.speedtest.csp/1"
 ENGINE_REL = "assets/cf-engine.js"
+# sha256 of vendor/speedtest.js (the @cloudflare/speedtest 1.16.0 dist; pinned in packaging/vendor.lock; the upstream
+# archive hash 08e3c0b4... is recorded there as archive_sha256). The build refuses any other library bytes.
+LIB_SHA256 = "4b4ec8c0388a27fd7450ce598460f2c6097918fea8888e256966a0071aea3da5"
 
 
 def csp_hash(text: str) -> str:
@@ -79,6 +82,9 @@ def build() -> dict[str, str]:
     tpl = _read(HERE / "src" / "index.html")
     css = minify_css(_read(HERE / "src" / "style.css"))
     app = tidy_js(_read(HERE / "src" / "app.js"))
+    lib_bytes = (HERE / "vendor" / "speedtest.js").read_bytes()
+    if hashlib.sha256(lib_bytes).hexdigest() != LIB_SHA256:
+        raise SystemExit("vendor/speedtest.js: sha256 mismatch with the pinned @cloudflare/speedtest 1.16.0 library")
     lib = wrap_library(_read(HERE / "vendor" / "speedtest.js"), _read(HERE / "vendor" / "LICENSE-cloudflare-speedtest.txt"))
     engine = engine_file(lib)
     for name, text in (("style.css", css), ("app.js", app)):

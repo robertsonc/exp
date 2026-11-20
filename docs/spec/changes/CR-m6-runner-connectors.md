@@ -75,5 +75,11 @@ candidate is verified in Python:
   "johns-iphone"; "johns-iphone" does not match "iphone").
 * A line matched only by the hostname is deleted only if it names no other device: no MAC in any spelling other than this device's, and
   no indexed IP (ring `ips` table) other than the device's client IP (the correlator passes `test.client_ip`).
-Still one bounded pass per call under the same Ring lock. Residual: a MAC directly after a separator of its own spelling (e.g.
-"mac:f0:18:...") is not matched by the colon spelling (conservative boundary per the fix brief).
+Still one bounded pass per call under the same Ring lock. A separator adjoining the MAC only blocks the match when a hex digit lies beyond it, so "addr:f0:18:..." (the device's own line) is deleted
+while a longer MAC-like run is kept.
+
+Follow-up (p3 validator): a word glued to the MAC by its own separator ("mac:f0:18:..", whose "ac" looks like a hex pair) is the
+device's own line and is deleted; only an octet-like pair standing alone ("id 11:f0:18:..:01:22") marks a longer MAC and keeps the line.
+Residual: a standalone two-hex-digit word directly before a MAC separator (e.g. "ab:" + MAC) is indistinguishable from a 7th octet and is
+kept. The ring SQL has no interpolated statement at all (constant `PRAGMA user_version=1`; deletes bind one JSON array to `json_each(?)`),
+so `grep "execute(f"` on ring.py is empty (guarded by test_ring_sql_has_no_interpolated_execute).

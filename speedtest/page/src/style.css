@@ -172,7 +172,7 @@ button { font: inherit; color: inherit; }
 .checks .ic { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); }
 .checks .ic svg, .gf svg { width: 13px; height: 13px; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .checks .wait svg { animation: spin 1s linear infinite; stroke: var(--faint); transform-origin: 50% 50%; }
-.checks .ic.ok svg, .gf .ok { stroke: var(--ok); } .checks .ic.attention svg, .gf .mid { stroke: var(--warn); } .gf .bad { stroke: var(--crit); }
+.checks .ic.ok svg, .gf .ok { stroke: var(--ok); } .checks .ic.attention svg, .gf .mid { stroke: var(--warn); } .gf .bad { stroke: var(--crit); } .gf .na { stroke: var(--muted); }
 .checks .ic.na svg { stroke: var(--muted); }
 .checks b { font-weight: 600; }
 .checks span.m { color: var(--muted); overflow-wrap: anywhere; }

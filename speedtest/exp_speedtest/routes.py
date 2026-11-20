@@ -129,9 +129,10 @@ class PublicApp:
             raise not_found()
         data, ctype = hit
         if ctype.startswith("text/javascript"):      # the engine worker: its own CSP governs what the worker may fetch
-            return Response(200, [("Content-Type", ctype), ("Cache-Control", "public, max-age=300"), ("X-Content-Type-Options", "nosniff"),
-                                  ("Referrer-Policy", "no-referrer"), ("Content-Security-Policy", self.site.worker_csp()),
-                                  ("Cross-Origin-Resource-Policy", "same-origin")], data)
+            return Response(200, [
+                ("Content-Type", ctype), ("Cache-Control", "public, max-age=300"), ("X-Content-Type-Options", "nosniff"),
+                ("Referrer-Policy", "no-referrer"), ("Content-Security-Policy", self.site.worker_csp()),
+                ("Cross-Origin-Resource-Policy", "same-origin")], data)
         return Response(200, [("Content-Type", ctype), ("Cache-Control", "public, max-age=300"),
                               ("X-Content-Type-Options", "nosniff"), ("Referrer-Policy", "no-referrer"),
                               ("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox"),

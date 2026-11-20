@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -34,7 +35,7 @@ HOST = "speed.test.example"
 ZONE = "t.speed.test.example"
 SCENARIOS = HERE / "ui" / "page_scenarios.js"
 FIXTURES = fc.FIXTURES_DIR
-ARTIFACTS = Path("/tmp/claude-0/-home-user-exp/5fe304da-431d-56ac-8a9d-ec4bbb823c52/scratchpad/e2e-artifacts/m6/page")
+ARTIFACTS = Path(os.environ.get("EXP_E2E_ARTIFACTS") or Path(tempfile.gettempdir()) / "exp-e2e-artifacts") / "m6" / "page"
 XSS = "<img src=x onerror=alert(1)><script>alert(2)</script>\"'>${7*7}{{7*7}}"
 
 
@@ -219,7 +220,8 @@ def test_full_test_390(world: World):
     assert [s["k"] for s in first["speeds"]] == ["Local down", "Local up", "Internet down", "Internet up"]
     assert all(s["v"] != "—" for s in first["speeds"])
     assert first["colo"] == "FRA"
-    assert any("good for" in x.lower() or x for x in first["goodFor"]) and len(first["goodFor"]) == 4
+    assert [x.split(" (")[0] for x in first["goodFor"]] == ["Video calls", "HD streaming", "Web and email", "Large uploads"]
+    assert not any("not checked" in x for x in first["goodFor"]), first["goodFor"]     # the internet leg measured
     assert first["share"].startswith(f"http://{HOST}/st/r/st_") and "#k=" in first["share"]
     # --- correlation flipped the checks from "checking..." to findings, zone shown with the correct-it affordance
     assert any("checking" in c for c in first["checks"])
@@ -356,6 +358,10 @@ def test_cloudflare_unreachable_is_unavailable_not_a_failure(tmp_path: Path):
         assert "could not be reached" in first["notice"] and first["score"] != "0"
         assert first["speeds"][0]["v"] != "—"
         assert not any("/__results" in u for u in r["requests"])
+        # the score rests on the venue network alone: no promise of calls/streaming, which need the internet
+        assert "venue network itself" in first["verdict"] and "video calls" not in first["verdict"].lower(), first["verdict"]
+        assert "internet is back" in first["verdict"], first["verdict"]
+        assert len(first["goodFor"]) == 4 and all(x.endswith("(not checked)") for x in first["goodFor"]), first["goodFor"]
     finally:
         w.stop()
 
@@ -368,7 +374,7 @@ def test_hostile_strings_are_inert(tmp_path: Path):
         r = run_scenario(w, "full", {"report": XSS, "zoneFix": XSS, "share": True, "timeout": 120000})
         for key in ("first", "afterReport", "final", "shared"):
             snap = r[key]
-            assert snap["scriptCount"] == 2 and snap["imgs"] == [], key
+            assert snap["scriptCount"] == 1 and snap["imgs"] == [], key
         assert r["dialogs"] == [] and r["errors"] == [] and r["csp"] == []
         assert r["first"]["title"] == XSS[:80] and r["first"]["docTitle"] == XSS[:80]
         assert r["started"]["consentText"] == XSS

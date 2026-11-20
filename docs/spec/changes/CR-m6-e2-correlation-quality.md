@@ -36,14 +36,22 @@
 4. **A paused internet leg gives "looks healthy"** (score 80 on the on-network leg alone, `none`) although the WAN evidence shows 92.5 % utilization.
    Not changed: nothing in the spec says a paused leg is a fault of the user's test, and the NOC sees the saturation in the `wan` evidence and the
    pause itself (`internet_leg_paused`, flag `internet_paused`). Open question for the owner if "paused" should also read as `wan_saturation`.
-5. **A6.10 fps, measured (4x CPU throttle, link emulated at 50 / 25 Mb/s, 4-core sandbox shared with the box and the fakes):** median second
-   55-56 fps, mean 46-47, per phase: on-network download 55, upload 57-58, Cloudflare latency 61, internet download 50-54, **internet upload
-   31-35**. Gate: median >= 50 and never > 2 consecutive seconds under 10 fps. The upload dip is the vendored Cloudflare engine, not the page: it posts
-   each upload body as a JS string and `fetch()` encodes it on the main thread (a CDP CPU profile of the run: ~3.2 s of native `fetch` self time
-   at 4x; capping the page's upload tiers at 10 MB did NOT remove the stalls and was reverted, nothing in the page was changed). On an unthrottled
-   client the same phase is 40-58 fps. An unthrottled gigabit client is also not a mid-range phone: with the link unrestricted the 4x-slowed main
-   thread spends its time on data delivery (19-30 fps in the speed phases), which is why the phone's link is emulated. The CDP trace
-   (`a610-trace.json`, ~4500 frames) and the per-second series (`a610-fps.json`) are kept in the artifacts.
+5. **A6.10 fps, measured (4x CPU throttle, link emulated at 50 / 25 Mb/s, 4-core sandbox shared with the box and the fakes). Gate tightened: median
+   second >= 55 fps, EVERY phase (>= 2 s) >= 50 fps, ZERO seconds under 10 fps.** Root cause of the earlier 35.6 fps internet-upload phase (three
+   0-fps seconds): the vendored Cloudflare engine posts each upload body as a JS string and `fetch()` encodes it on the main thread
+   (three `BlinkScheduler_PerformMicrotaskCheckpoint` tasks of 768-834 ms, one per 10 MB upload). Fix (CR-m6-speedtest-server item 26): the engine, library
+   unmodified, runs in a dedicated worker served by the box (`/st/assets/cf-engine.js`, own CSP), with a main-thread fallback. Three consecutive runs of
+   `test_a610_page_quality.py` (`-rA`), all passed (logs `e2e-artifacts/m6/p1-a610-run{1,2,3}.log`):
+
+   | run | median / mean / min (per s) | on-net down | on-net up | internet down | internet up | seconds < 10 fps | longest main-thread task |
+   |---|---|---|---|---|---|---|---|
+   | 1 | 60 / 59.4 / 47 | 57.8 | 59.5 | 60.1 | 59.9 | 0 | 117 ms |
+   | 2 | 60 / 59.7 / 56 | 59.4 | 58.7 | 60.1 | 60.1 | 0 | 57 ms |
+   | 3 | 60 / 58.4 / 40 | 53.1 | 59.1 | 59.8 | 59.8 | 0 | 154 ms |
+
+   (the 768-834 ms tasks are gone; the remaining longest tasks are 57-154 ms, none in the internet phases' steady state). An unthrottled gigabit client is
+   also not a mid-range phone: with the link unrestricted the 4x-slowed main thread spends its time on data delivery, which is why the phone's link is
+   emulated. The CDP trace (`a610-trace.json`, ~4900 frames) and the per-second series + per-phase fps + longest task (`a610-fps.json`) are kept.
 6. **A6.10 prototype comparison tolerance (documented, binding for re-runs).** The prototype is rendered at 390 px (a desktop-mode 390-px viewport:
    it has no viewport meta, a mobile emulation would lay it out at 980 px) with its own demo data and the product's woff2 fonts; Google Fonts
    requests are aborted. Both full-page screenshots are cropped per section at that section's own top and compared on a 16 x 16 device-pixel
@@ -66,9 +74,10 @@
 * The "attenuated radio" is the fake Mist scenario plus a page-side link throttle; no RF is simulated.
 * Per-device VM labels are proven absent for the 34 devices of the session; the collector's own label cap (`metric_label_limit`) is unit-tested in the collector.
 
-7. **Cited fps run and log.** The figures in item 5 are re-captured in `e2e-artifacts/m6/e2-full-final4.log` (full suite, `-rA` so the passing tests' stdout is kept;
-   e2e.yml uses `-rA` too): `33 passed`; A6.10 fps median 59.0, mean 49.2, p10 20, min 0 over 41 s; per phase 58.7 / 58.7 / 61.3 / 55.5 / **35.6 (internet upload)**;
-   3 seconds under 10 fps, longest run 1 s. The internet-upload dip and the "no freeze over 2 s" gate are the deviation described above; the lead should review it.
+7. **Cited fps runs and logs.** The figures in item 5 are in `e2e-artifacts/m6/p1-a610-run1.log`, `-run2.log`, `-run3.log` (`-rA`, each `2 passed`;
+   e2e.yml uses `-rA` too). The earlier full-suite capture `e2-full-final4.log` (internet upload 35.6 fps, 3 seconds under 10 fps) is superseded; the
+   "lead should review" deviation is closed: the gate is the spec's 60 fps target with a 55/50 fps floor, not a relaxed one. The page weight in item 7
+   below (earlier numbering) now counts the worker file: HTML + `cf-engine.js` gzip -9 + fonts, still <= 200 KB.
 8. **Flake fixed (test side).** In the full suite the two A6.4 cases after the saturated-WAN case could start while the runner's held WAN peak re-paused the internet leg,
    giving score 99 and the (correct) "healthy" short-circuit although the evidence held the deny lines / failing probe. The cases now wait for the leg to stay open
    for 25 s (`internet_leg_open`), the firewall lines go over TCP syslog, and a failed diagnosis case dumps its whole record to the artifacts. No guard was changed.

@@ -86,7 +86,7 @@ class StaticSite:
         def quote(hs: list[str]) -> str:
             return " ".join(f"'{h}'" for h in hs)
         return "; ".join([
-            "default-src 'self'", f"script-src {quote(script)} 'self'".strip(), "worker-src 'self'",
+            "default-src 'self'", " ".join(x for x in ("script-src", quote(script), "'self'") if x), "worker-src 'self'",
             ("style-src 'self' " + quote(style)).strip(), self.connect_src(), "img-src 'self' data:",
             "font-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"])
 

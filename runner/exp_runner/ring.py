@@ -40,6 +40,7 @@ CREATE INDEX IF NOT EXISTS lines_keep ON lines(keep, kept_at);
 """
 
 
+_SET_VERSION_SQL = "PRAGMA user_version=1"  # == SCHEMA_VERSION (PRAGMA takes no bound parameter; a constant keeps execute() literal)
 _H = "[0-9A-Fa-f]"
 _MAC_SHAPES = (re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$"), re.compile(r"^[0-9a-f]{2}(-[0-9a-f]{2}){5}$"),
                re.compile(r"^[0-9a-f]{4}(\.[0-9a-f]{4}){2}$"), re.compile(r"^[0-9a-f]{12}$"))
@@ -54,8 +55,15 @@ def _is_mac_spelling(t: str) -> bool:
 
 
 def _mac_regex(t: str) -> re.Pattern[str]:
-    cls = "0-9A-Fa-f" + (":" if ":" in t else "-" if "-" in t else "." if "." in t else "")
-    return re.compile("(?<![" + cls + "])" + re.escape(t) + "(?![" + cls + "])", re.IGNORECASE)
+    sep = ":" if ":" in t else "-" if "-" in t else "." if "." in t else ""
+    if not sep:
+        return re.compile("(?<![0-9A-Fa-f])" + re.escape(t) + "(?![0-9A-Fa-f])", re.IGNORECASE)
+    # a separator only joins a longer MAC when a hex digit sits beyond it ("addr:f0:18:.." is the device's own line); an octet-like
+    # pair glued to a word ("mac:", "addr:" ends in "r", "mac" ends in the hex pair "ac") is a word, not a 7th octet
+    s = re.escape(sep)
+    before = "(?<![0-9A-Fa-f])(?<!(?<![0-9A-Za-z])" + _H + "{2}" + s + ")"
+    after = "(?![0-9A-Fa-f])(?!" + s + "[0-9A-Fa-f])"
+    return re.compile(before + re.escape(t) + after, re.IGNORECASE)
 
 
 class RingError(Exception):
@@ -85,7 +93,7 @@ class Ring:
         db.executescript(_DDL)
         ver = db.execute("PRAGMA user_version").fetchone()[0]
         if ver == 0:
-            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            db.execute(_SET_VERSION_SQL)
         elif ver > SCHEMA_VERSION:
             db.close()
             raise RingError(f"{self.path}: database schema {ver} is newer than this runner ({SCHEMA_VERSION})")
@@ -163,9 +171,9 @@ class Ring:
         try:
             for i in range(0, len(ids), 500):
                 chunk = ids[i:i + 500]
-                q = ",".join("?" * len(chunk))
-                db.execute(f"DELETE FROM ips WHERE line_id IN ({q})", chunk)       # noqa: S608 - placeholders only
-                db.execute(f"DELETE FROM lines WHERE id IN ({q})", chunk)           # noqa: S608
+                arg = json.dumps(chunk)  # one bound JSON array parameter: the SQL text stays constant
+                db.execute("DELETE FROM ips WHERE line_id IN (SELECT value FROM json_each(?))", (arg,))
+                db.execute("DELETE FROM lines WHERE id IN (SELECT value FROM json_each(?))", (arg,))
             db.execute("COMMIT")
         except Exception:
             db.execute("ROLLBACK")

@@ -110,6 +110,9 @@ def test_a64_wan_saturation_and_auto_pause(slate: M.Core):
     assert full["test"]["legs"]["local"]["status"] == "ok"
     # the evidence still shows why (WAN > 85 %); the quick score rests on the on-network leg alone (a paused leg is not a fault of the user)
     assert slate.ev(full, "wan")["data"]["appliances"][0]["interfaces"][0]["util_pct"] > 85
+    # p2: the paused internet leg during EC WAN saturation still diagnoses wan_saturation (from the evidence, not a measured leg)
+    cs_p = slate.causes(full)
+    assert "wan_saturation" in cs_p and "internet_path" not in cs_p, (cs_p, full["diagnosis"]["noc_text"])
     # (b) auto-pause off: the leg runs through the (delayed, capped) WAN and the diagnosis is wan_saturation, not internet_path
     slate.reconfigure("speedtest", lambda c: c["internet_leg"].update({"auto_pause_wan_util_pct": 100}))
     try:

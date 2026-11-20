@@ -18,7 +18,7 @@ import ui_world
 
 HERE = Path(__file__).resolve().parent
 NODE = shutil.which("node")
-_ART = str(Path(tempfile.gettempdir()) / "exp-e2e-artifacts" / "m6" / "dashboard")
+_ART = str(Path(os.environ.get("EXP_E2E_ARTIFACTS") or Path(tempfile.gettempdir()) / "exp-e2e-artifacts") / "m6" / "dashboard")
 SHOTS = Path(os.environ.get("EXP_ST_SHOTS", _ART))
 
 

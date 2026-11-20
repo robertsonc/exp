@@ -6,7 +6,7 @@
  * detected (the view-proof HMAC is implemented below because subtle crypto does not exist outside secure contexts).
  *
  * Wire format to the box: shared/openapi/speedtest.yaml; page -> box result: shared/schemas/speedtest.submission.schema.json
- * (exp.speedtest.submission/1). Fragment-key view proof: CR-m6-contracts + CR-m6-speedtest-server item 1.
+ * (exp.speedtest.submission/1). The view proof from the URL fragment's key: see CR-m6-contracts and CR-m6-speedtest-server item 1.
  * Internet leg: the vendored @cloudflare/speedtest 1.16.0 (MIT) as CFSpeedTest, configured with logAimApiUrl = null so no
  * result is ever posted to Cloudflare; the serving colo comes from the /cdn-cgi/trace BODY; the requester egress headers
  * that Cloudflare's __down returns (cf-meta-ip, city, ...) are never read.
@@ -815,14 +815,25 @@
     var i = legs && legs.internet, l = legs && legs.local;
     return (i && i.status === 'ok' && (i.down_mbps != null || i.up_mbps != null)) ? i : l;
   }
-  function verdictFor(score, leg, tg) {
+  // the internet leg did not measure (unavailable / paused / queued / skipped): the score and the leg shown rest on the venue network
+  // alone, so the verdict and "good for" must not promise video calls or streaming, which need the internet
+  function inetUnmeasured(legs) { var i = legs && legs.internet; return !!(i && i.status && i.status !== 'ok'); }
+  function verdictFor(score, leg, tg, legs) {
     if (score == null) return 'We could not measure a speed this time.';
-    var t = score.total, base = t >= 80 ? 'Great for video calls and streaming.' : t >= 60 ? 'Good for everyday use; some things may feel slow.' : t >= 40 ? 'Usable, but video calls may struggle.' : 'Your connection is struggling right now.';
+    var t = score.total, base;
+    if (inetUnmeasured(legs)) {
+      base = t >= 80 ? 'The venue network itself is fast.' : t >= 60 ? 'The venue network itself is good; some things may feel slow.'
+        : t >= 40 ? 'The venue network itself is usable, but slow.' : 'The venue network itself is struggling right now.';
+      return base + (legs.internet.status === 'unavailable' ? ' Online apps and calls will not work until the internet is back.'
+        : ' The internet part was not measured this time.');
+    }
+    base = t >= 80 ? 'Great for video calls and streaming.' : t >= 60 ? 'Good for everyday use; some things may feel slow.' : t >= 40 ? 'Usable, but video calls may struggle.' : 'Your connection is struggling right now.';
     if (t >= 60 && leg && leg.up_mbps != null && leg.up_mbps < tg.up_mbps) base += ' Big uploads are slower right now.';
     return base;
   }
-  function goodFor(leg, tg) {
+  function goodFor(leg, tg, legs) {
     if (!leg) return [];
+    if (inetUnmeasured(legs)) return [['Video calls', 'na'], ['HD streaming', 'na'], ['Web and email', 'na'], ['Large uploads', 'na']];
     var d = leg.down_mbps, u = leg.up_mbps, lat = Math.max(leg.loaded_down_ms || 0, leg.loaded_up_ms || 0) || leg.idle_ms || 0;
     function lvl(good, mid) { return good ? 'ok' : (mid ? 'mid' : 'bad'); }
     return [['Video calls', lvl(d >= 5 && u >= 3 && lat <= 150, d >= 2 && u >= 1 && lat <= 300)], ['HD streaming', lvl(d >= 10, d >= 5)],
@@ -921,14 +932,17 @@
     var parts = $('parts'); clear(parts);
     if (score) [['Speed', score.speed], ['Responsiveness', score.responsiveness], ['Stability', score.stability]].forEach(function (x) { parts.appendChild(el('span', 'part', x[0] + ' ' + x[1])); });
     var leg = bestLeg(r.legs);
-    $('verdict').textContent = verdictFor(score, leg, tg);
+    $('verdict').textContent = verdictFor(score, leg, tg, r.legs);
     $('why').textContent = diag && diag.user_text ? diag.user_text : (opt.viewOnly ? '' : 'The network team is looking at the venue side of your test.');
     renderFlags(r.flags);
     renderSpeeds(r, first && animate);
     var fine = !!(view && view.evidence && view.evidence.state !== 'pending');
     renderWaterfall(r, fine, first && animate);
     var gf = $('goodFor'); clear(gf);
-    goodFor(leg, tg).forEach(function (x) { var d = el('div', 'gf'); d.appendChild(icon(x[1] === 'ok' ? 'check' : x[1] === 'mid' ? 'dash' : 'cross', x[1])); d.appendChild(document.createTextNode(x[0])); gf.appendChild(d); });
+    goodFor(leg, tg, r.legs).forEach(function (x) {
+      var d = el('div', 'gf'); d.appendChild(icon(x[1] === 'ok' ? 'check' : x[1] === 'bad' ? 'cross' : 'dash', x[1]));
+      d.appendChild(document.createTextNode(x[1] === 'na' ? x[0] + ' (not checked)' : x[0])); gf.appendChild(d);
+    });
     renderChecks(view); renderWhere(view); renderNote(view);
     var dnsLeg = r.legs && r.legs.dns;
     if (dnsLeg && dnsLeg.source === 'probe') legSet('dns', dnsLeg.cold_ms != null ? fmtMs(dnsLeg.cold_ms) + ' ms' : '—', 'measured by the hall sensor', null);

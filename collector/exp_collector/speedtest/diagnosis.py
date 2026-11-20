@@ -9,7 +9,8 @@ section 5.3 table), each with the evidence it cites; ``user_text`` is one plain,
 ``noc_text`` names the evidence ("hallb-ap-12 ch 44/80 MHz, util 81 %, 74 clients; RSSI -61 dBm").
 
 * ``none`` only when the score is at or above ``none_score`` (default 80); then it is the only cause. If the internet
-  leg was not measured (status other than ok) every rule runs first; ``none`` (0.6, status-specific text) only if none fires.
+  leg was not measured (status other than ok) every rule runs first; ``none`` (0.6, status-specific text) only if
+  none fires.
 * A degraded test where no rule fires gets an empty cause list ("could not pinpoint"); ``cause`` is never invented.
 * Evidence with status ``unavailable`` / ``error`` is ignored. Evidence texts (AP names, SSIDs) are untrusted:
   control characters are removed and every text is clipped before it enters ``noc_text``.
