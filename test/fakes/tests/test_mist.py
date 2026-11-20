@@ -14,9 +14,10 @@ from mist import server as mist
 
 T0 = 1_795_000_000.0
 SITE, ORG = mist.SITE_ID, mist.ORG_ID
-_DEFAULT_OAS = ("/tmp/claude-0/-home-user-exp/5fe304da-431d-56ac-8a9d-ec4bbb823c52/scratchpad/vendor-src/"
-                "x-mistapi-0.64.1/mistapi-0.64.1/mist_openapi/mist.openapi.json")
-OAS_PATH = Path(os.environ.get("EXP_MIST_OAS", _DEFAULT_OAS))
+# The Mist OpenAPI document ships in the mistapi 0.64.1 sdist (mist_openapi/mist.openapi.json); it is a dev-time
+# reference, not vendored. Point EXP_MIST_OAS at a local copy to run the conformance check; without it the check skips.
+_OAS_ENV = os.environ.get("EXP_MIST_OAS", "")
+OAS_PATH = Path(_OAS_ENV) if _OAS_ENV else None
 
 
 class Clock:
@@ -51,7 +52,7 @@ def site(p):
 
 # ------------------------------------------------------------------------------------- OAS conformance helper
 def _validator(schema_name: str):
-    if not OAS_PATH.is_file():
+    if OAS_PATH is None or not OAS_PATH.is_file():
         pytest.skip("Mist OAS reference not present (set EXP_MIST_OAS)")
     from jsonschema import Draft202012Validator
     from referencing import Registry, Resource

@@ -6,3 +6,7 @@
 74e4893b294b3e9ce2f9428be546ea7f99418e9b:test/fakes/mock_admin/server.py:generic-api-key:1588
 # manager UI e2e: a PEM "PRIVATE KEY" wrapper around random bytes for the provided-TLS upload test; the label is now assembled
 277b62f758689b020b4a5f130cbfcc91ea0a5622:manager/ui/e2e/admin-tests.mjs:private-key:264
+# manager UI runner trends: the metric name 'evidence_lag_s_p95' after `key:` (entropy 3.64); the line now carries gitleaks:allow
+231db1a6f7173fa21b933b48b20ee94ba11ae9ca:manager/ui/src/pages/ComponentPage.tsx:generic-api-key:294
+# speedtest page header comment "Fragment-key view proof: CR-m6-contracts" (a document name, entropy 3.51); the comment is reworded
+e95374c2fdc982e1e76e5cdea956eb670263b5e8:speedtest/page/src/app.js:generic-api-key:9

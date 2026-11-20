@@ -291,7 +291,7 @@ function RunnerView({ sc, comp, m, range, tz }: { sc: StatusComponent | undefine
       <div class="charts">
         <MetricChart m={m} title="Active drills" range={range} tz={tz} fmt={f1} keys={[{ key: 'drills_active', label: 'drills', color: '--exp-line-apps' }]} />
         <MetricChart m={m} title="Correlations per hour" range={range} tz={tz} fmt={f1} keys={[{ key: 'correlations_per_hour', label: 'correlations', color: '--exp-line-network' }]} />
-        <MetricChart m={m} title="Evidence lag (p95, s)" range={range} tz={tz} fmt={f1} keys={[{ key: 'evidence_lag_s_p95', label: 'lag', color: '--exp-line-dns' }]} />
+        <MetricChart m={m} title="Evidence lag (p95, s)" range={range} tz={tz} fmt={f1} keys={[{ key: 'evidence_lag_s_p95', label: 'lag', color: '--exp-line-dns' }]} />{/* gitleaks:allow (a runner metric name, entropy 3.64, not a credential) */}
         <MetricChart m={m} title="Syslog lines per second" range={range} tz={tz} fmt={f1} keys={[{ key: 'syslog_lines_per_s', label: 'received', color: '--exp-line-internet' }, { key: 'syslog_dropped_per_min', label: 'dropped / min', color: '--exp-line-apps' }]} />
       </div>
     </>

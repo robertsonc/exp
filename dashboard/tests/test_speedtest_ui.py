@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,7 @@ import ui_world
 
 HERE = Path(__file__).resolve().parent
 NODE = shutil.which("node")
-_ART = "/tmp/claude-0/-home-user-exp/5fe304da-431d-56ac-8a9d-ec4bbb823c52/scratchpad/e2e-artifacts/m6/dashboard"
+_ART = str(Path(tempfile.gettempdir()) / "exp-e2e-artifacts" / "m6" / "dashboard")
 SHOTS = Path(os.environ.get("EXP_ST_SHOTS", _ART))
 
 
