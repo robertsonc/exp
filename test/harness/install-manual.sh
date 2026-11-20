@@ -18,7 +18,7 @@
 #   8. wait for `exp-<c> health --json` to pass.
 #
 # usage: install-manual.sh [--pubkey FILE] [--conf DIR] [--no-start] <dist-dir> <shape>...
-#   shapes: collector dashboard probe        (any subset; install the collector first: probes and the dashboard
+#   shapes: collector runner speedtest dashboard probe   (any subset; runner + speedtest are the M6 all-in-one parts; install the collector first: probes and the dashboard
 #                                             pin its TLS fingerprint, printed as "FINGERPRINT collector AA:BB:..")
 #   --pubkey   release public key PEM (default /etc/exp/release-pub.pem)
 #   --conf     local config directory: DIR/<shape>/config.json and DIR/<shape>/creds/<name> (default /root/exp-conf)
@@ -53,7 +53,7 @@ for t in openssl python3 tar sha256sum base64 systemctl install; do command -v "
 [ -d "$DIST" ] || die "dist dir $DIST not found"
 [ -f "$PUBKEY" ] || die "release public key $PUBKEY not found (--pubkey)"
 for s in "${SHAPES[@]}"; do
-    case "$s" in collector|dashboard|probe) ;; *) die "unknown shape '$s' (collector|dashboard|probe)" ;; esac
+    case "$s" in collector|runner|speedtest|dashboard|probe) ;; *) die "unknown shape '$s' (collector|runner|speedtest|dashboard|probe)" ;; esac
     [ -f "$CONF/$s/config.json" ] || die "$CONF/$s/config.json not found"
 done
 
@@ -258,7 +258,7 @@ health_gate() {         # c
 }
 
 # ------------------------------------------------------------------ per shape
-for s in collector dashboard probe; do          # fixed order: the collector first, then what pins its certificate
+for s in collector runner speedtest dashboard probe; do          # fixed order: the collector first, then what pins its certificate
     case " ${SHAPES[*]} " in *" $s "*) ;; *) continue ;; esac
     say "== $s $VERSION"
     component_install "$s"
@@ -280,6 +280,29 @@ for s in collector dashboard probe; do          # fixed order: the collector fir
                 || die "exp-collector selftest failed"
             start_units exp-victoriametrics.service exp-collector.service exp-reflector.service exp-iperf3.service
             health_gate collector ;;
+        runner)
+            ensure_user exp-runner
+            install_config runner
+            install -d -m 0755 /var/lib/exp
+            render_units runner
+            CREDENTIALS_DIRECTORY=/etc/exp/runner/creds "$PREFIX/bin/exp-runner" selftest --config /etc/exp/runner/config.json >/dev/null \
+                || die "exp-runner selftest failed"
+            start_units exp-runner.service
+            health_gate runner ;;
+        speedtest)
+            ensure_user exp-speedtest
+            install_config speedtest
+            install -d -m 0755 /var/lib/exp
+            # unprivileged ICMP needs the service's group inside net.ipv4.ping_group_range (the agent writes one scoped
+            # sysctl drop-in, agent/exp_agent/pingsys.py; the container image already allows everyone, so this is a no-op)
+            gid=$(id -g exp-speedtest)
+            read -r lo hi < /proc/sys/net/ipv4/ping_group_range
+            if [ "$gid" -lt "$lo" ] || [ "$gid" -gt "$hi" ]; then sysctl -qw net.ipv4.ping_group_range="0 2147483647" || say "ping_group_range not writable"; fi
+            render_units speedtest
+            CREDENTIALS_DIRECTORY=/etc/exp/speedtest/creds "$PREFIX/bin/exp-speedtest" selftest --config /etc/exp/speedtest/config.json >/dev/null \
+                || die "exp-speedtest selftest failed"
+            start_units exp-speedtest.service
+            health_gate speedtest ;;
         dashboard)
             ensure_user exp-dashboard
             install_config dashboard

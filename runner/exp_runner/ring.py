@@ -159,6 +159,20 @@ class Ring:
             ids = [r[0] for r in self._conn().execute("SELECT DISTINCT line_id FROM ips WHERE ip=?", (ip,))]
             return self._delete_ids(ids)
 
+    def delete_mentions(self, tokens: Sequence[str]) -> int:
+        """Delete every line (ring or attached) whose raw text contains any of `tokens` (case-insensitive substring): the privacy scrub
+        of a device's MAC (every spelling) and hostname, which also appear in lines that carry no IP (DHCPDISCOVER, ...). Tokens shorter
+        than 3 characters are ignored. Bounded: one scan of the ring (<= max_rows lines) per call."""
+        toks = [t.lower() for t in tokens if isinstance(t, str) and len(t) >= 3]
+        if not toks:
+            return 0
+        with self._lock:
+            ids: set[int] = set()
+            for t in toks:
+                like = "%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+                ids.update(r[0] for r in self._conn().execute("SELECT id FROM lines WHERE lower(raw) LIKE ? ESCAPE '\\'", (like,)))
+            return self._delete_ids(sorted(ids))
+
     # ------------------------------------------------------------------------------------- reads
     def query(self, ip: str, t0: float, t1: float, kinds: Sequence[str] | None = None, limit: int = 1000) -> list[dict[str, Any]]:
         """Lines mentioning `ip` with event time in [t0, t1], oldest first."""

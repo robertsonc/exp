@@ -46,6 +46,7 @@ USER_TEXT = {
     "dns": "Name lookups are slow or failing, which makes pages feel slow.",
     "network_wide": "It is not just you: nearby network checks show the same slowdown right now.",
 }
+USER_INTERNET_DOWN = "The venue network is working, but the internet could not be reached right now."
 USER_UNKNOWN = "Your speed is below target. We could not pinpoint a cause on the network."
 USER_PENDING_UNKNOWN = "Your speed is below target. We are checking the network to find out why."
 
@@ -610,7 +611,10 @@ def diagnose(test: Mapping[str, Any], evidence: Mapping[str, Mapping[str, Any]],
     if baseline is None and "baseline" in ctx.ev:
         ctx.baseline = ctx.ev["baseline"]
     score = ctx.score
-    if score is not None and score >= th.none_score:
+    # an internet leg that could not run (internet down, A6.7) is a fault of its own: the score then rests on the
+    # on-network leg alone and must not read "healthy" (regression: test_internet_down_is_not_healthy)
+    internet_down = bool(ctx.internet and ctx.internet.get("status") == "unavailable")
+    if score is not None and score >= th.none_score and not internet_down:
         conf = 0.9 if score >= 90 else 0.8
         return {"stage": stage, "updated": now_iso,
                 "cause": [{"id": "none", "confidence": conf, "cites": [_cite("legs", "score.total")]}],
@@ -633,7 +637,7 @@ def diagnose(test: Mapping[str, Any], evidence: Mapping[str, Mapping[str, Any]],
         sc = "no score" if score is None else f"score {score}"
         return {"stage": stage, "updated": now_iso, "cause": [], "user_text": user,
                 "noc_text": f"{sc}: no rule fired on the {'legs' if stage == 'quick' else 'evidence'}"[:NOC_MAX]}
-    user = USER_TEXT[hits[0].cause]
+    user = USER_INTERNET_DOWN if (hits[0].cause == "internet_path" and internet_down) else USER_TEXT[hits[0].cause]
     if len(hits) > 1 and hits[1].conf >= 0.6 and len(user) + 1 + len(USER_TEXT[hits[1].cause]) <= USER_MAX:
         user += " " + USER_TEXT[hits[1].cause]
     noc = " | ".join(f"{h.cause} ({h.conf:.2f}): {h.noc}" for h in hits[:3])

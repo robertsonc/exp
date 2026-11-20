@@ -19,6 +19,14 @@ mkdir -p "$RUN" "$LOG" /var/lib/lan /etc/netns
 BR_MAC=02:e0:00:00:00:01
 GW_MAC=02:e0:00:00:10:01
 TARGET_IPS="1.1.1.1 8.8.8.8 142.250.80.46 17.253.144.10 20.70.246.20 104.16.132.229 192.0.2.53"
+# M6 "core" layout (EXP_LAN_CORE=1): a routed core segment (br-core, 10.9.0.0/24, gateway 10.9.0.1 in ns gw) for the
+# all-in-one box (EXP_CORE_IP), a fake Cloudflare speed server in its own namespace `cf` behind the isp
+# (speed.cloudflare.com -> CF_IP), a fake Mist API and a fake EdgeConnect Orchestrator on the management network
+# (https, harness CA), and the delegation of the DNS-leg zone to the box in the gateway's dnsmasq.
+CORE=${EXP_LAN_CORE:-0}
+CORE_IP=${EXP_CORE_IP:-10.9.0.10}
+CF_IP=104.16.132.230
+DNS_ZONE=${EXP_DNS_ZONE:-t.speed.exp.test}
 
 ns() { local n=$1; shift; ip netns exec "$n" "$@"; }
 sysctl_ns() {
@@ -87,6 +95,33 @@ for ip in $TARGET_IPS; do
     ns isp ip addr add "$ip/32" dev lo
     ip route add "$ip/32" via 10.255.3.2
 done
+if [ "$CORE" = 1 ]; then
+    ip link add br-core type bridge
+    ip link set br-core address 02:e0:00:00:00:09
+    ip link set br-core up
+    ip link add gw-core type veth peer name gw-corep
+    ip link set gw-core address 02:e0:00:00:10:09
+    ip link set gw-corep master br-core up
+    ip link set gw-core netns gw
+    ns gw ip addr add 10.9.0.1/24 dev gw-core
+    ns gw ip link set gw-core up
+    ns edge ip route add 10.9.0.0/24 via 10.255.1.1          # routed, NOT translated, towards the core
+    # the fake Cloudflare lives behind the isp in its own namespace (443 is taken by the app stand-ins in the isp)
+    ip netns add cf; ns cf ip link set lo up
+    ip link add isp-cf type veth peer name cf-isp
+    ip link set isp-cf netns isp; ip link set cf-isp netns cf
+    ns isp ip addr add 10.255.5.1/30 dev isp-cf; ns isp ip link set isp-cf up
+    ns cf ip addr add 10.255.5.2/30 dev cf-isp; ns cf ip link set cf-isp up
+    ns cf ip addr add "$CF_IP/32" dev lo
+    ns cf ip route add default via 10.255.5.1
+    ns isp ip route add "$CF_IP/32" via 10.255.5.2
+    ip route add "$CF_IP/32" via 10.255.3.2
+    # 1.1.1.1 (the box's TTL-limited trace target for "edge+1") lives one router BEYOND the isp, in the cf namespace, so the
+    # trace has a real hop after the edge (a destination local to the isp would answer at TTL 3 and there would be no edge+1)
+    ns isp ip addr del 1.1.1.1/32 dev lo
+    ns cf ip addr add 1.1.1.1/32 dev lo
+    ns isp ip route add 1.1.1.1/32 via 10.255.5.2
+fi
 # the edge NATs everything behind it (an EC / firewall does in real life): the ISP only ever sees 10.255.2.1
 ns edge iptables -w -t nat -A POSTROUTING -s 10.0.0.0/8 -o edge-up -j MASQUERADE
 
@@ -122,6 +157,11 @@ log-facility=$LOG/gw-dnsmasq.log
 pid-file=$RUN/gw-dnsmasq.pid
 conf-file=$LAN/names.conf
 CONF
+if [ "$CORE" = 1 ]; then
+    echo "address=/speed.cloudflare.com/$CF_IP" > "$RUN/core-names.conf"
+    echo "server=/$DNS_ZONE/$CORE_IP" > "$RUN/gw-servers.conf"      # the NS delegation of the DNS-leg zone to the box
+    printf 'conf-file=%s\nservers-file=%s\n' "$RUN/core-names.conf" "$RUN/gw-servers.conf" >> "$RUN/gw-dnsmasq.conf"
+fi
 ns gw dnsmasq --conf-file="$RUN/gw-dnsmasq.conf"
 if [ "$SITES" -ge 2 ]; then
     sed -e 's/gw-ev/gw-ev2/; s/10\.1\.0\./10.2.0./g; s/gw\.leases/gw2.leases/; s/gw-dnsmasq/gw2-dnsmasq/g' \
@@ -142,6 +182,12 @@ log-facility=$LOG/isp-dnsmasq.log
 pid-file=$RUN/isp-dnsmasq.pid
 conf-file=$LAN/names.conf
 CONF
+if [ "$CORE" = 1 ]; then
+    echo "conf-file=$RUN/core-names.conf" >> "$RUN/isp-dnsmasq.conf"
+    sed -e '/^listen-address=8.8.8.8/d' -e 's/isp-dnsmasq/cf-dnsmasq/' "$RUN/isp-dnsmasq.conf" > "$RUN/cf-dnsmasq.conf"
+    sed -i '/^listen-address=1.1.1.1/d' "$RUN/isp-dnsmasq.conf"
+    ns cf dnsmasq --conf-file="$RUN/cf-dnsmasq.conf"
+fi
 ns isp dnsmasq --conf-file="$RUN/isp-dnsmasq.conf"
 
 # --- throwaway CA + server certificate for the app targets (hosts import the CA; nothing is trusted globally)
@@ -159,6 +205,34 @@ chmod 644 "$PKI/ca.pem"
 # --- local HTTP(S) stand-ins for the apps (google-search, ...)
 ns isp python3 -u "$LAN/targets.py" --cert "$PKI/srv.pem" --key "$PKI/srv.key" > "$LOG/targets.log" 2>&1 &
 echo $! > "$RUN/targets.pid"
+
+# --- core layout: fake Cloudflare (namespace cf, https 443 with SAN speed.cloudflare.com), fake Mist (8485) and fake
+# EdgeConnect Orchestrator (8486) on the management address (certificates from the harness CA)
+if [ "$CORE" = 1 ]; then
+    MGMT_IP=$(ip -4 -o addr show dev eth0 | awk '{print $4}' | cut -d/ -f1 | head -1)
+    issue() {   # name san
+        openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=exp harness $1" \
+            -keyout "$PKI/$1.key" -out "$PKI/$1.csr" 2>/dev/null
+        printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\n' "$2" > "$PKI/$1.cnf"
+        openssl x509 -req -in "$PKI/$1.csr" -CA "$PKI/ca.pem" -CAkey "$PKI/ca.key" -CAcreateserial -days 30 \
+            -extfile "$PKI/$1.cnf" -out "$PKI/$1.pem" 2>/dev/null
+    }
+    issue cf "DNS:speed.cloudflare.com"
+    issue mist "IP:$MGMT_IP,DNS:mist.exp.test"
+    issue orch "IP:$MGMT_IP,DNS:orch.exp.test"
+    # the browser trusts the fake Cloudflare certificate by its public-key pin (no CA store in the client namespace)
+    openssl x509 -in "$PKI/cf.pem" -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary \
+        | base64 > "$PKI/cf.spki"
+    ns cf python3 -u /opt/repo/test/fakes/cloudflare_speed/server.py --listen 0.0.0.0:443 --cert "$PKI/cf.pem" --key "$PKI/cf.key" \
+        > "$LOG/cf.log" 2>&1 &
+    echo $! > "$RUN/cf.pid"
+    python3 -u /opt/repo/test/fakes/mist/server.py --listen 0.0.0.0:8485 --cert "$PKI/mist.pem" --key "$PKI/mist.key" \
+        > "$LOG/mist.log" 2>&1 &
+    echo $! > "$RUN/mist.pid"
+    python3 -u /opt/repo/test/fakes/orchestrator/server.py --listen 0.0.0.0:8486 --cert "$PKI/orch.pem" --key "$PKI/orch.key" \
+        > "$LOG/orch.log" 2>&1 &
+    echo $! > "$RUN/orch.pid"
+fi
 
 # --- multisite: the local webhook receiver the collectors' webhooks.json points at (https, certificate from the
 # throwaway CA, bound to this container's management address; every POST is recorded in /var/lib/lan/webhooks.jsonl)
@@ -180,6 +254,8 @@ fi
 for _ in $(seq 40); do
     if ns gw ping -c1 -W1 -q 8.8.8.8 >/dev/null 2>&1 && ns gw python3 "$LAN/lanctl" _canary 10.1.0.1 >/dev/null 2>&1 \
        && ns gw curl -sf -m 2 -o /dev/null http://142.250.80.46/ \
+       && { [ "$CORE" != 1 ] || { curl -sk -m 2 -o /dev/null "https://127.0.0.1:8485/_fake/log" && curl -sk -m 2 -o /dev/null "https://127.0.0.1:8486/_fake/log" \
+            && ns gw curl -sk -m 2 -o /dev/null "https://$CF_IP/cdn-cgi/trace"; }; } \
        && { [ "$SITES" -lt 2 ] || { ns gw2 ping -c1 -W1 -q 8.8.8.8 >/dev/null 2>&1 \
             && ns gw2 python3 "$LAN/lanctl" _canary 10.2.0.1 >/dev/null 2>&1 \
             && curl -sf -m 2 -o /dev/null --cacert "$PKI/ca.pem" "https://$HOOKS_IP:9443/_health"; }; }; then

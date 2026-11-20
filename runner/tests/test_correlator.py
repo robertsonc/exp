@@ -328,6 +328,23 @@ def test_scrub_after_diagnosis_drops_the_clients_ring_rows(tmp_path):
         e.close()
 
 
+def test_scrub_also_drops_ip_less_lines_naming_the_device(tmp_path):
+    """Regression (A6.6): after the final diagnosis no line naming the device (by MAC in any spelling) may stay in the ring."""
+    e = Env(tmp_path, cfg=make_cfg(privacy={"scrub_after_diagnosis": True}))
+    try:
+        lines(e)
+        at = time.time() - 900
+        for text in ("DHCPDISCOVER from f0:18:98:aa:bb:01 (alices-iphone) via eth1", "DHCPDISCOVER from F0-18-98-AA-BB-01 via eth1",
+                     "DHCPDISCOVER from f0:18:98:cc:dd:02 (someone-else) via eth1"):
+            e.ring.insert_many([(parse_line(text, at), "10.0.0.1", at)])
+        e.add_test()
+        e.corr.tick()
+        left = [r[0] for r in e.ring._conn().execute("SELECT raw FROM lines")]
+        assert left == ["DHCPDISCOVER from f0:18:98:cc:dd:02 (someone-else) via eth1"], left
+    finally:
+        e.close()
+
+
 def test_without_scrub_the_ring_rows_stay(env):
     lines(env)
     env.add_test()

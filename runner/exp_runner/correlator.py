@@ -85,6 +85,19 @@ class _Pending:
     next_at: float = 0.0
 
 
+def device_tokens(mac: str | None, hostname: str | None) -> list[str]:
+    """Every spelling of a device's MAC (colon, dash, Cisco dotted, bare; either case) plus its hostname, for the ring scrub."""
+    out: list[str] = []
+    if mac:
+        bare = "".join(c for c in mac.lower() if c in "0123456789abcdef")
+        if len(bare) == 12:
+            pairs = [bare[i:i + 2] for i in range(0, 12, 2)]
+            out += [":".join(pairs), "-".join(pairs), bare, ".".join(bare[i:i + 4] for i in range(0, 12, 4))]
+    if hostname and len(hostname.strip()) >= 3:
+        out.append(hostname.strip())
+    return out
+
+
 def _iso_epoch(text: str) -> float:
     return exp_schema.iso_to_ms(text) / 1000.0
 
@@ -308,6 +321,8 @@ class Correlator:
             self._lags.append((done_at, max(0.0, done_at - test.ended)))
         if self.cfg.scrub_after_diagnosis:
             self.ring.delete_ip(test.client_ip)
+            # lines that name the device without an IP (DHCPDISCOVER, ...) by its MAC in every spelling and its hostname (A6.6)
+            self.ring.delete_mentions(device_tokens(ident.mac, ident.hostname))
         log.info("test %s correlated (%s, zone %s)", test.id, status, ident.zone)
 
     # ----------------------------------------------------------------------------------- metrics

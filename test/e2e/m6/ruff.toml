@@ -1,0 +1,13 @@
+extend = "../../../ruff.toml"
+line-length = 130
+
+[lint]
+ignore = ["UP031", "S603", "S607", "S104", "B904", "S311", "S608", "E501"]
+
+[lint.isort]
+known-first-party = ["m1lib", "m6lib"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[lint.per-file-ignores]
+"*.py" = ["S101", "S105", "S106", "S108"]
+"m6lib.py" = ["I001"]  # m1lib must be imported first: it puts shared/python and dashboard on sys.path

@@ -83,6 +83,16 @@ def test_delete_ip_removes_ring_and_attached_rows(ring):
     assert ring.query("10.1.1.1", 0, NOW * 2) == [] and ring.count() == 1
 
 
+def test_delete_mentions_removes_lines_without_an_ip(ring):
+    """Regression (A6.6): a DHCPDISCOVER names the device by MAC and hostname but carries no lease IP, so delete_ip never reached it."""
+    put(ring, "DHCPDISCOVER from f0:18:98:aa:bb:01 (alice-laptop) via eth0", NOW)
+    put(ring, "DHCPDISCOVER from F0-18-98-AA-BB-01 via eth0", NOW)
+    put(ring, "something else about ALICE-LAPTOP happened", NOW)
+    put(ring, "DHCPDISCOVER from f0:18:98:cc:dd:02 (bob) via eth0", NOW)
+    assert ring.delete_mentions(["f0:18:98:aa:bb:01", "f0-18-98-aa-bb-01", "alice-laptop", "ab", "%"]) == 3
+    assert ring.count() == 1 and ring.delete_mentions([]) == 0 and ring.delete_mentions(["x'; DROP TABLE lines; --"]) == 0
+
+
 def test_dhcp_queries(ring):
     put(ring, "DHCPACK on 10.1.1.1 to f0:18:98:aa:bb:01 (alice) via eth0", NOW)
     put(ring, "DHCPRELEASE of 10.1.1.1 from f0:18:98:aa:bb:01 via eth0 (found)", NOW + 10)

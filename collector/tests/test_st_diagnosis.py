@@ -152,6 +152,22 @@ def test_internet_path_when_the_internet_leg_could_not_run(st):
     assert quick["cause"][0]["id"] == "internet_path"
 
 
+def test_internet_down_is_not_healthy(st):
+    """Regression (M6 e1, A6.7): with the internet leg unavailable the score rests on the fast on-network leg alone and is
+    high; the diagnosis used to short-circuit to `none` ("looks healthy"). It must say the internet could not be reached."""
+    t = result(down=800.0, up=700.0, loaded=15.0, i_down=None, cv=0.0, flags=["internet_unavailable"])
+    assert t["score"]["total"] >= 80, t["score"]
+    quick = st.ingest(t).json()["diagnosis"]
+    assert quick["cause"][0]["id"] == "internet_path" and "internet could not be reached" in quick["user_text"], quick
+    out = st.run(result(down=800.0, up=700.0, loaded=15.0, i_down=None, cv=0.0, flags=["internet_unavailable"]), [])
+    d = out["diagnosis"]
+    assert d["stage"] == "final" and causes(out)[0] == "internet_path"
+    assert "could not be reached" in d["user_text"] and "unavailable" in d["noc_text"]
+    check_text(d)
+    ok = result(down=800.0, up=700.0, loaded=15.0, i_down=400.0, i_up=200.0, i_loaded=20.0, cv=0.0)   # control: a working internet leg
+    assert causes(st.run(ok, [])) == ["none"]
+
+
 def test_policy_block(st):
     t = result(down=300.0, up=200.0, i_down=40.0, i_up=20.0, i_loaded=300.0)
     out = st.run(t, [evidence("security", t)])

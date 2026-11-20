@@ -1,0 +1,12 @@
+#!/bin/sh
+# busybox udhcpc script for the M6 client namespaces: configure the interface and print one parseable line.
+case "$1" in
+    bound|renew)
+        ip addr flush dev "$interface" 2>/dev/null
+        ip addr add "$ip/${mask:-24}" dev "$interface"
+        ip link set "$interface" up
+        [ -z "$router" ] || ip route replace default via "${router%% *}" dev "$interface"
+        echo "LEASE ip=$ip mask=${mask:-24} router=${router%% *} dns=${dns%% *}"
+        ;;
+esac
+exit 0
