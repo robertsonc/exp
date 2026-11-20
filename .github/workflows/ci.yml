@@ -317,8 +317,24 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check pip-audit==2.7.3
-          python -c "import json; [print(i['name']+'=='+i['version']) for i in json.load(open('packaging/vendor.lock'))['items'] if i['kind']=='wheel']" > "$RUNNER_TEMP/vendored.txt"
-          pip-audit --no-deps --disable-pip -r "$RUNNER_TEMP/vendored.txt"
+          # One pin per package per file: components may vendor the same wheel (dnspython: probe + speedtest) or, in
+          # their own tarballs, different versions of it; pip-audit refuses a package listed twice in one run.
+          python - "$RUNNER_TEMP" <<'PY'
+          import json, sys
+          pins = sorted({(i["name"].lower(), i["version"]) for i in json.load(open("packaging/vendor.lock"))["items"] if i["kind"] == "wheel"})
+          layers = []
+          for name, ver in pins:
+              layer = next((l for l in layers if name not in l), None)
+              if layer is None:
+                  layer = {}
+                  layers.append(layer)
+              layer[name] = ver
+          for k, layer in enumerate(layers):
+              with open(f"{sys.argv[1]}/vendored-{k}.txt", "w") as f:
+                  f.write("".join(f"{n}=={v}\n" for n, v in sorted(layer.items())))
+          print(f"{len(pins)} vendored pin(s) in {len(layers)} file(s)")
+          PY
+          for f in "$RUNNER_TEMP"/vendored-*.txt; do cat "$f"; pip-audit --no-deps --disable-pip -r "$f"; done
       - name: npm audit --omit=dev (report only)
         continue-on-error: true
         run: |
