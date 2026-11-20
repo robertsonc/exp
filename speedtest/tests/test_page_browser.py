@@ -147,6 +147,8 @@ def run_scenario(w: World, scenario: str, opts: dict[str, Any] | None = None, ti
         for line in p.stdout:  # type: ignore[union-attr]
             line = line.rstrip("\n")
             lines.append(line)
+            if os.environ.get("EXP_PAGE_DEBUG"):
+                print(line[:300], flush=True)
             if line.startswith("@@NEED "):
                 req = json.loads(line[7:])
                 if req["op"] == "correlate":

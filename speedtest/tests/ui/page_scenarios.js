@@ -19,6 +19,7 @@ function need(op, args) {
   console.log("@@NEED " + JSON.stringify({ op, ...(args || {}) }));
   return new Promise((res) => waiters.push(res)).then((l) => JSON.parse(l.replace(/^@@OK /, "")));
 }
+const step = (...a) => console.log('[step]', ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = `http://${cfg.host}`;
 
@@ -105,20 +106,20 @@ async function full(browser, o) {
   // keyboard: the first Tab stops land on interactive controls only
   await page.keyboard.press("Tab");
   const firstFocus = await page.evaluate(() => document.activeElement && (document.activeElement.id || document.activeElement.tagName));
-  const t0 = Date.now(), started = await startTest(page);
+  step('start'); const t0 = Date.now(), started = await startTest(page);
   const phases = [], midAnims = [];
   let doneAt = null;
   const poll = setInterval(async () => { try { const p = await text(page, "#phaseText"); if (p && phases[phases.length - 1] !== p) phases.push(p); midAnims.push(await page.evaluate(() => document.getAnimations().length)); } catch (e) { /* page closed */ } }, 120);
   if (o.midShot) { await page.waitForFunction(() => /download/i.test(document.getElementById("phaseText").textContent), null, { timeout: 60000 }).catch(() => {}); await sleep(900); await shot(page, o.midShot); }
   await waitResults(page, o.timeout);
-  doneAt = Date.now() - t0;
+  doneAt = Date.now() - t0; step('results after', doneAt);
   clearInterval(poll);
   await sleep(1800);                                   // let the sweep-in finish
-  const first = await snapshot(page);
+  const first = await snapshot(page); step('first snapshot');
   if (o.shotResults) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotResults); await shot(page, o.shotResults + "-full", true); }
   let flipped = null;
   if (o.correlate) {
-    await need("correlate");
+    step('correlate'); await need("correlate"); step('correlated');
     await page.waitForFunction(() => document.querySelectorAll("#checks li .wait").length === 0 && document.getElementById("checks").children.length > 0, null, { timeout: 30000 }).catch(() => {});
     await sleep(600);
     flipped = await snapshot(page);
@@ -127,7 +128,7 @@ async function full(browser, o) {
   const final = flipped || first;
   const res = { cspHeader, pre, first, flipped, phases, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), requests: seen.requests, csp: seen.csp, cspEvents: final.csp,
     errors: seen.errors, dialogs: seen.dialogs, submissions: seen.submissions, failed: seen.failed, midAnimsMax: Math.max(0, ...midAnims), midAnimsMin: midAnims.length ? Math.min(...midAnims) : null };
-  if (o.report) {
+  step('flipped'); if (o.report) {
     await page.click("#reportBtn"); await page.fill("#rText", o.report); await page.click("#report button[type=submit]");
     await page.waitForFunction(() => /Saved/.test(document.getElementById("rDone").textContent), null, { timeout: 8000 }).catch(() => {});
     res.afterReport = await snapshot(page); res.rDone = await text(page, "#rDone");
@@ -143,7 +144,7 @@ async function full(browser, o) {
     res.selection = await page.evaluate(() => String(window.getSelection()));
   }
   if (o.share) {
-    const link = first.share;
+    step('share'); const link = first.share;
     const c2 = await open(browser, { viewport: { width: 390, height: 844 }, colorScheme: o.colorScheme });
     await c2.page.goto(link, { waitUntil: "load" });
     await c2.page.waitForSelector("#results:not([hidden])", { timeout: 15000 }).catch(() => {});
