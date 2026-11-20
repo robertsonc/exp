@@ -56,6 +56,21 @@
    (the 768-834 ms tasks are gone; the remaining longest tasks are 57-154 ms, none in the internet phases' steady state). An unthrottled gigabit client is
    also not a mid-range phone: with the link unrestricted the 4x-slowed main thread spends its time on data delivery, which is why the phone's link is
    emulated. The CDP trace (`a610-trace.json`, ~4900 frames) and the per-second series + per-phase fps + longest task (`a610-fps.json`) are kept.
+   **Follow-up 2026-11-20 (on-network leg in a worker).** The full suite after the review fixes failed this gate once: On-network download 47.0 fps
+   (main thread ~93 % busy in those seconds: the `fetch()` body reader loop and 220-227 ms `XHRLoad` tasks at the end of the upload XHRs). The
+   on-network transfers moved to a dedicated worker too (CR-m6-speedtest-server item 26 follow-up 2). Gate unchanged. Re-measured, three runs of
+   `test_a610_page_quality.py` plus the full m6 suite (33 passed), logs `e2e-artifacts/m6/../gate3/`:
+
+   | run | median / mean / min (per s) | on-net down | on-net up | internet down | internet up | seconds < 10 fps | longest main-thread task |
+   |---|---|---|---|---|---|---|---|
+   | 1 | 60 / 59.9 / 56 | 60.2 | 60.0 | 60.1 | 60.1 | 0 | 44.6 ms |
+   | 2 | 60 / 59.9 / 59 | 60.2 | 60.2 | 60.0 | 59.9 | 0 | 48.6 ms |
+   | 3 | 60 / 59.8 / 56 | 60.2 | 59.8 | 60.1 | 59.6 | 0 | 58.3 ms |
+   | full suite | 60 / 59.6 / 51 | 60.2 | 60.0 | 59.2 | 59.8 | 0 | - |
+
+   Measurement caveat (inferred, not verified): CDP `Emulation.setCPUThrottlingRate` throttles the page's main thread; dedicated workers probably run
+   unthrottled. With both legs in workers the gate therefore measures main-thread smoothness while the transfers run on another core, which is how a
+   multi-core phone behaves, but it is no longer "every byte handled at 4x slower CPU". Page weight (HTML + both worker files + fonts, gzip -9): 150,035 B.
 6. **A6.10 prototype comparison tolerance (documented, binding for re-runs).** The prototype is rendered at 390 px (a desktop-mode 390-px viewport:
    it has no viewport meta, a mobile emulation would lay it out at 980 px) with its own demo data and the product's woff2 fonts; Google Fonts
    requests are aborted. Both full-page screenshots are cropped per section at that section's own top and compared on a 16 x 16 device-pixel
