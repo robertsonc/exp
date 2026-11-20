@@ -1,10 +1,10 @@
 {
  "schema": "exp.speedtest.csp/1",
  "script": [
-  "sha256-t6A+uKI8Ez8ZDg0Syr3TXg99M2bxDIHpU5Vyd65pwgk=",
-  "sha256-brbyyFgSw1LTHTyR6a4JJE30+S22/73VwcyTjxVMQS0="
+  "sha256-YFipOvSlCYJK+s6JGzIfYOGsUdGr/FuIHZFe6xGqMeo=",
+  "sha256-2uTAt2Y3NvTBDA1arBuui+EfU0/WZpoFwCRpmWMaGB0="
  ],
  "style": [
-  "sha256-/QrwTvzq1IWjVdJdH+QpHVApsLVCoF6FB+XzjwOIrxQ="
+  "sha256-9FtGQvzBiAE/Y13jqIDju7Q4kbOJl2JNrlq65fe+RG8="
  ]
 }

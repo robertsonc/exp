@@ -49,6 +49,11 @@ async function open(browser, o) {
   await page.addInitScript(() => {
     window.__csp = [];
     document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + e.blockedURI));
+    window.__phases = [];
+    document.addEventListener("DOMContentLoaded", () => {
+      const t = document.getElementById("phaseText");
+      new MutationObserver(() => { const v = t.textContent; if (window.__phases[window.__phases.length - 1] !== v) window.__phases.push(v); }).observe(t, { childList: true, characterData: true, subtree: true });
+    });
   });
   return { ctx, page, seen };
 }
@@ -99,6 +104,7 @@ function hostsOf(urls) {
 // ----------------------------------------------------------------------------------------------------------- scenarios
 async function full(browser, o) {
   const { ctx, page, seen } = await open(browser, o);
+  if (o.noExec) await page.addInitScript(() => { document.execCommand = () => false; });
   const resp = await page.goto(BASE + (o.query || "") + "/", { waitUntil: "load" }).catch(async () => page.goto(BASE + "/"));
   const cspHeader = resp.headers()["content-security-policy"];
   const pre = await snapshot(page);
@@ -114,6 +120,7 @@ async function full(browser, o) {
   await waitResults(page, o.timeout);
   doneAt = Date.now() - t0; step('results after', doneAt);
   clearInterval(poll);
+  phases.length = 0; (await page.evaluate(() => window.__phases)).forEach((p) => phases.push(p));
   await sleep(1800);                                   // let the sweep-in finish
   const first = await snapshot(page); step('first snapshot');
   if (o.shotResults) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotResults); await shot(page, o.shotResults + "-full", true); }
@@ -269,5 +276,7 @@ async function main() {
     else throw new Error("unknown scenario " + scenario);
   } finally { await browser.close(); }
   console.log("@@RESULT " + JSON.stringify(res));
+  rl.close();
+  process.exit(0);
 }
 main().catch((e) => { console.log("@@ERROR " + String(e && e.stack || e)); process.exit(1); });

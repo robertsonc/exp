@@ -152,3 +152,26 @@ exp_speedtest/{daemon,health,cli}.py   wiring, exp.health/1, command line
 exp_speedtest/static/        index.html (the page; the page step replaces the placeholder), csp-hashes.json, assets/
 systemd/exp-speedtest.service, requirements.apt
 ```
+
+
+## The page (WP-10, M6 step s2)
+
+Source `speedtest/page/` (`src/index.html`, `style.css`, `app.js`, no framework), vendored `vendor/speedtest.js`
+(`@cloudflare/speedtest` 1.16.0, MIT, unmodified; wrapped in a function by the build), subset fonts
+(`exp_speedtest/static/assets/{archivo,inter,jetbrains-mono}.woff2`, OFL, 102 KB; regenerate with
+`page/tools/subset_fonts.py`, dev-time fonttools only). Both vendored sets are pinned in `packaging/vendor.lock`
+under `committed_sources`.
+
+```
+python3 speedtest/page/build.py [--out DIR] [--check]   # deterministic -> static/index.html + csp-hashes.json (+ assets/ into --out)
+.venv/bin/python -m pytest speedtest/tests/test_page_build.py speedtest/tests/test_page_browser.py   # browser tests need node + playwright
+```
+
+Page weight: about 41 KB gzip + 102 KB fonts (budget 200 KB, tested). CSP: two hashed inline scripts + one hashed style, fonts
+from `/st/assets/`, no inline style attributes anywhere (looks are classes or CSSOM calls).
+
+Behaviour decisions (see `docs/spec/changes/CR-m6-page.md`): view-proof HMAC/SHA-256 are pure JS (no `crypto.subtle` on plain
+HTTP); at most 5 parallel streams (HTTP/1.1 six-connection limit, one kept for loaded pings); DNS leg = 2 cold + 1 warm
+(first nonce repeated; the warm figure may be ~0 because browsers cache); internet slot queue wait capped at 45 s; zone
+correction and the problem report travel together in the single comment (`[where I was] ...`); the Chromium tests strip
+proxy environment variables so nothing can reach the real internet.

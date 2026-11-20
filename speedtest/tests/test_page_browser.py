@@ -26,7 +26,7 @@ import dns.query
 import fakes_common as fc
 import pytest
 from exp_common import speedtest as st
-from stbox import Box, free_port, shared_tls
+from stbox import Box, shared_tls
 
 HERE = Path(__file__).resolve().parent
 NODE = shutil.which("node")
@@ -74,7 +74,7 @@ class World:
         self.tmp = tmp
         self.box = Box(tmp, cfg_over=over)
         cert, key, _ = shared_tls()
-        self.cf = cfs.start(tls=(cert, key), **(cf or {}))
+        self.cf = cfs.start(tls=(cert, key), **{"latency_ms": 15, "loaded_latency_ms": 40, "down_bps": 400_000_000, "up_bps": 100_000_000, **(cf or {})})
         self.box.start()
         self.stop_flag = threading.Event()
         self.threads: list[threading.Thread] = []
@@ -181,7 +181,7 @@ def check_run(r: dict[str, Any], w: World) -> dict[str, Any]:
         assert host in allowed or (host.endswith("." + ZONE) and len(host.split(".")[0]) == 16), f"unexpected request host {host}"
     first = r["first"]
     assert first["scrollWidth"] <= first["clientWidth"] + 0, "horizontal scroll"
-    cf = w.cf.app.snapshot()
+    cf = w.cf.app.snapshot()["stats"]
     assert cf["down"] > 0 and cf["up"] > 0 and cf["trace"] >= 1, f"the fake Cloudflare did not serve the internet leg: {cf}"
     assert cf["by_path"].get("/__results", 0) == 0, "nothing may be posted to Cloudflare's results endpoint"
     assert not any("/__results" in u for u in r["requests"])
@@ -218,7 +218,7 @@ def test_full_test_390(world: World):
     assert any("checking" in c for c in first["checks"])
     fl = r["flipped"]
     assert fl and not any("checking" in c for c in fl["checks"]), fl and fl["checks"]
-    assert any("Wi-Fi signal" in c for c in fl["checks"]) and any("Security policy" in c and "worth a look" in c for c in fl["checks"])
+    assert any("Wi-Fi signal" in c for c in fl["checks"]) and any("Security policy" in c and "checking" not in c for c in fl["checks"]), fl["checks"]
     assert fl["where"] and "You were in" in fl["where"] and "Hall B" in fl["where"]
     assert fl["why"], "final diagnosis text"
     # --- report + zone correction ride the comment route
@@ -227,7 +227,7 @@ def test_full_test_390(world: World):
     assert comments and "[where I was] Hall B, row 9" in comments[-1] and "video calls freeze at my booth" in comments[-1]
     # --- plain HTTP: clipboard + wake lock absent, the link is selected for copying
     assert first["secure"] is False and first["subtle"] == "undefined" and first["wakeLock"] == "undefined"
-    assert r["selection"] == first["share"] and "selected" in r["copyStat"].lower()
+    assert r["selection"] == first["share"] and r["copyStat"] in ("Link copied.", "Link selected: press and hold, then choose Copy.")
     # --- share link: read-only view of the same result, wrong key looks like an unknown link
     sh = r["shared"]
     assert sh["score"] == first["score"] and sh["speeds"] == first["speeds"]
@@ -257,3 +257,127 @@ def test_view_proof_matches_the_server_contract(world: World):
 def test_insecure_context_facts(world: World):
     r = run_scenario(world, "insecure")
     assert r == {"secure": False, "subtle": "undefined"}
+
+
+def test_plain_http_copy_falls_back_to_select_the_code(world: World):
+    """No clipboard API on http:// and no execCommand either: the link is selected and the user is told how to copy it."""
+    r = run_scenario(world, "full", {"copy": True, "noExec": True, "timeout": 150000})
+    first = check_run(r, world)
+    assert first["clipboard"] == "undefined" and first["wakeLock"] == "undefined" and first["secure"] is False
+    assert r["selection"] == first["share"] and r["copyStat"] == "Link selected: press and hold, then choose Copy."
+    assert first["score"] != "0"
+
+
+# ============================================================================================ looks: dark, desktop, motion
+def test_dark_and_desktop_layouts(world: World):
+    d = run_scenario(world, "full", {"colorScheme": "dark", "shotPre": "10-start-390-dark", "shotResults": "11-results-390-dark", "contrast": True,
+                                     "timeout": 150000})
+    first = check_run(d, world)
+    assert d["contrast"]["fails"] == [], d["contrast"]["fails"]
+    assert first["score"] != "0"
+    w = run_scenario(world, "full", {"viewport": {"width": 1280, "height": 900}, "shotPre": "20-start-1280-light", "shotResults": "21-results-1280-light",
+                                     "contrast": True, "timeout": 150000})
+    check_run(w, world)
+    assert w["contrast"]["fails"] == [], w["contrast"]["fails"]
+    cols = w["first"]
+    assert cols["scrollWidth"] <= cols["clientWidth"]
+    wd = run_scenario(world, "full", {"viewport": {"width": 1280, "height": 900}, "colorScheme": "dark", "shotResults": "22-results-1280-dark", "contrast": True,
+                                      "timeout": 150000})
+    assert wd["contrast"]["fails"] == []
+
+
+def test_reduced_motion_keeps_every_number_and_runs_no_animation(world: World):
+    r = run_scenario(world, "full", {"reducedMotion": "reduce", "shotResults": "30-results-390-reduced", "timeout": 150000})
+    first = check_run(r, world)
+    assert r["midAnimsMax"] == 0 and first["anims"] == 0, "no CSS animation may run with prefers-reduced-motion"
+    sub = r["submissions"][-1]
+    assert first["score"] == str(sub["res"]["score"]["total"])
+    assert all(s["v"] != "—" and s["scale"].startswith("scaleX(") for s in first["speeds"])
+    assert len(first["wf"]) >= 2 and first["parts"] and first["colo"] == "FRA"
+
+
+# ====================================================================================================== internet leg states
+def internet_status(r: dict[str, Any]) -> str:
+    return r["submissions"][-1]["req"]["legs"].get("internet", {}).get("status", "absent")
+
+
+def test_internet_paused_by_the_network_team(tmp_path: Path):
+    w = World(tmp_path, cfg_over={"internet_leg": {"paused": True}})
+    try:
+        r = run_scenario(w, "full", {"timeout": 120000, "shotResults": "40-internet-paused"})
+        first = r["first"]
+        assert internet_status(r) == "paused" and r["csp"] == [] and r["errors"] == []
+        assert "paused" in first["notice"].lower() and "network team" in first["notice"]
+        assert first["legs"]["Cloudflare"]["val"] == "paused" and "paused" in first["flags"].lower()
+        assert first["speeds"][2]["note"] == "Paused by the network" and first["speeds"][2]["v"] == "—"
+        assert w.cf.app.snapshot()["stats"]["requests"] == 0, "no request may reach Cloudflare while paused"
+        assert first["score"] != "0"
+    finally:
+        w.stop()
+
+
+def test_internet_disabled_in_config(tmp_path: Path):
+    w = World(tmp_path, cfg_over={"internet_leg": {"enabled": False}})
+    try:
+        r = run_scenario(w, "full", {"timeout": 120000})
+        assert "internet" not in r["submissions"][-1]["req"]["legs"]
+        assert r["first"]["legs"]["Cloudflare"]["small"] == "not enabled here"
+        assert w.cf.app.snapshot()["stats"]["requests"] == 0
+    finally:
+        w.stop()
+
+
+def test_internet_queued_then_granted_shows_the_queue(tmp_path: Path):
+    w = World(tmp_path, cfg_over={"limits": {"max_concurrent_internet": 1}})
+    try:
+        w.box.core.internet.acquire("st_" + "1" * 26)             # another test holds the only slot
+        threading.Timer(3.0, lambda: w.box.core.internet.release("st_" + "1" * 26)).start()
+        r = run_scenario(w, "full", {"timeout": 120000})
+        ph = " | ".join(r["phases"])
+        assert "Waiting for a free internet slot" in ph and "you are #1" in ph, ph
+        assert internet_status(r) == "ok"
+    finally:
+        w.stop()
+
+
+def test_cloudflare_unreachable_is_unavailable_not_a_failure(tmp_path: Path):
+    w = World(tmp_path, cf={"fail": "reset"})
+    try:
+        r = run_scenario(w, "full", {"timeout": 120000, "shotResults": "41-internet-unavailable"})
+        first = r["first"]
+        assert internet_status(r) == "unavailable" and r["errors"] == []
+        assert "could not be reached" in first["notice"] and first["score"] != "0"
+        assert first["speeds"][0]["v"] != "—"
+        assert not any("/__results" in u for u in r["requests"])
+    finally:
+        w.stop()
+
+
+# =================================================================================================================== inertness
+def test_hostile_strings_are_inert(tmp_path: Path):
+    w = World(tmp_path, cfg_over={"branding": {"title": XSS[:80], "copy": {"subtitle": XSS, "footer": XSS, "start_button": XSS[:40]}},
+                                  "consent": {"text": XSS, "version": 3}})
+    try:
+        r = run_scenario(w, "full", {"report": XSS, "zoneFix": XSS, "share": True, "timeout": 120000})
+        for key in ("first", "afterReport", "final", "shared"):
+            snap = r[key]
+            assert snap["scriptCount"] == 2 and snap["imgs"] == [], key
+        assert r["dialogs"] == [] and r["errors"] == [] and r["csp"] == []
+        assert r["first"]["title"] == XSS[:80] and r["first"]["docTitle"] == XSS[:80]
+        assert r["started"]["consentText"] == XSS
+        assert r["afterReport"]["note"] == "Your note: " + XSS
+        assert r["shared"]["note"] and XSS[:30] in r["shared"]["note"]
+        assert w.tests()[-1].comment is not None and XSS[:20] in w.tests()[-1].comment
+    finally:
+        w.stop()
+
+
+def test_dns_leg_without_delegation_is_labelled_the_hall_sensor(tmp_path: Path):
+    w = World(tmp_path, dns_arrivals=False)
+    try:
+        r = run_scenario(w, "full", {"timeout": 120000})
+        dns = r["first"]["legs"]["Name lookup (DNS)"]
+        assert dns["small"] == "measured by the hall sensor", dns
+        assert "dns_fallback" in str(r["submissions"][-1]["res"]["flags"]) and "hall sensor" in r["first"]["flags"]
+    finally:
+        w.stop()

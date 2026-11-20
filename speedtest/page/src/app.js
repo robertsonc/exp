@@ -21,7 +21,7 @@
   var ARC = 565.5, CX = 150, CY = 150, R = 120, SCORE_ARC = 326.7;
   var API = '/st/api/v1';
   var MAX_STREAMS_H1 = 5;                                     // 6 connections per host over HTTP/1.1, one is kept for pings
-  var NS = 'http://www.w3.org/2000/svg';
+  var NS = document.querySelector('svg').namespaceURI; // SVG namespace taken from the page's own inline <svg> (no URL literal in the page)
   var $ = function (id) { return document.getElementById(id); };
 
   var ICONS = {

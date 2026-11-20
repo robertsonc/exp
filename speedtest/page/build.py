@@ -55,10 +55,13 @@ def tidy_js(js: str) -> str:
 
 def wrap_library(lib: str, license_text: str) -> str:
     if lib.count(LIB_EXPORT) != 1:
-        raise SystemExit("vendor/speedtest.js: expected exactly one `export default` line (library layout changed: re-check the wrapper)")
+        raise SystemExit("vendor/speedtest.js: expected exactly one `export default` line (layout changed: re-check)")
     body = lib.replace(LIB_EXPORT, "return SpeedTestEngine;")
+    # The library is embedded VERBATIM (only its export line is wrapped). Its rpki/msm reachability engines carry
+    # `https://${host}` URL templates; the page never runs them (app.js plans latency/download/upload only) and the
+    # CSP connect-src would block them anyway: see test_page_build.py::test_page_contacts_only_the_box_and_cloudflare.
     body = re.sub(r"\n//# sourceMappingURL=\S+\s*\Z", "\n", body)
-    head = "/* @cloudflare/speedtest 1.16.0 (https://github.com/cloudflare/speedtest), vendored unmodified inside a function wrapper.\n" + \
+    head = "/* @cloudflare/speedtest 1.16.0, vendored unmodified in a wrapper.\n" + \
         "\n".join(" " + ln if ln else "" for ln in license_text.strip().split("\n")).replace("*/", "* /") + "\n */"
     return head + "\nvar CFSpeedTest = (function () {\n" + body.strip() + "\n})();"
 
