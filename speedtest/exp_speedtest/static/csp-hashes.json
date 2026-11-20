@@ -1,0 +1,10 @@
+{
+ "schema": "exp.speedtest.csp/1",
+ "script": [
+  "sha256-t6A+uKI8Ez8ZDg0Syr3TXg99M2bxDIHpU5Vyd65pwgk=",
+  "sha256-brbyyFgSw1LTHTyR6a4JJE30+S22/73VwcyTjxVMQS0="
+ ],
+ "style": [
+  "sha256-/QrwTvzq1IWjVdJdH+QpHVApsLVCoF6FB+XzjwOIrxQ="
+ ]
+}

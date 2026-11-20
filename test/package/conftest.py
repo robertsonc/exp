@@ -2,39 +2,17 @@
 a throwaway Ed25519 key, and a pre-seeded vendor cache (no network)."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
 import subprocess
-import sys
-import zipfile
 from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
-PKG = REPO / "packaging"
+from pkg_common import COMPONENTS, EPOCH, PKG, REPO, VERIFY, VERSION, make_wheel, sha  # noqa: F401,E402
+
 BUILD = PKG / "build.sh"
-VERIFY = PKG / "verify-release.sh"
-EPOCH = "1700000000"
-VERSION = "0.1.0"
-COMPONENTS = ["agent", "probe", "collector", "dashboard", "runner"]
-
-sys.path.insert(0, str(PKG))
-sys.path.insert(0, str(REPO / "shared" / "python"))
-
-
-def sha(b: bytes) -> str:
-    return hashlib.sha256(b).hexdigest()
-
-
-def make_wheel(path: Path) -> None:
-    with zipfile.ZipFile(path, "w") as z:
-        z.writestr("dns/__init__.py", "VERSION = 'stub'\n")
-        z.writestr("dns/__pycache__/junk.cpython-310.pyc", b"junk")
-        z.writestr("stubdns-1.0.dist-info/METADATA", "Name: stubdns\n")
-        z.writestr("stubdns-1.0.dist-info/licenses/LICENSE", "ISC stub license\n")
 
 
 @pytest.fixture()
@@ -56,7 +34,8 @@ def stub(tmp_path: Path) -> dict:
         (d / ("exp_" + c) / "static").mkdir()
         (d / ("exp_" + c) / "__pycache__").mkdir()
         (d / ("exp_" + c) / "__init__.py").write_text("")
-        (d / ("exp_" + c) / "cli.py").write_text("def main():\n    return 0\n")
+        # the real speedtest imports dnspython (DNS-leg authority): the stub does too, so the build must vendor it
+        (d / ("exp_" + c) / "cli.py").write_text(("import dns\n" if c == "speedtest" else "") + "def main():\n    return 0\n")
         (d / ("exp_" + c) / "static" / "app.js").write_text("// asset\n")
         (d / ("exp_" + c) / "tests" / "test_x.py").write_text("def test_x():\n    pass\n")
         (d / ("exp_" + c) / "__pycache__" / "cli.cpython-310.pyc").write_bytes(b"junk")
@@ -84,6 +63,7 @@ def stub(tmp_path: Path) -> dict:
     items.append({"name": "stubdns", "version": "1.0", "kind": "wheel", "component": "probe",
                   "arch": "noarch", "file": wheel.name, "sha256": sha(wb), "license": "ISC",
                   "sources": [{"type": "url", "url": "https://invalid.example/stubdns.whl"}]})
+    items.append({**items[0], "component": "speedtest"})  # the same pinned wheel serves two components
     for arch in ("amd64", "arm64"):
         vb = ("stub victoria-metrics " + arch).encode() * 100
         vd = cache / ("vmstub-v1-" + arch) / sha(vb)

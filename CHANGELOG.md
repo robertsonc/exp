@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+### Added
+- M6 packaging: `exp-runner` and `exp-speedtest` are released components (noarch tarballs in the signed manifest).
+  `exp-speedtest` bundles the pinned dnspython wheel (one `vendor.lock` pin shared with the probe; the build fails if a
+  component imports `dns` without vendoring it) and, when `speedtest/page/build.py` exists, the deterministically built
+  page (run twice, byte-identical output required).
+- Agent: `runner` and `speedtest` component types (reconcile order collector, runner, speedtest, dashboard, probe;
+  users `exp-runner` / `exp-speedtest`). The speedtest unit holds `CAP_NET_BIND_SERVICE` only (ports 80/443/53 on
+  `serve.listen_ip`); its ICMP path timer uses unprivileged ICMP sockets, for which the agent manages one scoped,
+  reversible sysctl drop-in (`/etc/sysctl.d/60-exp-speedtest-ping.conf`, written only when `net.ipv4.ping_group_range`
+  does not already cover the service group; decommission restores the original range). Branding logo assets from the
+  desired state are downloaded, sha256- and content-checked and installed as `/etc/exp/speedtest/assets/logo`.
+- Agent: `health --json` `facts.url` may be `http://` (plain-HTTP speedtests).
+
 ### Fixed
 - `deploy.sh`: a relative `--release-pubkey` is resolved against the caller's directory (the script changes into
   `manager/`); the forged-JWT smoke check is retried like the others (`workers.dev` can answer a transient 404 right

@@ -2,13 +2,3122 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
 <title>Speed check</title>
-<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px;max-width:36em}h1{font-size:1.4rem}</style>
+<style>
+@font-face { font-family: "Archivo"; src: url("/st/assets/archivo.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62% 125%; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/st/assets/inter.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("/st/assets/jetbrains-mono.woff2") format("woff2"); font-weight: 100 800; font-display: swap; }
+:root {
+--bg: #12141B; --surface: #1B1E27; --surface-2: #232733; --line: #3A4054;
+--fg: #F3F5F8; --muted: #AEB4C4; --faint: #959CB0;
+--down: #00E0AF; --down-2: #62E5F6; --up: #9C8EFF; --up-2: #5B9BFF;
+--ok: #3DD68C; --warn: #FFBC44; --crit: #FF7A7A;
+--glow: rgba(0, 224, 175, .35);
+--brand: #00E0AF; --on-brand: #06261E;
+--display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+--body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+--mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+--bg: #F2F4F7; --surface: #FFFFFF; --surface-2: #EAEDF2; --line: #C3C9D5;
+--fg: #171A22; --muted: #484F60; --faint: #5E6577;
+--down: #00775A; --down-2: #00728F; --up: #5B47E0; --up-2: #1F63D6;
+--ok: #0F7A47; --warn: #8F5200; --crit: #B3261E; --glow: rgba(0, 147, 111, .25); color-scheme: light; } }
+:root[data-theme="light"] {
+--bg: #F2F4F7; --surface: #FFFFFF; --surface-2: #EAEDF2; --line: #C3C9D5;
+--fg: #171A22; --muted: #484F60; --faint: #5E6577;
+--down: #00775A; --down-2: #00728F; --up: #5B47E0; --up-2: #1F63D6;
+--ok: #0F7A47; --warn: #8F5200; --crit: #B3261E; --glow: rgba(0, 147, 111, .25); color-scheme: light; }
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 400 15px/1.5 var(--body); -webkit-font-smoothing: antialiased;
+overflow-x: hidden;
+padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+padding-top: max(12px, env(safe-area-inset-top, 0px)); padding-bottom: max(40px, env(safe-area-inset-bottom, 0px)); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--down-2); outline-offset: 3px; border-radius: 6px; }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.wrap { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mark { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--brand), var(--up-2)); display: grid; place-items: center; flex: none; overflow: hidden; }
+.mark svg { stroke: var(--on-brand); fill: none; stroke-width: 2.6; stroke-linecap: round; }
+.mark img { width: 100%; height: 100%; object-fit: contain; display: block; background: #fff; }
+.brand b { font: 800 19px/1.1 var(--display); font-stretch: 85%; letter-spacing: .01em; display: block; overflow-wrap: anywhere; }
+.brand small { color: var(--muted); font-size: 12.5px; display: block; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font: 500 12px/1 var(--body); padding: 7px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); display: inline-flex; align-items: center; gap: 6px; max-width: 100%; overflow-wrap: anywhere; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+.grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+@media (min-width: 900px) { .grid { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; } .results { grid-column: 1 / -1; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 18px; min-width: 0; }
+.shared-only .stage, .shared-only .legs { display: none; }
+.shared-only .results { grid-column: 1 / -1; }
+.stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 22px; overflow: hidden; }
+.phase { font: 600 12px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); display: flex; gap: 8px; align-items: center; min-height: 16px; text-align: center; }
+.phase i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); display: inline-block; flex: none; }
+.running .phase i { background: var(--accent, var(--down)); box-shadow: 0 0 0 0 var(--accent, var(--down)); animation: beacon 1.2s ease-out infinite; }
+@keyframes beacon { to { box-shadow: 0 0 0 10px transparent; } }
+.gauge { position: relative; width: min(100%, 340px); aspect-ratio: 1; max-width: 100%; }
+.gauge svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.ticks text { font: 500 11px var(--mono); fill: var(--faint); }
+.ticks line { stroke: var(--line); stroke-width: 2; }
+.track { stroke: var(--surface-2); fill: none; }
+.prog { transition: stroke .4s; filter: drop-shadow(0 0 10px var(--glow)); fill: none; stroke: url(#gDown); }
+.mode-up .prog { stroke: url(#gUp); }
+.rings circle { fill: none; stroke: var(--accent, var(--down)); opacity: 0; transform-origin: 150px 150px; }
+.running .rings circle { animation: ring 2.4s ease-out infinite; }
+.running .rings circle:nth-child(2) { animation-delay: .8s; } .running .rings circle:nth-child(3) { animation-delay: 1.6s; }
+@keyframes ring { 0% { transform: scale(1); opacity: .28; } 100% { transform: scale(2.1); opacity: 0; } }
+.spin { transform-origin: 150px 150px; animation: spin 1.1s linear infinite; fill: none; stroke: var(--accent, var(--down)); opacity: .9; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.tip { fill: var(--fg); }
+.stop-a { stop-color: var(--down); } .stop-b { stop-color: var(--down-2); }
+.stop-ua { stop-color: var(--up); } .stop-ub { stop-color: var(--up-2); }
+.stop-f { stop-color: var(--accent, var(--down)); }
+.readout { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; padding-top: 10px; }
+.live { display: flex; flex-direction: column; align-items: center; }
+.num { font: 850 clamp(60px, 19vw, 86px)/0.9 var(--display); font-stretch: 72%; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.unit { font: 500 13px var(--mono); color: var(--muted); margin-top: 4px; }
+.sub { font: 500 12.5px var(--body); color: var(--muted); margin-top: 10px; min-height: 18px; max-width: 220px; }
+.go { pointer-events: auto; width: 152px; height: 152px; border-radius: 50%; border: 0; cursor: pointer; position: relative;
+background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--brand) 92%, white), var(--brand) 45%, color-mix(in srgb, var(--brand) 60%, var(--up-2)));
+color: var(--on-brand); font: 900 34px/1 var(--display); font-stretch: 80%; letter-spacing: .04em; box-shadow: 0 10px 40px var(--glow), inset 0 -6px 18px rgba(0,0,0,.18);
+transition: transform .15s; overflow-wrap: anywhere; padding: 0 12px; }
+.go::after { content: ""; position: absolute; inset: -10px; border-radius: 50%; border: 2px solid var(--brand); opacity: .5; animation: halo 2.2s ease-in-out infinite; }
+@keyframes halo { 50% { transform: scale(1.1); opacity: .1; } }
+.go:active { transform: scale(.96); }
+.go span { display: block; font: 700 12px var(--body); letter-spacing: .06em; margin-top: 6px; }
+.trace { width: 100%; height: 64px; display: block; }
+.trace-line { fill: none; stroke: var(--accent, var(--down)); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.trace-area { fill: url(#gFill); }
+.legend { display: flex; justify-content: space-between; width: 100%; font: 500 12px var(--mono); color: var(--muted); gap: 8px; }
+.ctrl { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; padding-bottom: 4px; }
+.btn { border: 1px solid var(--line); background: var(--surface-2); padding: 11px 18px; border-radius: 999px; font-weight: 600; cursor: pointer; min-height: 44px; min-width: 44px; }
+.btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.btn:disabled { opacity: .5; cursor: default; }
+.notice { width: 100%; font-size: 13px; color: var(--muted); text-align: center; margin: 0; overflow-wrap: anywhere; }
+.notice.bad { color: var(--crit); }
+.legs h2, .results h2 { font: 800 22px/1.15 var(--display); font-stretch: 85%; margin: 0 0 4px; text-wrap: balance; }
+.hint { color: var(--muted); font-size: 13.5px; margin: 0 0 14px; }
+.hint em, .tagnet { font: 500 12px var(--mono); font-style: normal; }
+.path { list-style: none; margin: 0; padding: 0; position: relative; }
+.leg { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: center; position: relative; padding: 10px 0; }
+.leg + .leg { border-top: 1px dashed var(--line); }
+.node { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); border: 2px solid var(--line); position: relative; z-index: 1; transition: border-color .3s, background .3s; }
+.node svg { width: 17px; height: 17px; stroke: var(--muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rail { position: absolute; left: 16px; top: 44px; bottom: -10px; width: 2px; background: var(--line); overflow: hidden; }
+.leg:last-child .rail { display: none; }
+.leg.active .node { border-color: var(--down); box-shadow: 0 0 0 6px color-mix(in srgb, var(--down) 18%, transparent); }
+.leg.active .node svg { stroke: var(--down); }
+.leg.active .rail::after { content: ""; position: absolute; left: 0; width: 2px; height: 18px; top: -18px; border-radius: 2px;
+background: linear-gradient(transparent, var(--down)); animation: packet .7s linear infinite; }
+@keyframes packet { to { top: 100%; } }
+.leg.done .node { border-color: var(--ok); } .leg.done .node svg { stroke: var(--ok); }
+.leg.st-warn .node { border-color: var(--warn); } .leg.st-warn .node svg { stroke: var(--warn); }
+.leg.st-crit .node { border-color: var(--crit); } .leg.st-crit .node svg { stroke: var(--crit); }
+.leg .name { font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.leg .name em { font: 500 11px var(--mono); font-style: normal; color: var(--muted); letter-spacing: .02em; }
+.leg .what { color: var(--muted); font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.val { text-align: right; font: 700 22px/1 var(--display); font-stretch: 78%; font-variant-numeric: tabular-nums; min-width: 74px; }
+.val small { display: block; font: 500 11px var(--mono); color: var(--muted); margin-top: 4px; }
+.val.pending { color: var(--faint); }
+.legnote { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
+.res-top { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: center; }
+@media (min-width: 640px) { .res-top { grid-template-columns: 150px 1fr; } }
+.score { position: relative; width: 150px; height: 150px; margin: 0 auto; }
+.score svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.score .bg { fill: none; stroke: var(--surface-2); stroke-width: 11; }
+.score .arc { fill: none; stroke: url(#gDown); stroke-width: 11; stroke-linecap: round; transition: stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1); }
+.score .n { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font: 850 52px/1 var(--display); font-stretch: 75%; }
+.score .n small { display: block; font: 500 11px var(--mono); color: var(--muted); letter-spacing: .08em; margin-top: 2px; }
+.verdict { font: 700 22px/1.25 var(--display); font-stretch: 90%; margin: 0 0 6px; text-wrap: balance; overflow-wrap: anywhere; }
+.why { color: var(--muted); margin: 0; max-width: 60ch; overflow-wrap: anywhere; }
+.parts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.part { font: 500 12px var(--mono); padding: 6px 10px; border-radius: 8px; background: var(--surface-2); }
+.sec { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
+.sec h3 { font: 700 15px/1.2 var(--body); margin: 0; }
+.sec h3 .est { font: 500 12px var(--mono); color: var(--muted); margin-left: 6px; }
+.speeds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 760px) { .speeds { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.sp { background: var(--surface-2); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sp .k { font: 500 11.5px var(--mono); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.sp .v { font: 850 32px/1 var(--display); font-stretch: 75%; font-variant-numeric: tabular-nums; }
+.sp .v small { font: 500 12px var(--mono); color: var(--muted); margin-left: 4px; }
+.sp .note { font: 500 12px var(--body); color: var(--muted); overflow-wrap: anywhere; }
+.bar { height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 3px; width: 100%; transform: scaleX(0); transform-origin: 0 50%; transition: transform 1.2s cubic-bezier(.2,.8,.2,1); }
+.bar i.down { background: linear-gradient(90deg, var(--down), var(--down-2)); }
+.bar i.up { background: linear-gradient(90deg, var(--up), var(--up-2)); }
+.waterfall { display: flex; height: 34px; border-radius: 10px; overflow: hidden; gap: 2px; }
+.waterfall span { display: flex; align-items: center; justify-content: center; font: 600 11px var(--mono); color: #0B0D12; min-width: 0; overflow: hidden; white-space: nowrap; transition: flex-grow 1s; flex-basis: 0; }
+.c0 { background: #00C79A; } .c1 { background: #4FD2E6; } .c2 { background: #78A9FF; } .c3 { background: #A99CFF; } .c4 { background: #FFB02E; }
+.wf-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
+.wf-key b { font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.checks li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 14px; }
+.checks .ic { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); }
+.checks .ic svg, .gf svg { width: 13px; height: 13px; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.checks .wait svg { animation: spin 1s linear infinite; stroke: var(--faint); transform-origin: 50% 50%; }
+.checks .ic.ok svg, .gf .ok { stroke: var(--ok); } .checks .ic.attention svg, .gf .mid { stroke: var(--warn); } .gf .bad { stroke: var(--crit); }
+.checks .ic.na svg { stroke: var(--muted); }
+.checks b { font-weight: 600; }
+.checks span.m { color: var(--muted); overflow-wrap: anywhere; }
+.good-for { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.gf { display: flex; gap: 8px; align-items: center; font-size: 14px; background: var(--surface-2); padding: 10px 12px; border-radius: 12px; }
+.gf svg { width: 16px; height: 16px; flex: none; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; align-items: center; }
+.share { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--muted); margin-top: 18px; min-width: 0; }
+.share .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.code { font: 600 13px var(--mono); color: var(--fg); background: var(--surface-2); padding: 8px 12px; border-radius: 10px; user-select: all; -webkit-user-select: all; overflow-wrap: anywhere; word-break: break-all; min-width: 0; max-width: 100%; }
+.where { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; color: var(--muted); margin-top: 16px; }
+.where b { color: var(--fg); overflow-wrap: anywhere; }
+.linkbtn { background: none; border: 0; padding: 12px 6px; min-height: 44px; color: var(--down-2); text-decoration: underline; cursor: pointer; font-size: 14px; }
+textarea, input[type="text"] { width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 12px; font: inherit; resize: vertical; min-height: 44px; }
+textarea { min-height: 90px; }
+label { font-size: 13px; color: var(--muted); }
+.report, .zonefix { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.stat { color: var(--muted); font-size: 13px; margin-left: 8px; }
+.consent { position: absolute; inset: 0; background: color-mix(in srgb, var(--surface) 97%, transparent); display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 22px; border-radius: 22px; z-index: 5; overflow: auto; }
+.consent h2 { font: 800 24px/1.15 var(--display); font-stretch: 85%; margin: 0; }
+.consent p { margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; white-space: pre-line; }
+.consent .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.foot { color: var(--muted); font-size: 12px; text-align: center; max-width: 70ch; margin: 6px auto 0; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) {
+*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+</style>
 </head>
 <body>
-<h1>Speed check</h1>
-<p id="msg">The speed check page is being installed.</p>
-<script>document.getElementById("msg").textContent = "The speed check page is being installed (placeholder).";</script>
+<svg class="sr" width="0" height="0" aria-hidden="true" focusable="false"><defs>
+  <linearGradient id="gDown" x1="0" y1="1" x2="1" y2="0"><stop offset="0" class="stop-a"/><stop offset="1" class="stop-b"/></linearGradient>
+  <linearGradient id="gUp" x1="0" y1="1" x2="1" y2="0"><stop offset="0" class="stop-ua"/><stop offset="1" class="stop-ub"/></linearGradient>
+  <linearGradient id="gFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="stop-f" stop-opacity=".35"/><stop offset="1" class="stop-f" stop-opacity="0"/></linearGradient>
+</defs></svg>
+<noscript><p class="foot">This speed check needs JavaScript.</p></noscript>
+<div class="wrap" id="app">
+  <header class="top">
+    <div class="brand">
+      <span class="mark" id="mark"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16l4-5"/></svg></span>
+      <div><b id="title">Speed check</b><small id="subtitle">Run by the event network team</small></div>
+    </div>
+    <div class="chips">
+      <span class="chip" id="zoneChip" hidden><span class="dot" aria-hidden="true"></span><span id="zoneChipText"></span></span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card stage" id="stage" aria-label="Speed test">
+      <div class="phase" id="phase"><i aria-hidden="true"></i><span id="phaseText">Ready when you are</span></div>
+      <div class="gauge">
+        <svg viewBox="0 0 300 300" aria-hidden="true">
+          <g class="rings"><circle cx="150" cy="150" r="70" stroke-width="2"/><circle cx="150" cy="150" r="70" stroke-width="2"/><circle cx="150" cy="150" r="70" stroke-width="2"/></g>
+          <path class="track" d="M65.15 234.85 A120 120 0 1 1 234.85 234.85" stroke-width="16" stroke-linecap="round"/>
+          <path class="prog" id="prog" d="M65.15 234.85 A120 120 0 1 1 234.85 234.85" stroke-width="16" stroke-linecap="round" stroke-dasharray="565.5" stroke-dashoffset="565.5"/>
+          <g id="spinner" hidden><path class="spin" d="M150 30 A120 120 0 0 1 254 90" stroke-width="16" stroke-linecap="round"/></g>
+          <circle class="tip" id="tip" cx="65.15" cy="234.85" r="7" opacity="0"/>
+          <g class="ticks" id="ticks"></g>
+        </svg>
+        <div class="readout">
+          <button class="go" id="go" type="button" disabled aria-label="Start the speed test"><b id="goText">GO</b><span id="goSub">Start test</span></button>
+          <div class="live" id="live" hidden>
+            <div class="num" id="num">0</div>
+            <div class="unit" id="unit">Mb/s</div>
+            <div class="sub" id="sub"></div>
+          </div>
+        </div>
+      </div>
+      <svg class="trace" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true">
+        <path class="trace-area" id="traceArea" d=""/>
+        <path class="trace-line" id="traceLine" d=""/>
+      </svg>
+      <div class="legend"><span id="lgL">Live throughput</span><span id="lgR"></span></div>
+      <p class="notice" id="notice" role="status" hidden></p>
+      <div class="ctrl"><button class="btn" id="cancel" type="button" hidden>Stop test</button></div>
+      <p class="sr" id="announce" role="status" aria-live="polite"></p>
+
+      <div class="consent" id="consent" hidden role="dialog" aria-modal="true" aria-labelledby="cTitle">
+        <h2 id="cTitle">Before you start</h2>
+        <p id="cText"></p>
+        <div class="row">
+          <button class="btn primary" id="cAnon" type="button">Start test</button>
+          <button class="btn" id="cCancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card legs" aria-labelledby="legsH">
+      <h2 id="legsH">Your path to the internet</h2>
+      <p class="hint">Each step is timed while you test. Steps marked <em>net</em> come from the venue network, matched to your device after the test.</p>
+      <ol class="path" id="path"></ol>
+      <p class="legnote">Times are round trips. Loaded = while your device is downloading or uploading.</p>
+    </section>
+
+    <section class="card results" id="results" hidden aria-labelledby="resH">
+      <h2 class="sr" id="resH">Your results</h2>
+      <div class="res-top">
+        <div class="score">
+          <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="bg" cx="60" cy="60" r="52"/><circle class="arc" id="scoreArc" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="326.7"/></svg>
+          <div class="n"><div><span id="scoreN">0</span><small>EXP SCORE</small></div></div>
+        </div>
+        <div>
+          <p class="verdict" id="verdict"></p>
+          <p class="why" id="why"></p>
+          <div class="parts" id="parts"></div>
+          <p class="legnote" id="flagNote"></p>
+        </div>
+      </div>
+
+      <div class="where" id="whereLine" hidden>
+        <span>You were in <b id="whereName"></b></span>
+        <button class="linkbtn" id="fixZone" type="button" aria-expanded="false" aria-controls="zonefix">Not right?</button>
+      </div>
+      <form class="zonefix" id="zonefix" hidden>
+        <label for="zText">Where were you? (the network team sees this with your test)</label>
+        <input type="text" id="zText" maxlength="120" autocomplete="off">
+        <div><button class="btn primary" type="submit">Send correction</button><span class="stat" id="zDone" role="status"></span></div>
+      </form>
+
+      <div class="sec"><h3>Speed at each leg</h3><div class="speeds" id="speeds"></div></div>
+
+      <div class="sec"><h3>Where your time goes, to Cloudflare <span class="est" id="colo"></span><span class="est">estimate</span></h3>
+        <div class="waterfall" id="wf" role="img" aria-label=""></div>
+        <div class="wf-key" id="wfKey"></div>
+        <p class="legnote" id="wfNote"></p>
+      </div>
+
+      <div class="sec"><h3>Good for</h3><div class="good-for" id="goodFor"></div></div>
+
+      <div class="sec"><h3>What the network team sees</h3><ul class="checks" id="checks"></ul></div>
+
+      <div class="actions">
+        <button class="btn primary" id="again" type="button">Run again</button>
+        <button class="btn" id="reportBtn" type="button" aria-expanded="false" aria-controls="report">Report a problem</button>
+      </div>
+      <form class="report" id="report" hidden>
+        <label for="rText">What isn't working? (500 characters max)</label>
+        <textarea id="rText" maxlength="500" placeholder="For example: video calls freeze at my booth"></textarea>
+        <div><button class="btn primary" type="submit">Send with my test</button><span class="stat" id="rDone" role="status"></span></div>
+      </form>
+      <p class="legnote" id="noteView" hidden></p>
+      <div class="share" id="shareBox">
+        <span>Share with support: give the help desk this link and they can open your test.</span>
+        <div class="row"><span class="code" id="shareLink" tabindex="0"></span><button class="btn" id="copy" type="button">Copy link</button></div>
+        <span class="stat" id="copyStat" role="status"></span>
+      </div>
+    </section>
+  </div>
+  <p class="foot" id="footer">This page is served by the exp speed-test box on the event network and measures your real connection. Internet speed is measured to Cloudflare's speed test service.</p>
+</div>
+<script>
+/* @cloudflare/speedtest 1.16.0 (https://github.com/cloudflare/speedtest), vendored unmodified inside a function wrapper.
+ MIT License
+
+ Copyright (c) 2023 Cloudflare
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+ */
+var CFSpeedTest = (function () {
+//#region src/config/defaultConfig.ts
+const REL_API_URL = "https://speed.cloudflare.com";
+const defaultConfig = {
+	autoStart: true,
+	downloadApiUrl: `${REL_API_URL}/__down`,
+	uploadApiUrl: `${REL_API_URL}/__up`,
+	logMeasurementApiUrl: null,
+	logAimApiUrl: `${REL_API_URL}/__results`,
+	turnServerUri: null,
+	turnServerCredsApiUrl: null,
+	turnServerUser: null,
+	turnServerPass: null,
+	rpkiInvalidHost: "invalid.rpki.cloudflare.com",
+	includeCredentials: false,
+	sessionId: void 0,
+	authorizationToken: null,
+	authorizationEnabled: void 0,
+	allowInsecureAuthorizationToken: false,
+	measurements: [
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "download",
+			bytes: 1e5,
+			count: 1,
+			bypassMinDuration: true
+		},
+		{
+			type: "latency",
+			numPackets: 20
+		},
+		{
+			type: "download",
+			bytes: 1e5,
+			count: 9
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "download",
+			bytes: 1e6,
+			count: 8
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "upload",
+			bytes: 1e5,
+			count: 8
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "upload",
+			bytes: 1e6,
+			count: 6
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "download",
+			bytes: 1e7,
+			count: 6
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "upload",
+			bytes: 1e7,
+			count: 4
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "download",
+			bytes: 25e6,
+			count: 4
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "upload",
+			bytes: 25e6,
+			count: 4
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "download",
+			bytes: 1e8,
+			count: 3
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "upload",
+			bytes: 5e7,
+			count: 3
+		},
+		{
+			type: "latency",
+			numPackets: 2
+		},
+		{
+			type: "download",
+			bytes: 25e7,
+			count: 2
+		}
+	],
+	measureDownloadLoadedLatency: true,
+	measureUploadLoadedLatency: true,
+	loadedLatencyThrottle: 400,
+	bandwidthFinishRequestDuration: 1e3,
+	estimatedServerTime: 0,
+	abortRequestDuration: 0,
+	abortTestDuration: 0,
+	latencyPercentile: .5,
+	bandwidthPercentile: .9,
+	bandwidthMinRequestDuration: 10,
+	loadedRequestMinDuration: 250,
+	loadedLatencyMaxPoints: 20
+};
+//#endregion
+//#region src/utils/scaleThreshold.ts
+const scaleThreshold = (domain, range) => {
+	return (value) => {
+		let i = 0;
+		while (i < domain.length && value >= domain[i]) i++;
+		return range[i];
+	};
+};
+//#endregion
+//#region src/config/internalConfig.ts
+const internalConfig = {
+	aimMeasurementScoring: {
+		packetLoss: scaleThreshold([
+			.01,
+			.05,
+			.25,
+			.5
+		], [
+			10,
+			5,
+			0,
+			-10,
+			-20
+		]),
+		latency: scaleThreshold([
+			10,
+			20,
+			50,
+			100,
+			500
+		], [
+			20,
+			10,
+			5,
+			0,
+			-10,
+			-20
+		]),
+		loadedLatencyIncrease: scaleThreshold([
+			10,
+			20,
+			50,
+			100,
+			500
+		], [
+			20,
+			10,
+			5,
+			0,
+			-10,
+			-20
+		]),
+		jitter: scaleThreshold([
+			10,
+			20,
+			100,
+			500
+		], [
+			10,
+			5,
+			0,
+			-10,
+			-20
+		]),
+		download: scaleThreshold([
+			1e6,
+			1e7,
+			5e7,
+			1e8
+		], [
+			0,
+			5,
+			10,
+			20,
+			30
+		]),
+		upload: scaleThreshold([
+			1e6,
+			1e7,
+			5e7,
+			1e8
+		], [
+			0,
+			5,
+			10,
+			20,
+			30
+		])
+	},
+	aimExperiencesDefs: {
+		streaming: {
+			input: [
+				"latency",
+				"packetLoss",
+				"download",
+				"loadedLatencyIncrease"
+			],
+			pointThresholds: [
+				15,
+				20,
+				40,
+				60
+			]
+		},
+		gaming: {
+			input: [
+				"latency",
+				"packetLoss",
+				"loadedLatencyIncrease"
+			],
+			pointThresholds: [
+				5,
+				15,
+				25,
+				30
+			]
+		},
+		rtc: {
+			input: [
+				"latency",
+				"jitter",
+				"packetLoss",
+				"loadedLatencyIncrease"
+			],
+			pointThresholds: [
+				5,
+				15,
+				25,
+				40
+			]
+		}
+	}
+};
+//#endregion
+//#region src/utils/authorization.ts
+const isSecureApiUrl = (apiUrl) => {
+	try {
+		return new URL(apiUrl).protocol === "https:";
+	} catch {
+		try {
+			return new URL(apiUrl, window.location.origin).protocol === "https:";
+		} catch {
+			return false;
+		}
+	}
+};
+const warnedInsecure = new WeakSet();
+const warnInsecureOnce = (authorization) => {
+	if (warnedInsecure.has(authorization)) return;
+	warnedInsecure.add(authorization);
+	console.warn("Sending the authorization token to an endpoint that is not known to be secure, because allowInsecureAuthorizationToken is enabled. Do not enable this outside local development: the server treats a token seen over plaintext as compromised and revokes it.");
+};
+const withAuthorizationHeader = (init, authorization, apiUrl) => {
+	if (!authorization?.enabled || !apiUrl) return init;
+	const token = authorization.token?.trim();
+	if (!token) return init;
+	if (!isSecureApiUrl(apiUrl)) {
+		if (!authorization.allowInsecure) return init;
+		warnInsecureOnce(authorization);
+	}
+	const headers = new Headers(init.headers);
+	headers.set("Authorization", `Bearer ${token}`);
+	return {
+		...init,
+		headers: Object.fromEntries(headers)
+	};
+};
+//#endregion
+//#region src/engines/BandwidthEngine/BandwidthEngine.ts
+const MAX_RETRIES = 3;
+var HttpError = class extends Error {
+	status;
+	retryAfter;
+	constructor(status, statusText, retryAfter) {
+		super(statusText);
+		this.status = status;
+		this.retryAfter = retryAfter;
+	}
+};
+const getRetryDelay = (retryAfter) => {
+	if (!retryAfter) return 5e3;
+	const seconds = Number(retryAfter);
+	if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1e3;
+	const date = Date.parse(retryAfter);
+	return Number.isNaN(date) ? 5e3 : Math.max(0, date - Date.now());
+};
+const SERVER_TIME_MIN_DURATION = .01;
+const SERVER_TIME_DELTA_MAX = 15;
+const SERVER_TIME_CALIBRATION_MAX = 150;
+const SERVER_TIME_DELTA_WEIGHT = .75;
+const cfGetServerTime = (r) => {
+	const serverTiming = r.headers.get(`server-timing`);
+	if (!serverTiming) return;
+	const re = serverTiming.match(/(?:^|,\s*)cfReq(?:uest)?Dur(?:ation)?;\s*dur=([0-9.]+)/i);
+	if (re && +re[1] > SERVER_TIME_MIN_DURATION) return +re[1];
+	let sum = 0;
+	for (const m of serverTiming.matchAll(/(?:^|,\s*)cfSpeed[a-zA-Z]*;\s*dur=([0-9.]+)/gi)) sum += +m[1];
+	if (sum > SERVER_TIME_MIN_DURATION) return sum;
+};
+const getFinalResponseStart = (perf) => perf.finalResponseHeadersStart || perf.responseStart;
+const MAX_MISSING_ENTRIES = 3;
+const getRequestEntries = (url, since) => performance.getEntriesByName(url).filter((entry) => entry.startTime >= since);
+const getTtfb = (perf) => getFinalResponseStart(perf) - perf.requestStart;
+const getPayloadDownload = (perf) => perf.responseEnd - getFinalResponseStart(perf);
+const calcDownloadDuration = ({ ping, payloadDownloadTime }) => ping + payloadDownloadTime;
+const calcUploadDuration = ({ ttfb }) => ttfb;
+const calcDownloadSpeed = ({ duration, transferSize }, numBytes) => {
+	const bits = 8 * (transferSize || +numBytes * 1.005);
+	const secs = duration / 1e3;
+	return !secs ? void 0 : bits / secs;
+};
+const calcUploadSpeed = ({ duration }, numBytes) => {
+	const bits = 8 * numBytes * 1.005;
+	const secs = duration / 1e3;
+	return !secs ? void 0 : bits / secs;
+};
+const hasUsableSpeed = ({ bps }, numBytes) => +numBytes === 0 || typeof bps === "number" && Number.isFinite(bps) && bps > 0;
+const genContent = (() => {
+	const cache = new Map();
+	return (numBytes) => {
+		if (!cache.has(numBytes)) cache.set(numBytes, "0".repeat(numBytes));
+		return cache.get(numBytes);
+	};
+})();
+var BandwidthMeasurementEngine = class {
+	constructor(measurements, { downloadApiUrl, uploadApiUrl, throttleMs = 0, estimatedServerTime = 0, serverTimeDelta = 0, authorization = null } = {}) {
+		if (!measurements) throw new Error("Missing measurements argument");
+		if (!downloadApiUrl) throw new Error("Missing downloadApiUrl argument");
+		if (!uploadApiUrl) throw new Error("Missing uploadApiUrl argument");
+		this.#measurements = measurements;
+		this.#downloadApi = downloadApiUrl;
+		this.#uploadApi = uploadApiUrl;
+		this.#throttleMs = throttleMs;
+		this.#estimatedServerTime = Math.max(0, estimatedServerTime);
+		this.#serverTimeDelta = Math.max(0, serverTimeDelta);
+		this.#authorization = authorization;
+	}
+	get results() {
+		return this.#results;
+	}
+	get serverTimeDelta() {
+		return this.#serverTimeDelta;
+	}
+	#qsParams = {};
+	get qsParams() {
+		return this.#qsParams;
+	}
+	set qsParams(v) {
+		this.#qsParams = v;
+	}
+	#fetchOptions = {};
+	get fetchOptions() {
+		return this.#fetchOptions;
+	}
+	set fetchOptions(v) {
+		this.#fetchOptions = v;
+	}
+	finishRequestDuration = 1e3;
+	#abortRequestDuration = 0;
+	get abortRequestDuration() {
+		return this.#abortRequestDuration;
+	}
+	set abortRequestDuration(v) {
+		this.#abortRequestDuration = v;
+	}
+	getServerTime = cfGetServerTime;
+	#responseHook = () => {};
+	set responseHook(f) {
+		this.#responseHook = f;
+	}
+	#onRunningChange = () => {};
+	set onRunningChange(f) {
+		this.#onRunningChange = f;
+	}
+	#onNewMeasurementStarted = () => {};
+	set onNewMeasurementStarted(f) {
+		this.#onNewMeasurementStarted = f;
+	}
+	#onMeasurementResult = () => {};
+	set onMeasurementResult(f) {
+		this.#onMeasurementResult = f;
+	}
+	#onFinished = () => {};
+	set onFinished(f) {
+		this.#onFinished = f;
+	}
+	#onConnectionError = () => {};
+	set onConnectionError(f) {
+		this.#onConnectionError = f;
+	}
+	#onFatalError = () => {};
+	set onFatalError(f) {
+		this.#onFatalError = f;
+	}
+	pause() {
+		if (this.#retryTimeout !== void 0) {
+			clearTimeout(this.#retryTimeout);
+			this.#retryTimeout = void 0;
+		}
+		clearTimeout(this.#abortTimeout);
+		clearTimeout(this.#throttleTimeout);
+		this.#cancelCurrentMeasurement(`pause()`);
+		this.#setRunning(false);
+	}
+	play() {
+		if (!this.#running) {
+			this.#setRunning(true);
+			this.#nextMeasurement();
+		}
+	}
+	#measurements;
+	#downloadApi;
+	#uploadApi;
+	#running = false;
+	#finished = {
+		down: false,
+		up: false
+	};
+	#results = {
+		down: {},
+		up: {}
+	};
+	#measIdx = 0;
+	#counter = 0;
+	#retries = 0;
+	#missingEntries = 0;
+	#retryTimeout;
+	#abortTimeout;
+	#throttleTimeout;
+	#minDuration = -Infinity;
+	#throttleMs = 0;
+	#estimatedServerTime = 0;
+	#serverTimeDelta = 0;
+	#authorization = null;
+	#currentAbortController = void 0;
+	#setRunning(running) {
+		if (running !== this.#running) {
+			this.#running = running;
+			setTimeout(() => this.#onRunningChange(this.#running));
+		}
+		if (!running) this.#currentAbortController?.abort("setRunning(false)");
+	}
+	#saveMeasurementResults(measIdx, measTiming) {
+		const { bytes, dir } = this.#measurements[measIdx];
+		const results = this.#results;
+		const bytesResult = results[dir].hasOwnProperty(bytes) ? results[dir][bytes] : {
+			timings: [],
+			numMeasurements: this.#measurements.filter(({ bytes: b, dir: d }) => bytes === b && dir === d).map((m) => m.count).reduce((agg, cnt) => agg + cnt, 0)
+		};
+		measTiming && bytesResult.timings.push(measTiming);
+		bytesResult.timings = bytesResult.timings.slice(-bytesResult.numMeasurements);
+		results[dir][bytes] = bytesResult;
+		if (measTiming) setTimeout(() => {
+			this.#onMeasurementResult({
+				type: dir,
+				bytes,
+				...measTiming
+			}, results);
+		});
+		else this.#onNewMeasurementStarted(this.#measurements[measIdx], results);
+	}
+	#nextMeasurement() {
+		const measurements = this.#measurements;
+		let meas = measurements[this.#measIdx];
+		if (this.#counter >= meas.count) {
+			const finished = this.#finished;
+			if (this.#minDuration > this.finishRequestDuration && !meas.bypassMinDuration) {
+				const dir = meas.dir;
+				this.#finished[dir] = true;
+				Object.values(this.#finished).every((finished) => finished) && this.#onFinished(this.#results);
+			}
+			this.#counter = 0;
+			this.#missingEntries = 0;
+			this.#minDuration = -Infinity;
+			do
+				this.#measIdx += 1;
+			while (this.#measIdx < measurements.length && finished[measurements[this.#measIdx].dir]);
+			if (this.#measIdx >= measurements.length) {
+				this.#finished = {
+					down: true,
+					up: true
+				};
+				this.#setRunning(false);
+				this.#onFinished(this.#results);
+				return;
+			}
+			meas = measurements[this.#measIdx];
+		}
+		const measIdx = this.#measIdx;
+		if (this.#counter === 0) this.#saveMeasurementResults(measIdx);
+		const { bytes: numBytes, dir } = meas;
+		const isDown = dir === "down";
+		const apiUrl = isDown ? this.#downloadApi : this.#uploadApi;
+		const qsParams = Object.assign({}, this.#qsParams);
+		qsParams.bytes = `${numBytes}`;
+		const urlObj = new URL(apiUrl, window.location.origin);
+		Object.entries(qsParams).forEach(([k, v]) => urlObj.searchParams.set(k, v));
+		const url = urlObj.href;
+		const fetchOpt = withAuthorizationHeader(Object.assign({}, isDown ? {} : {
+			method: "POST",
+			body: genContent(numBytes)
+		}, this.#fetchOptions), this.#authorization, url);
+		if (this.#retries === 0 || !this.#currentAbortController || this.#currentAbortController.signal.aborted) {
+			this.#currentAbortController?.abort("restarting engine");
+			clearTimeout(this.#abortTimeout);
+			const controller = this.#currentAbortController = new AbortController();
+			if (this.abortRequestDuration) this.#abortTimeout = setTimeout(() => {
+				const errorMessage = `${isDown ? "Download" : "Upload"} request of ${numBytes} bytes aborted. Request exceeded abortRequestDuration (${this.abortRequestDuration}ms)`;
+				controller.abort(errorMessage);
+				this.#skipFailedRequest(errorMessage);
+			}, this.abortRequestDuration);
+		}
+		let serverTime;
+		const signal = this.#currentAbortController.signal;
+		const requestedAt = performance.now();
+		fetch(url, {
+			...fetchOpt,
+			signal
+		}).then((r) => {
+			if (r.ok) return r;
+			throw new HttpError(r.status, r.statusText, r.headers.get("retry-after"));
+		}).then((r) => {
+			this.getServerTime && (serverTime = this.getServerTime(r));
+			return r;
+		}).then((r) => r.text().then((body) => {
+			this.#responseHook({
+				url,
+				headers: r.headers,
+				body
+			});
+			return body;
+		})).then(async () => {
+			const entries = getRequestEntries(url, requestedAt);
+			if (entries.length) return entries;
+			await new Promise((resolve) => setTimeout(resolve));
+			return getRequestEntries(url, requestedAt);
+		}).then((entries) => {
+			if (signal.aborted) return;
+			const [perf] = entries;
+			if (!perf) {
+				console.warn(`Discarding ${dir} sample without a resource timing entry`, { url });
+				if (++this.#missingEntries >= MAX_MISSING_ENTRIES) {
+					this.pause();
+					this.#onFatalError(`No resource timing entries for ${url}. The host page may be clearing or filling the buffer, or the runtime doesn't record resource timing.`);
+					return;
+				}
+				this.#scheduleNextMeasurement();
+				return;
+			}
+			this.#missingEntries = 0;
+			const timing = {
+				transferSize: perf.transferSize,
+				ttfb: getTtfb(perf),
+				payloadDownloadTime: getPayloadDownload(perf),
+				serverTime: serverTime || -1,
+				measTime: new Date(),
+				ping: 0,
+				duration: 0,
+				bps: void 0
+			};
+			let connectTime = 0;
+			if (perf.secureConnectionStart > perf.connectStart) connectTime = perf.secureConnectionStart - perf.connectStart;
+			else connectTime = perf.connectEnd - perf.connectStart;
+			const protoMatch = perf.nextHopProtocol.match(/([0-9.]+)/);
+			const httpVersion = protoMatch ? +protoMatch[1] : 0;
+			if (serverTime && connectTime && httpVersion > 0 && httpVersion < 2) {
+				const delta = Math.max(0, timing.ttfb - connectTime) - serverTime;
+				if (delta > 0 && delta <= SERVER_TIME_DELTA_MAX && delta <= serverTime && serverTime <= SERVER_TIME_CALIBRATION_MAX) {
+					this.#serverTimeDelta = this.#serverTimeDelta * .25 + delta * SERVER_TIME_DELTA_WEIGHT;
+					console.log(`serverTimeDelta (estimated): ${this.#serverTimeDelta.toFixed(2)}ms`);
+				} else if (delta > 0) console.log(`serverTimeDelta (skipped): ${delta.toFixed(2)}ms`);
+			}
+			const baseServerTime = serverTime || this.#estimatedServerTime;
+			timing.ping = timing.ttfb - baseServerTime - this.#serverTimeDelta;
+			if (timing.ping <= 1) timing.ping = Math.max(0, timing.ttfb - baseServerTime);
+			timing.duration = (isDown ? calcDownloadDuration : calcUploadDuration)(timing);
+			timing.bps = (isDown ? calcDownloadSpeed : calcUploadSpeed)(timing, numBytes);
+			const delta = this.#serverTimeDelta;
+			if (+numBytes === 0) console.log("latency", {
+				phase: `during ${qsParams.during || "idle"}`,
+				ttfb: timing.ttfb,
+				serverTime: baseServerTime,
+				...delta && { serverTimeDelta: delta },
+				ping: timing.ping
+			});
+			else console.log(isDown ? "download" : "upload", {
+				bytes: +numBytes,
+				bps: timing.bps,
+				ttfb: timing.ttfb,
+				serverTime: baseServerTime,
+				...delta && { serverTimeDelta: delta },
+				ping: timing.ping
+			});
+			if (isDown && numBytes) {
+				const reqSize = +numBytes;
+				if (timing.transferSize && (timing.transferSize < reqSize || timing.transferSize / reqSize > 1.05)) console.warn(`Requested ${reqSize}B but received ${timing.transferSize}B (${Math.round(timing.transferSize / reqSize * 1e4) / 100}%).`);
+			}
+			if (hasUsableSpeed(timing, numBytes)) {
+				this.#saveMeasurementResults(measIdx, timing);
+				const requestDuration = timing.duration;
+				this.#minDuration = this.#minDuration < 0 ? requestDuration : Math.min(this.#minDuration, requestDuration);
+			} else console.warn(`Discarding ${dir} sample without a speed`, {
+				bytes: +numBytes,
+				...timing,
+				perf: {
+					startTime: perf.startTime,
+					requestStart: perf.requestStart,
+					responseStart: perf.responseStart,
+					firstInterimResponseStart: perf.firstInterimResponseStart,
+					finalResponseHeadersStart: perf.finalResponseHeadersStart,
+					responseEnd: perf.responseEnd,
+					nextHopProtocol: perf.nextHopProtocol,
+					entries: entries.length
+				}
+			});
+			this.#scheduleNextMeasurement();
+		}).catch((error) => {
+			if (signal.aborted) return;
+			console.warn(`Error fetching ${url}: ${error}`);
+			if (error instanceof HttpError && error.status === 429 && this.#retries++ < MAX_RETRIES) {
+				this.#retryTimeout = setTimeout(() => {
+					this.#retryTimeout = void 0;
+					if (this.#running) this.#nextMeasurement();
+				}, getRetryDelay(error.retryAfter));
+				return;
+			}
+			const status = error instanceof HttpError ? error.status : void 0;
+			const message = status === 429 ? `Connection failed to ${url}. Gave up after ${MAX_RETRIES} retries.` : status === void 0 ? `Connection failed to ${url}.` : `Request failed with ${status}: ${url}`;
+			this.#skipFailedRequest(message, status);
+		});
+	}
+	#skipFailedRequest(message, status) {
+		clearTimeout(this.#retryTimeout);
+		this.#retryTimeout = void 0;
+		this.#retries = 0;
+		this.#onConnectionError(message, status);
+		this.#running && this.#scheduleNextMeasurement();
+	}
+	#scheduleNextMeasurement() {
+		clearTimeout(this.#abortTimeout);
+		this.#counter += 1;
+		this.#retries = 0;
+		if (this.#throttleMs) this.#throttleTimeout = setTimeout(() => {
+			this.#throttleTimeout = void 0;
+			if (this.#running) this.#nextMeasurement();
+		}, this.#throttleMs);
+		else this.#nextMeasurement();
+	}
+	#cancelCurrentMeasurement(reason) {
+		this.#currentAbortController?.abort(reason || `aborted with no reason provided`);
+	}
+};
+//#endregion
+//#region src/engines/BandwidthEngine/ParallelLatency.ts
+var BandwidthWithParallelLatencyEngine = class extends BandwidthMeasurementEngine {
+	constructor(measurements, { measureParallelLatency = false, parallelLatencyThrottleMs = 100, downloadApiUrl, uploadApiUrl, estimatedServerTime = 0, serverTimeDelta = 0, authorization = null, ...ptProps } = {}) {
+		super(measurements, {
+			downloadApiUrl,
+			uploadApiUrl,
+			estimatedServerTime,
+			serverTimeDelta,
+			authorization,
+			...ptProps
+		});
+		if (measureParallelLatency) {
+			this.#latencyEngine = new BandwidthMeasurementEngine([{
+				dir: "down",
+				bytes: 0,
+				count: Infinity,
+				bypassMinDuration: true
+			}], {
+				downloadApiUrl,
+				uploadApiUrl,
+				estimatedServerTime,
+				serverTimeDelta,
+				authorization,
+				throttleMs: parallelLatencyThrottleMs
+			});
+			this.#latencyEngine.qsParams = { during: `${measurements[0].dir}load` };
+			super.onRunningChange = this.#setLatencyRunning;
+		}
+	}
+	get latencyResults() {
+		return this.#latencyEngine && this.#latencyEngine.results.down[0].timings;
+	}
+	set onParallelLatencyResult(f) {
+		this.#latencyEngine && (this.#latencyEngine.onMeasurementResult = (res) => f(res));
+	}
+	set onParallelLatencyError(f) {
+		this.#latencyEngine && (this.#latencyEngine.onConnectionError = f);
+	}
+	get fetchOptions() {
+		return super.fetchOptions;
+	}
+	set fetchOptions(fetchOptions) {
+		super.fetchOptions = fetchOptions;
+		this.#latencyEngine && (this.#latencyEngine.fetchOptions = fetchOptions);
+	}
+	get abortRequestDuration() {
+		return super.abortRequestDuration;
+	}
+	set abortRequestDuration(abortRequestDuration) {
+		super.abortRequestDuration = abortRequestDuration;
+		this.#latencyEngine && (this.#latencyEngine.abortRequestDuration = abortRequestDuration);
+	}
+	set onFatalError(onFatalError) {
+		super.onFatalError = onFatalError;
+		this.#latencyEngine && (this.#latencyEngine.onFatalError = (error) => {
+			this.pause();
+			onFatalError(error);
+		});
+	}
+	set onRunningChange(onRunningChange) {
+		super.onRunningChange = (running) => {
+			this.#setLatencyRunning(running);
+			onRunningChange(running);
+		};
+	}
+	#latencyEngine;
+	#latencyTimeout;
+	#setLatencyRunning = (running) => {
+		if (this.#latencyEngine) {
+			if (!running) {
+				clearTimeout(this.#latencyTimeout);
+				this.#latencyEngine.pause();
+			} else this.#latencyTimeout = setTimeout(() => this.#latencyEngine.play(), 20);
+		}
+	};
+};
+//#endregion
+//#region src/engines/BandwidthEngine/LoggingBandwidthEngine.ts
+var LoggingBandwidthEngine = class extends BandwidthWithParallelLatencyEngine {
+	constructor(measurements, { measurementId, logApiUrl, sessionId, authorization, ...ptProps } = {}) {
+		super(measurements, {
+			...ptProps,
+			authorization
+		});
+		this.#measurementId = measurementId;
+		this.#logApiUrl = logApiUrl;
+		this.#sessionId = sessionId;
+		this.#authorization = authorization ?? null;
+		super.qsParams = logApiUrl ? { measId: this.#measurementId } : {};
+		super.responseHook = (r) => this.#loggingResponseHook(r);
+		super.onMeasurementResult = (meas) => this.#logMeasurement(meas);
+	}
+	set qsParams(qsParams) {
+		super.qsParams = this.#logApiUrl ? {
+			measId: this.#measurementId,
+			...qsParams
+		} : qsParams;
+	}
+	set responseHook(responseHook) {
+		super.responseHook = (r) => {
+			responseHook(r);
+			this.#loggingResponseHook(r);
+		};
+	}
+	set onMeasurementResult(onMeasurementResult) {
+		super.onMeasurementResult = (meas, ...restArgs) => {
+			onMeasurementResult(meas, ...restArgs);
+			this.#logMeasurement(meas);
+		};
+	}
+	#measurementId;
+	#token;
+	#requestTime;
+	#logApiUrl;
+	#sessionId;
+	#authorization;
+	#loggingResponseHook(r) {
+		if (!this.#logApiUrl) return;
+		this.#requestTime = +r.headers.get(`cf-meta-request-time`);
+		this.#token = r.body.slice(-300).split("___").pop();
+	}
+	#logMeasurement(measData) {
+		if (!this.#logApiUrl) return;
+		const logData = {
+			type: measData.type,
+			bytes: measData.bytes,
+			ping: Math.round(measData.ping),
+			ttfb: Math.round(measData.ttfb),
+			payloadDownloadTime: Math.round(measData.payloadDownloadTime),
+			duration: Math.round(measData.duration),
+			transferSize: Math.round(measData.transferSize),
+			serverTime: Math.round(measData.serverTime),
+			token: this.#token,
+			requestTime: this.#requestTime,
+			measId: this.#measurementId,
+			sessionId: this.#sessionId
+		};
+		this.#token = null;
+		this.#requestTime = null;
+		fetch(this.#logApiUrl, withAuthorizationHeader({
+			method: "POST",
+			body: JSON.stringify(logData),
+			...this.fetchOptions
+		}, this.#authorization, this.#logApiUrl)).catch(() => {});
+	}
+};
+//#endregion
+//#region src/engines/LoadNetworkEngine/index.ts
+var PromiseEngine = class {
+	constructor(promiseFn) {
+		if (!promiseFn) throw new Error(`Missing operation to perform`);
+		this.#promiseFn = promiseFn;
+		this.play();
+	}
+	pause() {
+		this.#cancelCurrent();
+		this.#setRunning(false);
+	}
+	stop() {
+		this.pause();
+	}
+	play() {
+		if (!this.#running) {
+			this.#setRunning(true);
+			this.#next();
+		}
+	}
+	#running = false;
+	#currentPromise = void 0;
+	#promiseFn;
+	#setRunning(running) {
+		if (running !== this.#running) this.#running = running;
+	}
+	#next() {
+		const curPromise = this.#currentPromise = this.#promiseFn().then(() => {
+			!curPromise._cancel && this.#next();
+		});
+	}
+	#cancelCurrent() {
+		const curPromise = this.#currentPromise;
+		curPromise && (curPromise._cancel = true);
+	}
+};
+var LoadNetworkEngine = class {
+	constructor({ download, upload, authorization = null } = {}) {
+		if (!download && !upload) throw new Error("Missing at least one of download/upload config");
+		[[download, "download"], [upload, "upload"]].filter((entry) => entry[0] !== null && entry[0] !== void 0).forEach(([cfg, type]) => {
+			const { apiUrl, chunkSize } = cfg;
+			if (!apiUrl) throw new Error(`Missing ${type} apiUrl argument`);
+			if (!chunkSize) throw new Error(`Missing ${type} chunkSize argument`);
+		});
+		const getLoadEngine = ({ apiUrl, qsParams = {}, fetchOptions = {} }) => new PromiseEngine(() => {
+			const fetchQsParams = Object.assign({}, qsParams, this.qsParams);
+			const urlObj = new URL(apiUrl, window.location.origin);
+			Object.entries(fetchQsParams).forEach(([k, v]) => urlObj.searchParams.set(k, v));
+			const url = urlObj.href;
+			const fetchOpt = Object.assign({}, fetchOptions, this.fetchOptions);
+			return fetch(url, withAuthorizationHeader(fetchOpt, authorization, url)).then((r) => {
+				if (r.ok) return r;
+				throw Error(r.statusText);
+			}).then((r) => r.text());
+		});
+		download && this.#engines.push(getLoadEngine({
+			apiUrl: download.apiUrl,
+			qsParams: { bytes: `${download.chunkSize}` }
+		}));
+		upload && this.#engines.push(getLoadEngine({
+			apiUrl: upload.apiUrl,
+			fetchOptions: {
+				method: "POST",
+				body: "0".repeat(upload.chunkSize)
+			}
+		}));
+	}
+	qsParams = {};
+	fetchOptions = {};
+	pause() {
+		this.#engines.forEach((engine) => engine.pause());
+	}
+	stop() {
+		this.pause();
+	}
+	play() {
+		this.#engines.forEach((engine) => engine.play());
+	}
+	#engines = [];
+};
+//#endregion
+//#region src/engines/PacketLossEngine/SelfWebRtcDataConnection.ts
+var SelfWebRtcDataConnection = class {
+	constructor({ iceServers = [], acceptIceCandidate = (candidate) => {
+		let protocol = candidate.protocol || "";
+		if (!protocol && candidate.candidate) {
+			const sdpAttrs = candidate.candidate.split(" ");
+			sdpAttrs.length >= 3 && (protocol = sdpAttrs[2]);
+		}
+		return protocol.toLowerCase() === "udp";
+	}, dataChannelCfg = {
+		ordered: false,
+		maxRetransmits: 0
+	}, ...rtcPeerConnectionCfg } = {}) {
+		const sender = new RTCPeerConnection({
+			iceServers,
+			...rtcPeerConnectionCfg
+		});
+		const receiver = new RTCPeerConnection({
+			iceServers,
+			...rtcPeerConnectionCfg
+		});
+		const senderDc = sender.createDataChannel("channel", dataChannelCfg);
+		senderDc.onopen = () => {
+			this.#established = true;
+			this.onOpen();
+		};
+		senderDc.onclose = () => this.close();
+		receiver.ondatachannel = (e) => {
+			const dc = e.channel;
+			dc.onclose = () => this.close();
+			dc.onmessage = (msg) => this.onMessageReceived(msg.data);
+			this.#receiverDc = dc;
+		};
+		sender.onicecandidate = (e) => {
+			e.candidate && acceptIceCandidate(e.candidate) && receiver.addIceCandidate(e.candidate);
+		};
+		receiver.onicecandidate = (e) => {
+			e.candidate && acceptIceCandidate(e.candidate) && sender.addIceCandidate(e.candidate);
+		};
+		sender.createOffer().then((offer) => sender.setLocalDescription(offer)).then(() => receiver.setRemoteDescription(sender.localDescription)).then(() => receiver.createAnswer()).then((answer) => receiver.setLocalDescription(answer)).then(() => sender.setRemoteDescription(receiver.localDescription));
+		this.#sender = sender;
+		this.#receiver = receiver;
+		this.#senderDc = senderDc;
+	}
+	onOpen = () => {};
+	onClose = () => {};
+	onMessageReceived = () => {};
+	send(msg) {
+		this.#senderDc.send(String(msg));
+	}
+	close() {
+		this.#sender && this.#sender.close();
+		this.#receiver && this.#receiver.close();
+		this.#senderDc && this.#senderDc.close();
+		this.#receiverDc && this.#receiverDc.close();
+		this.#established && this.onClose();
+		this.#established = false;
+		return this;
+	}
+	#established = false;
+	#sender;
+	#receiver;
+	#senderDc;
+	#receiverDc;
+};
+//#endregion
+//#region src/engines/PacketLossEngine/PacketLossEngine.ts
+var PacketLossEngine = class {
+	constructor({ turnServerUri, turnServerCredsApi, turnServerCredsApiParser = ({ username, credential, server }) => ({
+		turnServerUser: username,
+		turnServerPass: credential,
+		turnServerUri: server
+	}), turnServerCredsApiIncludeCredentials = false, turnServerUser, turnServerPass, authorization = null, numMsgs = 100, batchSize = 10, batchWaitTime = 10, responsesWaitTime = 5e3, connectionTimeout = 5e3 } = {}) {
+		if (!turnServerUri && !turnServerCredsApi) throw new Error("No TURN server configured: set turnServerCredsApiUrl or turnServerUri");
+		if ((!turnServerUser || !turnServerPass) && !turnServerCredsApi) throw new Error("No TURN credentials configured: set turnServerCredsApiUrl, or turnServerUser and turnServerPass");
+		this.#numMsgs = numMsgs;
+		(!turnServerUser || !turnServerPass ? fetch(turnServerCredsApi, withAuthorizationHeader(turnServerCredsApiIncludeCredentials ? { credentials: "include" } : {}, authorization, turnServerCredsApi)).then((r) => r.json()).then((d) => {
+			if (d.error) throw d.error;
+			return d;
+		}).then(turnServerCredsApiParser) : Promise.resolve({
+			turnServerUser,
+			turnServerPass
+		})).catch((e) => this.#onCredentialsFailure(e)).then((creds) => {
+			if (!creds) return;
+			const { turnServerUser: credsUser, turnServerPass: credsPass, turnServerUri: credsApiTurnServerUri } = creds;
+			const uri = credsApiTurnServerUri || turnServerUri;
+			if (!uri) {
+				this.#onConnectionError("No TURN server URI: set turnServerUri or return server from the credentials API");
+				return;
+			}
+			const c = new SelfWebRtcDataConnection({
+				iceServers: [{
+					urls: `turn:${uri}?transport=udp`,
+					username: credsUser,
+					credential: credsPass
+				}],
+				iceTransportPolicy: "relay"
+			});
+			let connectionSuccess = false;
+			setTimeout(() => {
+				if (!connectionSuccess) {
+					c.close();
+					this.#onConnectionError("ICE connection timeout!");
+				}
+			}, connectionTimeout);
+			const msgTracker = this.#msgTracker;
+			c.onOpen = () => {
+				connectionSuccess = true;
+				const self = this;
+				(function sendNum(n) {
+					if (n <= numMsgs) {
+						let i = n;
+						while (i <= Math.min(numMsgs, n + batchSize - 1)) {
+							msgTracker[i] = false;
+							c.send(i);
+							self.onMsgSent(i);
+							i++;
+						}
+						setTimeout(() => sendNum(i), batchWaitTime);
+					} else {
+						self.onAllMsgsSent(Object.keys(msgTracker).length);
+						const finishFn = () => {
+							c.close();
+							self.#onFinished(self.results);
+						};
+						let finishTimeout = setTimeout(finishFn, responsesWaitTime);
+						let missingMsgs = Object.values(self.#msgTracker).filter((recv) => !recv).length;
+						c.onMessageReceived = (msg) => {
+							clearTimeout(finishTimeout);
+							msgTracker[msg] = true;
+							self.onMsgReceived(msg);
+							missingMsgs--;
+							if (missingMsgs <= 0 && Object.values(self.#msgTracker).every((recv) => recv)) finishFn();
+							else finishTimeout = setTimeout(finishFn, responsesWaitTime);
+						};
+					}
+				})(1);
+			};
+			c.onMessageReceived = (msg) => {
+				msgTracker[msg] = true;
+				this.onMsgReceived(msg);
+			};
+		}).catch((e) => this.#onConnectionError(e.toString()));
+	}
+	#onCredentialsFailure = () => {};
+	set onCredentialsFailure(f) {
+		this.#onCredentialsFailure = f;
+	}
+	#onConnectionError = () => {};
+	set onConnectionError(f) {
+		this.#onConnectionError = f;
+	}
+	#onFinished = () => {};
+	set onFinished(f) {
+		this.#onFinished = f;
+	}
+	onMsgSent = () => {};
+	onAllMsgsSent = () => {};
+	onMsgReceived = () => {};
+	get results() {
+		const totalMessages = this.#numMsgs;
+		const numMessagesSent = Object.keys(this.#msgTracker).length;
+		const lostMessages = Object.entries(this.#msgTracker).filter(([, recv]) => !recv).map(([n]) => +n);
+		return {
+			totalMessages,
+			numMessagesSent,
+			packetLoss: lostMessages.length / numMessagesSent,
+			lostMessages
+		};
+	}
+	#msgTracker = {};
+	#numMsgs;
+};
+//#endregion
+//#region src/engines/PacketLossEngine/UnderLoad.ts
+var PacketLossUnderLoadEngine = class extends PacketLossEngine {
+	constructor({ downloadChunkSize, uploadChunkSize, downloadApiUrl, uploadApiUrl, authorization, ...ptProps } = {}) {
+		super({
+			...ptProps,
+			authorization
+		});
+		if (downloadChunkSize || uploadChunkSize) {
+			this.#loadEngine = new LoadNetworkEngine({
+				download: downloadChunkSize ? {
+					apiUrl: downloadApiUrl,
+					chunkSize: downloadChunkSize
+				} : null,
+				upload: uploadChunkSize ? {
+					apiUrl: uploadApiUrl,
+					chunkSize: uploadChunkSize
+				} : null,
+				authorization
+			});
+			super.onCredentialsFailure = super.onConnectionError = super.onFinished = () => this.#loadEngine.stop();
+		}
+	}
+	set qsParams(qsParams) {
+		this.#loadEngine && (this.#loadEngine.qsParams = qsParams);
+	}
+	set fetchOptions(fetchOptions) {
+		this.#loadEngine && (this.#loadEngine.fetchOptions = fetchOptions);
+	}
+	set onCredentialsFailure(onCredentialsFailure) {
+		super.onCredentialsFailure = (...args) => {
+			onCredentialsFailure(...args);
+			this.#loadEngine && this.#loadEngine.stop();
+		};
+	}
+	set onConnectionError(onConnectionError) {
+		super.onConnectionError = (...args) => {
+			onConnectionError(...args);
+			this.#loadEngine && this.#loadEngine.stop();
+		};
+	}
+	set onFinished(onFinished) {
+		super.onFinished = (...args) => {
+			onFinished(...args);
+			this.#loadEngine && this.#loadEngine.stop();
+		};
+	}
+	#loadEngine;
+};
+//#endregion
+//#region src/engines/ReachabilityEngine/index.ts
+var ReachabilityEngine = class {
+	constructor(targetUrl, { timeout = -1, fetchOptions = {} } = {}) {
+		let finished = false;
+		const finish = ({ reachable, ...rest }) => {
+			if (finished) return;
+			finished = true;
+			this.onFinished({
+				targetUrl,
+				reachable,
+				...rest
+			});
+		};
+		fetch(targetUrl, fetchOptions).then((response) => {
+			finish({
+				reachable: true,
+				response
+			});
+		}).catch((error) => {
+			finish({
+				reachable: false,
+				error
+			});
+		});
+		timeout > 0 && setTimeout(() => finish({
+			reachable: false,
+			error: "Request timeout"
+		}), timeout);
+	}
+	onFinished = () => {};
+};
+//#endregion
+//#region src/utils/numbers.ts
+const sum = (vals) => vals.reduce((agg, val) => agg + val, 0);
+const percentile = (vals, perc = .5) => {
+	if (!vals.length) return 0;
+	const sortedVals = vals.slice().sort((a, b) => a - b);
+	const idx = (vals.length - 1) * perc;
+	const rem = idx % 1;
+	if (rem === 0) return sortedVals[Math.round(idx)];
+	const edges = [Math.floor, Math.ceil].map((rndFn) => sortedVals[rndFn(idx)]);
+	return edges[0] + (edges[1] - edges[0]) * rem;
+};
+//#endregion
+//#region src/Results/MeasurementCalculations.ts
+var MeasurementCalculations = class {
+	constructor(config) {
+		this.#config = config;
+	}
+	getLatencyPoints = (latencyResults) => latencyResults.timings.map((d) => d.ping);
+	getLatency = (latencyResults) => percentile(this.getLatencyPoints(latencyResults), this.#config.latencyPercentile);
+	getJitter(latencyResults) {
+		const pings = this.getLatencyPoints(latencyResults);
+		return pings.length < 2 ? null : pings.reduce(({ sumDeltas = 0, prevLatency }, latency) => ({
+			sumDeltas: sumDeltas + (prevLatency !== void 0 ? Math.abs(prevLatency - latency) : 0),
+			prevLatency: latency
+		}), {}).sumDeltas / (pings.length - 1);
+	}
+	getBandwidthPoints = (bandwidthResults) => Object.entries(bandwidthResults).map(([bytes, { timings }]) => timings.map(({ bps, duration, ping, measTime, serverTime, transferSize }) => ({
+		bytes: +bytes,
+		bps,
+		duration,
+		ping,
+		measTime,
+		serverTime,
+		transferSize
+	}))).flat();
+	getBandwidth = (bandwidthResults) => percentile(this.getBandwidthPoints(bandwidthResults).filter((d) => d.duration >= this.#config.bandwidthMinRequestDuration).map((d) => d.bps).filter((bps) => bps), this.#config.bandwidthPercentile);
+	getLoadedLatency = (loadedResults) => this.getLatency({ timings: this.#extractLoadedLatencies(loadedResults) });
+	getLoadedJitter = (loadedResults) => this.getJitter({ timings: this.#extractLoadedLatencies(loadedResults) });
+	getLoadedLatencyPoints = (loadedResults) => this.getLatencyPoints({ timings: this.#extractLoadedLatencies(loadedResults) });
+	getPacketLoss = (plResults) => plResults.packetLoss;
+	getPacketLossDetails = (plResults) => plResults;
+	getReachability = (reachabilityResults) => !!reachabilityResults.reachable;
+	getReachabilityDetails = (d) => ({
+		host: d.host,
+		reachable: d.reachable
+	});
+	#config;
+	#extractLoadedLatencies = (loadedResults) => Object.values(loadedResults).filter((d) => d.timings.length && Math.min(...d.timings.map((d) => d.duration)) >= this.#config.loadedRequestMinDuration).map((d) => d.sideLatency || []).flat().slice(-this.#config.loadedLatencyMaxPoints);
+};
+//#endregion
+//#region src/Results/ScoresCalculations.ts
+const classificationNames = [
+	"bad",
+	"poor",
+	"average",
+	"good",
+	"great"
+];
+const customResultTypes = { loadedLatencyIncrease: (measurements) => measurements.latency && (measurements.downLoadedLatency || measurements.upLoadedLatency) ? Math.max(measurements.downLoadedLatency, measurements.upLoadedLatency) - measurements.latency : void 0 };
+const defaultPoints = { packetLoss: 0 };
+var ScoresCalculations = class {
+	constructor(config) {
+		this.#config = config;
+	}
+	getScores(measurements, omit = []) {
+		const scores = Object.assign({}, ...Object.entries(this.#config.aimMeasurementScoring).map(([type, fn]) => {
+			const val = customResultTypes.hasOwnProperty(type) ? customResultTypes[type](measurements) : measurements[type];
+			return val === void 0 ? defaultPoints.hasOwnProperty(type) ? { [type]: defaultPoints[type] } : {} : { [type]: +fn(val) };
+		}));
+		return Object.assign({}, ...Object.entries(this.#config.aimExperiencesDefs).map(([k, { input, pointThresholds }]) => [k, {
+			input: input.filter((m) => !omit.includes(m)),
+			pointThresholds
+		}]).filter(([, { input }]) => input.every((k) => scores.hasOwnProperty(k))).map(([k, { input, pointThresholds }]) => {
+			const sumPoints = Math.max(0, sum(input.map((k) => scores[k])));
+			const classificationIdx = scaleThreshold(pointThresholds, [
+				0,
+				1,
+				2,
+				3,
+				4
+			])(sumPoints);
+			const classificationName = classificationNames[classificationIdx];
+			return { [k]: {
+				points: sumPoints,
+				classificationIdx,
+				classificationName
+			} };
+		}));
+	}
+	#config;
+};
+//#endregion
+//#region src/Results/index.ts
+var Results = class {
+	constructor(config) {
+		this.#config = config;
+		this.clear();
+		this.#measCalc = new MeasurementCalculations(this.#config);
+		this.#scoresCalc = new ScoresCalculations(this.#config);
+	}
+	raw;
+	get isFinished() {
+		return Object.values(this.raw).filter((d) => d !== null && typeof d === "object").every((d) => d.finished);
+	}
+	clear() {
+		this.raw = Object.assign({ totalDurationMs: void 0 }, ...[...new Set(this.#config.measurements.map((m) => m.type))].map((m) => ({ [m]: {
+			started: false,
+			finished: false,
+			results: {}
+		} })));
+	}
+	getUnloadedLatency = () => this.#calcGetter("getLatency", "latency");
+	getUnloadedJitter = () => this.#calcGetter("getJitter", "latency");
+	getUnloadedLatencyPoints = () => this.#calcGetter("getLatencyPoints", "latency", []);
+	getDownLoadedLatency = () => this.#calcGetter("getLoadedLatency", "download");
+	getDownLoadedJitter = () => this.#calcGetter("getLoadedJitter", "download");
+	getDownLoadedLatencyPoints = () => this.#calcGetter("getLoadedLatencyPoints", "download", []);
+	getUpLoadedLatency = () => this.#calcGetter("getLoadedLatency", "upload");
+	getUpLoadedJitter = () => this.#calcGetter("getLoadedJitter", "upload");
+	getUpLoadedLatencyPoints = () => this.#calcGetter("getLoadedLatencyPoints", "upload", []);
+	getDownloadBandwidth = () => this.#calcGetter("getBandwidth", "download");
+	getDownloadBandwidthPoints = () => this.#calcGetter("getBandwidthPoints", "download", []);
+	getUploadBandwidth = () => this.#calcGetter("getBandwidth", "upload");
+	getUploadBandwidthPoints = () => this.#calcGetter("getBandwidthPoints", "upload", []);
+	getPacketLoss = () => this.#calcGetter("getPacketLoss", "packetLoss");
+	getPacketLossDetails = () => this.#calcGetter("getPacketLossDetails", "packetLoss", void 0, true);
+	getTotalDurationMs = () => this.raw.totalDurationMs;
+	getSummary() {
+		const items = {
+			download: this.getDownloadBandwidth,
+			upload: this.getUploadBandwidth,
+			latency: this.getUnloadedLatency,
+			jitter: this.getUnloadedJitter,
+			downLoadedLatency: this.getDownLoadedLatency,
+			downLoadedJitter: this.getDownLoadedJitter,
+			upLoadedLatency: this.getUpLoadedLatency,
+			upLoadedJitter: this.getUpLoadedJitter,
+			packetLoss: this.getPacketLoss,
+			v4Reachability: this.#getV4Reachability,
+			v6Reachability: this.#getV6Reachability,
+			totalDurationMs: this.getTotalDurationMs
+		};
+		return Object.assign({}, ...Object.entries(items).map(([key, fn]) => {
+			const val = fn();
+			return val === void 0 ? {} : { [key]: val };
+		}));
+	}
+	getScores = () => this.#scoresCalc.getScores(this.getSummary(), this.raw.packetLoss ? [] : ["packetLoss"]);
+	#config;
+	#measCalc;
+	#scoresCalc;
+	#calcGetter = (calcFn, resKey, defaultVal = void 0, surfaceError = false) => {
+		const entry = this.raw[resKey];
+		if (!entry || typeof entry !== "object" || !entry.started) return defaultVal;
+		const measEntry = entry;
+		if (surfaceError && measEntry.error) return { error: measEntry.error };
+		return this.#measCalc[calcFn](measEntry.results);
+	};
+	#getV4Reachability = () => this.#calcGetter("getReachability", "v4Reachability");
+	#getV4ReachabilityDetails = () => this.#calcGetter("getReachabilityDetails", "v4Reachability");
+	#getV6Reachability = () => this.#calcGetter("getReachability", "v6Reachability");
+	#getV6ReachabilityDetails = () => this.#calcGetter("getReachabilityDetails", "v6Reachability");
+};
+//#endregion
+//#region src/logging/logFinalResults.ts
+const round = (num, decimals = 0) => !num ? num : Math.round(num * 10 ** decimals) / 10 ** decimals;
+const latencyPointsParser = (durations) => durations.map((d) => round(d, 2));
+const bpsPointsParser = (pnts) => pnts.map((d) => ({
+	bytes: +d.bytes,
+	bps: round(d.bps)
+}));
+const packetLossParser = (d) => {
+	const details = d;
+	return details.error ? void 0 : {
+		numMessages: details.numMessagesSent,
+		lossRatio: round(details.packetLoss, 4)
+	};
+};
+const resultsParsers = {
+	latencyMs: ["getUnloadedLatencyPoints", latencyPointsParser],
+	download: ["getDownloadBandwidthPoints", bpsPointsParser],
+	upload: ["getUploadBandwidthPoints", bpsPointsParser],
+	downLoadedLatencyMs: ["getDownLoadedLatencyPoints", latencyPointsParser],
+	upLoadedLatencyMs: ["getUpLoadedLatencyPoints", latencyPointsParser],
+	packetLoss: ["getPacketLossDetails", packetLossParser],
+	totalDurationMs: ["getTotalDurationMs"]
+};
+const scoreParser = (d) => ({
+	points: d.points,
+	classification: d.classificationName
+});
+const logAimResults = async (results, { apiUrl, includeCredentials, sessionId, authorization }) => {
+	const logData = { sessionId };
+	Object.entries(resultsParsers).forEach(([logK, [fn, parser]]) => {
+		const resolvedParser = parser ?? ((d) => d);
+		const val = results[fn]();
+		if (val) logData[logK] = resolvedParser(val);
+	});
+	const scores = results.getScores();
+	if (scores) logData.scores = Object.assign({}, ...Object.entries(scores).map(([k, score]) => ({ [k]: scoreParser(score) })));
+	console.log("results", logData);
+	try {
+		const response = await fetch(apiUrl, withAuthorizationHeader({
+			method: "POST",
+			body: JSON.stringify(logData),
+			credentials: includeCredentials ? "include" : "same-origin"
+		}, authorization, apiUrl));
+		if (!response.ok) return { requestId: void 0 };
+		return await response.json();
+	} catch {
+		return { requestId: void 0 };
+	}
+};
+//#endregion
+//#region src/index.ts
+const DEFAULT_OPTIMAL_DOWNLOAD_SIZE = 1e6;
+const DEFAULT_OPTIMAL_UPLOAD_SIZE = 1e6;
+const OPTIMAL_SIZE_RATIO = .5;
+const pausableTypes = [
+	"latency",
+	"latencyUnderLoad",
+	"download",
+	"upload"
+];
+const genMeasId = () => `${Math.round(Math.random() * 0x2386f26fc10000)}`;
+var MeasurementEngine = class {
+	constructor(userConfig = {}) {
+		const { bandwidthAbortRequestDuration, ...options } = userConfig;
+		this.#config = Object.assign({}, defaultConfig, options, internalConfig);
+		this.#config.abortRequestDuration = options.abortRequestDuration ?? bandwidthAbortRequestDuration ?? defaultConfig.abortRequestDuration;
+		this.#authorization = {
+			token: this.#config.authorizationToken,
+			enabled: this.#config.authorizationEnabled,
+			allowInsecure: this.#config.allowInsecureAuthorizationToken
+		};
+		this.#results = new Results(this.#config);
+		this.#config.autoStart && this.play();
+	}
+	get results() {
+		return this.#results;
+	}
+	get config() {
+		return this.#config;
+	}
+	get authorization() {
+		return this.#authorization;
+	}
+	get isRunning() {
+		return this.#running;
+	}
+	get isFinished() {
+		return this.#finished;
+	}
+	onRunningChange = () => {};
+	onResultsChange = () => {};
+	onPhaseChange = () => {};
+	#onFinish = () => {};
+	set onFinish(f) {
+		this.#onFinish = f;
+	}
+	#onError = () => {};
+	set onError(f) {
+		this.#onError = f;
+	}
+	pause() {
+		const curType = this.#curType();
+		curType && pausableTypes.includes(curType) && this.#curEngine?.pause?.();
+		this.#setRunning(false);
+	}
+	play() {
+		if (!this.#running) {
+			performance.clearResourceTimings();
+			performance.setResourceTimingBufferSize(1e4);
+			this.#setRunning(true);
+			this.#next();
+		}
+	}
+	restart() {
+		this.#clear();
+		this.play();
+	}
+	#config;
+	#authorization;
+	#results;
+	#measurementId = genMeasId();
+	#serverTimeDelta = 0;
+	#curMsmIdx = -1;
+	#curEngine;
+	#optimalDownloadChunkSize = DEFAULT_OPTIMAL_DOWNLOAD_SIZE;
+	#optimalUploadChunkSize = DEFAULT_OPTIMAL_UPLOAD_SIZE;
+	#startTime;
+	#accumulatedRuntimeMs = 0;
+	#abortTestTimeout;
+	#running = false;
+	#finished = false;
+	#skipLog = false;
+	#setRunning(running) {
+		if (running !== this.#running) {
+			this.#running = running;
+			this.onRunningChange(this.#running);
+		}
+		if (running) this.#startTime = performance.now();
+		else if (typeof this.#startTime !== "undefined") {
+			this.#accumulatedRuntimeMs += performance.now() - this.#startTime;
+			this.#startTime = void 0;
+		}
+		this.#scheduleAbortTest();
+	}
+	#scheduleAbortTest() {
+		clearTimeout(this.#abortTestTimeout);
+		this.#abortTestTimeout = void 0;
+		const limit = this.#config.abortTestDuration;
+		if (!(limit > 0) || !this.#running || this.#finished) return;
+		this.#abortTestTimeout = setTimeout(() => this.#endTest(`Test aborted. Test exceeded abortTestDuration (${this.#config.abortTestDuration}ms)`), Math.max(0, limit - this.#accumulatedRuntimeMs));
+	}
+	#reportErrorAndContinue(...error) {
+		const measurementId = this.#measurementId;
+		this.#onError(...error);
+		if (measurementId !== this.#measurementId) return;
+		this.#running && this.#next();
+	}
+	#endTest(message, { skipLog = false } = {}) {
+		const type = this.#curType();
+		const msmResults = this.#curTypeResults();
+		this.#destroyCurEngine();
+		this.#curMsmIdx = this.#config.measurements.length;
+		this.#results.raw.error = message;
+		if (type && msmResults) {
+			msmResults.error = message;
+			this.onResultsChange({ type });
+		}
+		this.#skipLog = skipLog;
+		const measurementId = this.#measurementId;
+		this.#onError(message);
+		if (measurementId !== this.#measurementId) return;
+		this.#setRunning(false);
+		this.#setFinished(true);
+	}
+	#setFinished(finished) {
+		if (finished !== this.#finished) {
+			this.#finished = finished;
+			if (finished) {
+				this.#results.raw.totalDurationMs = this.#accumulatedRuntimeMs;
+				const skipLog = this.#skipLog;
+				setTimeout(() => this.#onFinish(this.results, { skipLog }));
+			}
+		}
+	}
+	#curType() {
+		return this.#curMsmIdx < 0 || this.#curMsmIdx >= this.#config.measurements.length ? null : this.#config.measurements[this.#curMsmIdx].type;
+	}
+	#curTypeResults() {
+		const type = this.#curType();
+		if (!type) return void 0;
+		return this.#results.raw[type] || void 0;
+	}
+	#clear() {
+		this.#destroyCurEngine();
+		this.#measurementId = genMeasId();
+		this.#curMsmIdx = -1;
+		this.#curEngine = void 0;
+		this.#setRunning(false);
+		this.#setFinished(false);
+		this.#skipLog = false;
+		this.#results.clear();
+		this.#accumulatedRuntimeMs = 0;
+	}
+	#destroyCurEngine() {
+		const engine = this.#curEngine;
+		if (!engine) return;
+		engine.onFinished = engine.onConnectionError = engine.onMsgReceived = engine.onCredentialsFailure = engine.onMeasurementResult = engine.onNewMeasurementStarted = engine.onParallelLatencyResult = engine.onParallelLatencyError = engine.onFatalError = () => {};
+		const curType = this.#curType();
+		curType && pausableTypes.includes(curType) && engine.pause?.();
+	}
+	#next() {
+		const resumeType = this.#curType();
+		const resumeResults = this.#curTypeResults();
+		if (resumeType && pausableTypes.includes(resumeType) && resumeResults && resumeResults.started && !resumeResults.finished && !resumeResults.finishedCurrentRound) {
+			this.#curEngine?.play?.();
+			return;
+		}
+		this.#curMsmIdx++;
+		if (this.#curMsmIdx >= this.#config.measurements.length) {
+			this.#setRunning(false);
+			this.#setFinished(true);
+			return;
+		}
+		const { type, ...msmConfig } = this.#config.measurements[this.#curMsmIdx];
+		const msmResults = this.#curTypeResults();
+		this.onPhaseChange({
+			measurementId: this.#curMsmIdx,
+			measurement: {
+				type,
+				...msmConfig
+			}
+		});
+		const { downloadApiUrl, uploadApiUrl, estimatedServerTime } = this.#config;
+		let engine;
+		switch (type) {
+			case "v4Reachability":
+			case "v6Reachability":
+				engine = new ReachabilityEngine(`https://${msmConfig.host}`, { fetchOptions: {
+					method: "GET",
+					mode: "no-cors"
+				} });
+				engine.onFinished = (result) => {
+					const r = result;
+					msmResults.finished = true;
+					msmResults.results = {
+						host: msmConfig.host,
+						...r
+					};
+					this.onResultsChange({ type });
+					this.#next();
+				};
+				break;
+			case "rpki":
+				engine = new ReachabilityEngine(`https://${this.#config.rpkiInvalidHost}`, { timeout: 5e3 });
+				engine.onFinished = (result) => {
+					const r = result;
+					(r.response ? r.response.json() : Promise.resolve()).then((response) => {
+						msmResults.finished = true;
+						msmResults.results = {
+							host: this.#config.rpkiInvalidHost,
+							filteringInvalids: !r.reachable,
+							...response ? {
+								asn: response.asn,
+								name: response.name
+							} : {}
+						};
+						this.onResultsChange({ type });
+						this.#next();
+					});
+				};
+				break;
+			case "nxdomain":
+				engine = new ReachabilityEngine(`https://${msmConfig.nxhost}`, { fetchOptions: { mode: "no-cors" } });
+				engine.onFinished = (result) => {
+					const r = result;
+					msmResults.finished = true;
+					msmResults.results = {
+						host: msmConfig.nxhost,
+						reachable: r.reachable
+					};
+					this.onResultsChange({ type });
+					this.#next();
+				};
+				break;
+			case "packetLoss":
+			case "packetLossUnderLoad":
+				{
+					msmResults.finished = false;
+					const { numPackets: numMsgs, ...ptCfg } = msmConfig;
+					const { turnServerUri, turnServerCredsApiUrl: turnServerCredsApi, turnServerUser, turnServerPass, includeCredentials } = this.#config;
+					try {
+						engine = new PacketLossUnderLoadEngine({
+							turnServerUri: turnServerUri ?? void 0,
+							turnServerCredsApi: turnServerCredsApi ?? void 0,
+							turnServerCredsApiIncludeCredentials: includeCredentials,
+							turnServerUser: turnServerUser ?? void 0,
+							turnServerPass: turnServerPass ?? void 0,
+							authorization: this.authorization,
+							numMsgs,
+							downloadChunkSize: msmConfig.loadDown ? this.#optimalDownloadChunkSize : void 0,
+							uploadChunkSize: msmConfig.loadUp ? this.#optimalUploadChunkSize : void 0,
+							downloadApiUrl,
+							uploadApiUrl,
+							...ptCfg
+						});
+					} catch (e) {
+						const message = e instanceof Error ? e.message : String(e);
+						const measurementId = this.#measurementId;
+						queueMicrotask(() => {
+							if (measurementId !== this.#measurementId) return;
+							msmResults.started = true;
+							msmResults.finished = true;
+							msmResults.error = message;
+							this.onResultsChange({ type });
+							this.#reportErrorAndContinue(`Error while measuring packet loss: ${message}`);
+						});
+						return;
+					}
+				}
+				engine.onMsgReceived = () => {
+					msmResults.results = Object.assign({}, engine.results);
+					this.onResultsChange({ type });
+				};
+				engine.onFinished = () => {
+					msmResults.finished = true;
+					this.onResultsChange({ type });
+					this.#running && this.#next();
+				};
+				engine.onConnectionError = (e) => {
+					msmResults.finished = true;
+					msmResults.error = e;
+					this.onResultsChange({ type });
+					this.#reportErrorAndContinue(`Connection error while measuring packet loss: ${e}`);
+				};
+				engine.onCredentialsFailure = () => {
+					msmResults.finished = true;
+					msmResults.error = "unable to get turn server credentials";
+					this.onResultsChange({ type });
+					this.#reportErrorAndContinue("Error while measuring packet loss: unable to get turn server credentials.");
+				};
+				break;
+			case "latency":
+			case "latencyUnderLoad": {
+				msmResults.finished = false;
+				engine = new LoggingBandwidthEngine([{
+					dir: "down",
+					bytes: 0,
+					count: msmConfig.numPackets,
+					bypassMinDuration: true
+				}], {
+					downloadApiUrl,
+					uploadApiUrl,
+					estimatedServerTime,
+					serverTimeDelta: this.#serverTimeDelta,
+					logApiUrl: this.#config.logMeasurementApiUrl ?? void 0,
+					measurementId: this.#measurementId,
+					sessionId: this.#config.sessionId,
+					authorization: this.authorization,
+					downloadChunkSize: msmConfig.loadDown ? this.#optimalDownloadChunkSize : void 0,
+					uploadChunkSize: msmConfig.loadUp ? this.#optimalUploadChunkSize : void 0
+				});
+				engine.fetchOptions = this.#config.includeCredentials ? { credentials: "include" } : {};
+				engine.abortRequestDuration = this.#config.abortRequestDuration;
+				if (!msmConfig.loadDown && !msmConfig.loadUp) {
+					const eng = engine;
+					eng.qsParams = {
+						...eng.qsParams,
+						during: "idle"
+					};
+				}
+				const priorTimings = (msmResults.results?.timings || []).slice();
+				engine.onMeasurementResult = engine.onNewMeasurementStarted = (_meas, results) => {
+					msmResults.results = Object.assign({}, results.down[0]);
+					msmResults.results.timings = priorTimings.concat(msmResults.results.timings);
+					this.onResultsChange({ type });
+				};
+				engine.onFinished = () => {
+					this.#serverTimeDelta = engine.serverTimeDelta;
+					msmResults.finished = true;
+					this.onResultsChange({ type });
+					this.#running && this.#next();
+				};
+				engine.onConnectionError = (e, status) => this.#onError(`Connection error while measuring latency: ${e}`, status);
+				engine.onFatalError = (e) => this.#endTest(`Connection error while measuring latency: ${e}`, { skipLog: true });
+				engine.play();
+				break;
+			}
+			case "download":
+			case "upload": if (msmResults.finished) {
+				this.#next();
+				return;
+			} else {
+				delete msmResults.finishedCurrentRound;
+				const measureParallelLatency = this.#config[`measure${type === "download" ? "Down" : "Up"}loadLoadedLatency`];
+				engine = new LoggingBandwidthEngine([{
+					dir: type === "download" ? "down" : "up",
+					...msmConfig
+				}], {
+					downloadApiUrl,
+					uploadApiUrl,
+					estimatedServerTime,
+					serverTimeDelta: this.#serverTimeDelta,
+					logApiUrl: this.#config.logMeasurementApiUrl ?? void 0,
+					measurementId: this.#measurementId,
+					measureParallelLatency,
+					parallelLatencyThrottleMs: this.#config.loadedLatencyThrottle,
+					sessionId: this.#config.sessionId,
+					authorization: this.authorization
+				});
+				engine.fetchOptions = this.#config.includeCredentials ? { credentials: "include" } : {};
+				engine.finishRequestDuration = this.#config.bandwidthFinishRequestDuration;
+				engine.abortRequestDuration = this.#config.abortRequestDuration;
+				engine.onNewMeasurementStarted = (...args) => {
+					const { count, bytes } = args[0];
+					const res = msmResults.results = Object.assign({}, msmResults.results);
+					!res.hasOwnProperty(bytes) && (res[bytes] = {
+						timings: [],
+						numMeasurements: 0,
+						sideLatency: measureParallelLatency ? [] : void 0
+					});
+					const bucket = res[bytes];
+					if (bucket.numMeasurements - bucket.timings.length !== count) {
+						bucket.numMeasurements += count;
+						this.onResultsChange({ type });
+					}
+				};
+				engine.onMeasurementResult = (...args) => {
+					const { bytes, ...timing } = args[0];
+					msmResults.results[bytes].timings.push(timing);
+					msmResults.results = Object.assign({}, msmResults.results);
+					this.onResultsChange({ type });
+				};
+				engine.onParallelLatencyResult = (res) => {
+					msmResults.results[msmConfig.bytes].sideLatency.push(res);
+					msmResults.results = Object.assign({}, msmResults.results);
+					this.onResultsChange({ type });
+				};
+				engine.onFinished = (results) => {
+					this.#serverTimeDelta = engine.serverTimeDelta;
+					const bwResults = results;
+					const isLastMsmOfType = !this.#config.measurements.slice(this.#curMsmIdx + 1).map((d) => d.type).includes(type);
+					const durations = Object.values(type === "download" ? bwResults.down : bwResults.up).slice(-1)[0].timings.map((d) => d.duration);
+					if (!(isLastMsmOfType || !msmConfig.bypassMinDuration && durations.length > 0 && Math.min(...durations) > this.#config.bandwidthFinishRequestDuration)) msmResults.finishedCurrentRound = true;
+					else {
+						msmResults.finished = true;
+						this.onResultsChange({ type });
+						const optimalSize = Object.keys(msmResults.results).map((n) => +n).sort((a, b) => b - a)[0] * OPTIMAL_SIZE_RATIO;
+						type === "download" && (this.#optimalDownloadChunkSize = optimalSize);
+						type === "upload" && (this.#optimalUploadChunkSize = optimalSize);
+					}
+					this.#running && this.#next();
+				};
+				engine.onConnectionError = (e, status) => this.#onError(`Connection error while measuring ${type}: ${e}`, status);
+				engine.onFatalError = (e) => this.#endTest(`Connection error while measuring ${type}: ${e}`, { skipLog: true });
+				const measurementId = this.#measurementId;
+				const msmIdx = this.#curMsmIdx;
+				engine.onParallelLatencyError = (e, status) => {
+					if (measurementId !== this.#measurementId || msmIdx !== this.#curMsmIdx) return;
+					this.#onError(`Connection error while measuring loaded latency: ${e}`, status);
+				};
+				engine.play();
+			}
+		}
+		this.#curEngine = engine;
+		msmResults.started = true;
+		this.onResultsChange({ type });
+	}
+};
+var SpeedTestEngine = class extends MeasurementEngine {
+	constructor(userConfig = {}) {
+		super(userConfig);
+		super.onFinish = this.#logFinalResults;
+	}
+	set onFinish(onFinish) {
+		super.onFinish = (results, end) => {
+			onFinish(results);
+			this.#logFinalResults(results, end);
+		};
+	}
+	onResultsLogged = () => {};
+	#logFinalResults = (results, end) => {
+		const apiUrl = this.config.logAimApiUrl;
+		if (!apiUrl || end?.skipLog) return;
+		logAimResults(results, {
+			apiUrl,
+			includeCredentials: this.config.includeCredentials,
+			sessionId: this.config.sessionId,
+			authorization: this.authorization
+		}).then((response) => {
+			this.onResultsLogged(response);
+		});
+	};
+};
+//#endregion
+return SpeedTestEngine;
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+  var SENTINEL_ID = 'st_00000000000000000000000000';       // CR-m6-speedtest-server item 1: fixed id for the proof HMAC
+  var CF_BASE = 'https://speed.cloudflare.com';
+  var SCALE = [0, 5, 10, 25, 50, 100, 250, 500, 1000];       // piecewise-log gauge scale, 270 degrees
+  var ARC = 565.5, CX = 150, CY = 150, R = 120, SCORE_ARC = 326.7;
+  var API = '/st/api/v1';
+  var MAX_STREAMS_H1 = 5;                                     // 6 connections per host over HTTP/1.1, one is kept for pings
+  var NS = 'http://www.w3.org/2000/svg';
+  var $ = function (id) { return document.getElementById(id); };
+  var ICONS = {
+    wifi: 'M2 9a15 15 0 0 1 20 0 M5 12.5a10 10 0 0 1 14 0 M8.5 16a5 5 0 0 1 7 0 M12 19.5h0',
+    dns: 'M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0 M3 12h18 M12 3a14 14 0 0 1 0 18 M12 3a14 14 0 0 0 0 18',
+    router: 'M3 15a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M7 16.5h0 M11 16.5h0 M12 13V8 M8.5 6.5a5 5 0 0 1 7 0',
+    edge: 'M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z M8 12h8 M13 9l3 3-3 3',
+    isp: 'M4 12h4l2-6 4 12 2-6h4',
+    cloud: 'M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z',
+    check: 'M5 12l5 5 9-10', dash: 'M6 12h12', bang: 'M12 7v6 M12 17h0', cross: 'M7 7l10 10 M17 7L7 17', spin: 'M12 3a9 9 0 1 0 9 9'
+  };
+  var LEGS = [
+    { id: 'lan', icon: 'wifi', name: 'Wi-Fi and venue network', tag: 'on-network', what: 'Your device across Wi-Fi and the venue to the test box' },
+    { id: 'dns', icon: 'dns', name: 'Name lookup (DNS)', tag: 'your resolver', what: 'A one-time name, so nothing is cached' },
+    { id: 'gw', icon: 'router', name: 'Venue gateway', tag: 'net', what: 'First router on your network' },
+    { id: 'edge', icon: 'edge', name: 'Venue edge', tag: 'net', what: 'Where the venue meets the internet' },
+    { id: 'edge1', icon: 'isp', name: 'One hop past the edge', tag: 'net', what: 'The internet provider’s first router' },
+    { id: 'cf', icon: 'cloud', name: 'Cloudflare', tag: 'you → internet', what: 'Public test servers, nearest location' }
+  ];
+  var CHECK_LABELS = { wifi: 'Wi-Fi signal', wired: 'Wired connection', wan: 'Venue internet', security: 'Security policy', baseline: 'Hall sensor',
+    dns: 'Name lookups', identity: 'Your device', flows: 'Your traffic' };
+  var DEFAULT_CHECKS = ['wifi', 'wan', 'security', 'baseline'];
+  var INTERNET_REASON = {
+    admin_pause: 'The network team has paused the internet part of the test.',
+    wan_utilization: 'Paused for now: the venue internet link is busy.',
+    disabled: 'The internet part of the test is not available at this event.',
+    capacity: 'Waiting for a free slot so the venue internet link is not overloaded.'
+  };
+  function reduced() { try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; } }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function median(a) { if (!a.length) return null; var b = a.slice().sort(function (x, y) { return x - y; }); var m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
+  function percentile(a, p) { if (!a.length) return null; var b = a.slice().sort(function (x, y) { return x - y; }); return b[Math.min(b.length - 1, Math.max(0, Math.ceil(p * b.length) - 1))]; }
+  function mean(a) { return a.length ? a.reduce(function (s, x) { return s + x; }, 0) / a.length : null; }
+  function cv(a) { if (a.length < 2) return 0; var m = mean(a); if (!m) return 0; var v = mean(a.map(function (x) { return (x - m) * (x - m); })); return Math.sqrt(v) / m; }
+  function jitterOf(a) { if (a.length < 2) return 0; var d = []; for (var i = 1; i < a.length; i++) d.push(Math.abs(a[i] - a[i - 1])); return mean(d); }
+  function clampNum(v, max) { return (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.min(max, v)) : null; }
+  function r1(v) { return v == null ? null : Math.round(v * 10) / 10; }
+  function r2(v) { return v == null ? null : Math.round(v * 100) / 100; }
+  function fmtMs(v) { return v == null ? '—' : (v < 10 ? v.toFixed(1) : String(Math.round(v))); }
+  function fmtMbps(v) { return v >= 100 ? String(Math.round(v)) : v.toFixed(1); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function svgEl(name, attrs) { var e = document.createElementNS(NS, name); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  function icon(name, cls) {
+    var s = svgEl('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }); if (cls) s.setAttribute('class', cls);
+    ICONS[name].split(' M').forEach(function (d, i) { s.appendChild(svgEl('path', { d: i ? 'M' + d : d })); });
+    return s;
+  }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+  function safeStorage(op, k, v) { try { return op === 'get' ? window.localStorage.getItem(k) : window.localStorage.setItem(k, v); } catch (e) { return null; } }
+  function cleanText(s, max) { return String(s).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').slice(0, max); }
+  function grade(v, ok, warn) { return v == null ? null : (v <= ok ? 'ok' : (v <= warn ? 'warn' : 'crit')); }
+  var K256 = new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
+  function sha256(msg) {
+    var h = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+    var n = msg.length, total = ((n + 9 + 63) >> 6) << 6, buf = new Uint8Array(total);
+    buf.set(msg); buf[n] = 0x80;
+    var dv = new DataView(buf.buffer);
+    dv.setUint32(total - 8, Math.floor(n / 0x20000000), false); dv.setUint32(total - 4, (n << 3) >>> 0, false);
+    var w = new Uint32Array(64);
+    for (var off = 0; off < total; off += 64) {
+      var i, s0, s1;
+      for (i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4, false);
+      for (i = 16; i < 64; i++) {
+        s0 = ((w[i - 15] >>> 7) | (w[i - 15] << 25)) ^ ((w[i - 15] >>> 18) | (w[i - 15] << 14)) ^ (w[i - 15] >>> 3);
+        s1 = ((w[i - 2] >>> 17) | (w[i - 2] << 15)) ^ ((w[i - 2] >>> 19) | (w[i - 2] << 13)) ^ (w[i - 2] >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      }
+      var a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+      for (i = 0; i < 64; i++) {
+        var S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        var ch = (e & f) ^ (~e & g);
+        var t1 = (hh + S1 + ch + K256[i] + w[i]) | 0;
+        var S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        var mj = (a & b) ^ (a & c) ^ (b & c);
+        var t2 = (S0 + mj) | 0;
+        hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+    }
+    var out = new Uint8Array(32), ov = new DataView(out.buffer);
+    for (var j = 0; j < 8; j++) ov.setUint32(j * 4, h[j], false);
+    return out;
+  }
+  function hmac256(key, msg) {
+    if (key.length > 64) key = sha256(key);
+    var ipad = new Uint8Array(64 + msg.length), opad = new Uint8Array(64 + 32), i;
+    for (i = 0; i < 64; i++) { var kb = i < key.length ? key[i] : 0; ipad[i] = kb ^ 0x36; opad[i] = kb ^ 0x5c; }
+    ipad.set(msg, 64); opad.set(sha256(ipad), 64);
+    return sha256(opad);
+  }
+  function utf8(s) { return new TextEncoder().encode(s); }
+  function hex(b) { var s = ''; for (var i = 0; i < b.length; i++) s += (b[i] < 16 ? '0' : '') + b[i].toString(16); return s; }
+  function b64url(b) { var s = ''; for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; var r = atob(s), o = new Uint8Array(r.length); for (var i = 0; i < r.length; i++) o[i] = r.charCodeAt(i); return o; }
+  function randomBytes(n) {
+    var b = new Uint8Array(n);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b); else for (var i = 0; i < n; i++) b[i] = Math.floor(Math.random() * 256);
+    return b;
+  }
+  /** proof = "expv_" + b64url(HMAC-SHA256(k, "exp.st.view/1:" + SENTINEL)); verifier = sha256_hex(proof) (01-contracts 14.2). */
+  function viewProof(k) { return 'expv_' + b64url(hmac256(unb64url(k), utf8('exp.st.view/1:' + SENTINEL_ID))); }
+  function viewVerifier(proof) { return hex(sha256(utf8(proof))); }
+  function http(method, url, opt) {
+    opt = opt || {};
+    var ac = new AbortController(), timer = setTimeout(function () { ac.abort(); }, opt.timeout || 15000);
+    if (opt.signal) { if (opt.signal.aborted) ac.abort(); else opt.signal.addEventListener('abort', function () { ac.abort(); }, { once: true }); }
+    var init = { method: method, headers: opt.headers || {}, cache: 'no-store', credentials: 'omit', signal: ac.signal, mode: opt.mode || 'same-origin' };
+    if (opt.json !== undefined) { init.body = JSON.stringify(opt.json); init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers); }
+    return fetch(url, init).then(function (r) {
+      var ra = parseInt(r.headers.get('Retry-After') || '', 10);
+      return (opt.raw ? r.text() : r.text().then(function (t) { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } })).then(function (body) {
+        clearTimeout(timer);
+        return { status: r.status, ok: r.ok, body: body, retryAfter: isNaN(ra) ? null : ra };
+      });
+    }, function (e) { clearTimeout(timer); throw e; });
+  }
+  async function retrying(fn, tries) {
+    var delay = 400, last;
+    for (var i = 0; i < tries; i++) {
+      try { var r = await fn(); if (r.status < 500 && r.status !== 429) return r; last = r; } catch (e) { last = { status: 0, body: null, err: e }; }
+      if (i + 1 < tries) { await sleep(delay); delay *= 2; }
+    }
+    return last;
+  }
+  function errCode(r) { return r && r.body && r.body.error && r.body.error.code || null; }
+  var S = {
+    cfg: null, key: null, proof: null, sess: null, running: false, cancelled: false, ac: null, path: null, pathTimer: null,
+    pollTimer: null, viewMode: false, result: null, view: null, measured: null, t0: 0, zoneHint: null, animated: false,
+    report: '', zoneFix: '', note: '', wake: null, cf: null, slot: false, shareId: null
+  };
+  var legEls = {};
+  var G = { shown: 0, target: 0, loop: false, mode: 'speed', samples: [] };
+  function buildTicks() {
+    var g = $('ticks');
+    SCALE.forEach(function (v, i) {
+      var a = (135 + 270 * i / (SCALE.length - 1)) * Math.PI / 180;
+      g.appendChild(svgEl('line', { x1: (CX + (R - 18) * Math.cos(a)).toFixed(2), y1: (CY + (R - 18) * Math.sin(a)).toFixed(2), x2: (CX + (R - 24) * Math.cos(a)).toFixed(2), y2: (CY + (R - 24) * Math.sin(a)).toFixed(2) }));
+      var t = svgEl('text', { x: (CX + (R - 38) * Math.cos(a)).toFixed(2), y: (CY + (R - 38) * Math.sin(a) + 4).toFixed(2), 'text-anchor': 'middle' });
+      t.textContent = String(v); g.appendChild(t);
+    });
+  }
+  function frac(v) {
+    for (var i = 1; i < SCALE.length; i++) if (v <= SCALE[i]) return (i - 1 + (v - SCALE[i - 1]) / (SCALE[i] - SCALE[i - 1])) / (SCALE.length - 1);
+    return 1;
+  }
+  function draw() {
+    G.shown += (G.target - G.shown) * (reduced() ? 1 : 0.14);
+    if (Math.abs(G.target - G.shown) < 0.05) G.shown = G.target;
+    var f = frac(G.shown);
+    $('prog').setAttribute('stroke-dashoffset', (ARC * (1 - f)).toFixed(1));
+    var a = (135 + 270 * f) * Math.PI / 180;
+    $('tip').setAttribute('cx', (CX + R * Math.cos(a)).toFixed(1)); $('tip').setAttribute('cy', (CY + R * Math.sin(a)).toFixed(1));
+    if (G.mode === 'speed') $('num').textContent = fmtMbps(G.shown);
+    if (G.loop) requestAnimationFrame(draw);
+  }
+  function loopOn() { if (!G.loop) { G.loop = true; requestAnimationFrame(draw); } }
+  function loopOff() { G.loop = false; }
+  function gaugeMode(m) {
+    var c = m === 'up' ? 'var(--up)' : 'var(--down)';
+    $('stage').classList.toggle('mode-up', m === 'up'); $('stage').style.setProperty('--accent', c);
+    document.querySelectorAll('.stop-f').forEach(function (s) { s.style.setProperty('stop-color', c); });
+  }
+  function setSpeedMode(on) {
+    G.mode = on ? 'speed' : 'text';
+    $('spinner').hidden = on; $('tip').setAttribute('opacity', on ? '1' : '0');
+    if (on) { $('unit').textContent = 'Mb/s'; } else { G.shown = G.target = 0; $('prog').setAttribute('stroke-dashoffset', String(ARC)); }
+  }
+  function showMs(v) { G.mode = 'text'; $('num').textContent = v == null ? '…' : fmtMs(v); $('unit').textContent = 'ms'; }
+  function trace() {
+    var n = G.samples.length;
+    if (!n) { $('traceLine').setAttribute('d', ''); $('traceArea').setAttribute('d', ''); return; }
+    var max = Math.max.apply(null, G.samples) * 1.15 || 1, d = '';
+    for (var i = 0; i < n; i++) { d += (i ? ' L' : 'M') + ((i / Math.max(n - 1, 1)) * 300).toFixed(1) + ' ' + (62 - G.samples[i] / max * 58).toFixed(1); }
+    $('traceLine').setAttribute('d', d); $('traceArea').setAttribute('d', d + ' L300 64 L0 64 Z');
+  }
+  function feedGauge(mbps) {
+    G.target = Math.max(0, mbps); G.samples.push(G.target); if (G.samples.length > 120) G.samples.shift(); trace();
+    $('lgR').textContent = Math.round(G.target) + ' Mb/s';
+  }
+  function phase(text, sub) { $('phaseText').textContent = text; $('sub').textContent = sub || ''; $('announce').textContent = text; }
+  function notice(text, bad) { var n = $('notice'); n.hidden = !text; n.textContent = text || ''; n.classList.toggle('bad', !!bad); }
+  function buildLegs() {
+    var ol = $('path');
+    LEGS.forEach(function (l) {
+      var li = el('li', 'leg');
+      var node = el('span', 'node'); node.appendChild(icon(l.icon)); li.appendChild(node); li.appendChild(el('span', 'rail'));
+      var mid = el('div'), nm = el('div', 'name', l.name); nm.appendChild(el('em', '', l.tag)); mid.appendChild(nm);
+      var what = el('div', 'what', l.what); mid.appendChild(what); li.appendChild(mid);
+      var val = el('div', 'val pending'); var main = document.createTextNode('—'); val.appendChild(main);
+      var small = el('small', '', 'not yet'); val.appendChild(small); li.appendChild(val);
+      ol.appendChild(li);
+      legEls[l.id] = { li: li, val: val, main: main, small: small, what: what, defWhat: l.what };
+    });
+  }
+  function legReset() {
+    Object.keys(legEls).forEach(function (k) {
+      var L = legEls[k];
+      L.li.classList.remove('done', 'active', 'st-warn', 'st-crit'); L.val.classList.add('pending'); L.main.nodeValue = '—'; L.small.textContent = 'not yet';
+      L.what.textContent = L.defWhat;
+    });
+  }
+  function legActive(id) { Object.keys(legEls).forEach(function (k) { legEls[k].li.classList.toggle('active', k === id); }); }
+  function legSet(id, main, small, state) {
+    var L = legEls[id]; L.val.classList.remove('pending'); L.main.nodeValue = main; L.small.textContent = small;
+    L.li.classList.remove('st-warn', 'st-crit');
+    if (state) { L.li.classList.add('done'); if (state === 'warn') L.li.classList.add('st-warn'); if (state === 'crit') L.li.classList.add('st-crit'); }
+  }
+  /** Box-timed legs (gateway / edge / edge+1): idle (and loaded) RTT from the core box. */
+  function applyPath(p) {
+    if (!p || !p.path) return;
+    [['gw', 'gateway_ms', 5, 20], ['edge', 'edge_ms', 10, 40], ['edge1', 'edge1_ms', 40, 120]].forEach(function (x) {
+      var h = p.path[x[1]]; if (!h || h.idle == null) return;
+      var small = 'from box' + (h.loaded != null ? ' · loaded ' + fmtMs(h.loaded) + ' ms' : ' · idle');
+      legSet(x[0], fmtMs(h.idle) + ' ms', small, grade(h.loaded != null ? h.loaded : h.idle, x[2], x[3]));
+    });
+  }
+  function startPathPoll() {
+    stopPathPoll();
+    var sid = S.sess.session_id;
+    var tick = function () {
+      http('GET', API + '/sessions/' + sid + '/path', { headers: { 'X-Exp-View-Proof': S.proof }, timeout: 4000 }).then(function (r) {
+        if (r.ok && r.body && S.sess && S.sess.session_id === sid) { S.path = r.body; applyPath(r.body); }
+      }, function () {});
+    };
+    tick(); S.pathTimer = setInterval(tick, 500);
+  }
+  function stopPathPoll() { if (S.pathTimer) { clearInterval(S.pathTimer); S.pathTimer = null; } }
+  function luminance(hexColor) {
+    var c = [1, 3, 5].map(function (i) { var v = parseInt(hexColor.substr(i, 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function applyBranding(cfg) {
+    document.title = cfg.title || 'Speed check'; $('title').textContent = cfg.title || 'Speed check';
+    var copy = cfg.copy || {};
+    if (typeof copy.subtitle === 'string') $('subtitle').textContent = copy.subtitle;
+    if (typeof copy.start_button === 'string') $('goSub').textContent = copy.start_button;
+    if (typeof copy.footer === 'string') $('footer').textContent = copy.footer;
+    var p = cfg.colors && cfg.colors.primary;
+    if (typeof p === 'string' && /^#[0-9a-fA-F]{6}$/.test(p)) {
+      var root = document.documentElement.style, l = luminance(p);
+      root.setProperty('--brand', p); root.setProperty('--on-brand', l > 0.3 ? '#0B0D12' : '#FFFFFF');
+    }
+    if (typeof cfg.logo === 'string' && /^\/st\/assets\/[a-z0-9._-]{1,64}$/.test(cfg.logo)) {
+      var img = el('img'); img.alt = ''; img.src = cfg.logo; img.addEventListener('error', function () { img.remove(); $('mark').firstChild && ($('mark').firstChild.style.display = ''); });
+      var m = $('mark'); if (m.firstChild) m.firstChild.style.display = 'none'; m.appendChild(img);
+    }
+    $('cText').textContent = (cfg.consent && cfg.consent.text) || '';
+  }
+  async function loadConfig() {
+    var r = await retrying(function () { return http('GET', API + '/config'); }, 3);
+    if (!r || !r.ok || !r.body) throw new Error('config');
+    S.cfg = r.body; applyBranding(r.body); $('go').disabled = false;
+    return r.body;
+  }
+  function zoneHintFromUrl() {
+    try { var z = new URLSearchParams(location.search).get('z'); return z && /^[a-z0-9][a-z0-9-]{0,63}$/.test(z) ? z : null; } catch (e) { return null; }
+  }
+  function zoneChip(name) {
+    var c = $('zoneChip'); if (!name) { c.hidden = true; return; }
+    $('zoneChipText').textContent = name; c.hidden = false;
+  }
+  async function loadWhere() {
+    var path = API + '/where' + (S.zoneHint ? '?z=' + encodeURIComponent(S.zoneHint) : '');
+    try {
+      var r = await http('GET', path, { timeout: 5000 });
+      if (r.ok && r.body && r.body.zone_name && r.body.source !== 'unresolved') zoneChip(r.body.zone_name);
+    } catch (e) { /* best effort */ }
+  }
+  function checkCancel() { if (S.cancelled) { var e = new Error('cancelled'); e.cancelled = true; throw e; } }
+  async function createSession() {
+    var k = b64url(randomBytes(32));
+    S.key = k; S.proof = viewProof(k);
+    var body = { consent: { text_version: S.cfg.consent.version }, view_verifier: viewVerifier(S.proof) };
+    if (S.zoneHint) body.zone_hint = S.zoneHint;
+    var r = await http('POST', API + '/sessions', { json: body, timeout: 10000 });
+    if (r.status === 201 && r.body) return r.body;
+    var code = errCode(r), err = new Error(code || 'session');
+    err.status = r.status; err.retryAfter = r.retryAfter; err.code = code;
+    throw err;
+  }
+  function sessionErrorText(e) {
+    if (e.status === 429) return 'The test box is busy or you ran several tests in a row. Try again' + (e.retryAfter ? ' in about ' + e.retryAfter + ' seconds.' : ' in a minute.');
+    if (e.code === 'consent_version_stale') return 'The consent text changed. Reload the page and start again.';
+    if (e.status === 0 || e.name === 'TypeError' || e.name === 'AbortError') return 'Could not reach the test box. Check that you are on the event network.';
+    return 'The test could not start (' + (e.code || e.status || 'error') + '). Try again in a moment.';
+  }
+  function legHeaders() { return { 'X-Exp-Leg-Token': S.sess.leg_token }; }
+  async function pingOnce(n) {
+    var t = now();
+    var r = await http('GET', '/st/ping?n=' + n, { headers: legHeaders(), timeout: 5000, signal: S.ac && S.ac.signal, raw: true });
+    if (r.status !== 204) { var e = new Error('ping ' + r.status); e.status = r.status; throw e; }
+    return now() - t;
+  }
+  async function pingSeries(count, onSample) {
+    var out = [];
+    await pingOnce(0);                                   // warm-up: the connection is open and warm for the 20 measured pings
+    for (var i = 1; i <= count; i++) {
+      checkCancel(); var v = await pingOnce(i); out.push(v); if (onSample) onSample(v, out);
+    }
+    return out;
+  }
+  async function dnsOne(name, nonce) {
+    var url = location.protocol + '//' + nonce + '.' + name + (location.port ? ':' + location.port : '') + '/st/px?n=' + nonce + '&t=' + Math.floor(Math.random() * 1e9);
+    var ac = new AbortController(), timer = setTimeout(function () { ac.abort(); }, 2500);
+    try {
+      var r = await fetch(url, { mode: 'cors', cache: 'no-store', credentials: 'omit', signal: ac.signal });
+      if (r.status !== 204 && r.status !== 200) return null;
+    } catch (e) { return null; } finally { clearTimeout(timer); }
+    for (var i = 0; i < 12; i++) {
+      var ents = performance.getEntriesByName(url);
+      if (ents.length) {
+        var e0 = ents[ents.length - 1];
+        if (typeof e0.domainLookupStart === 'number' && typeof e0.domainLookupEnd === 'number' && e0.domainLookupEnd >= e0.domainLookupStart && (e0.domainLookupEnd > 0 || e0.fetchStart > 0)) {
+          return e0.domainLookupEnd - e0.domainLookupStart;
+        }
+        return null;
+      }
+      await sleep(25);
+    }
+    return null;
+  }
+  /** 2 fresh nonces (cold) + the first repeated (warm), Resource Timing domainLookupEnd - domainLookupStart. */
+  async function dnsLeg(sess) {
+    var zone = sess.dns_zone, n = sess.dns_nonces || [];
+    if (!zone || n.length < 2) return null;
+    var c1 = await dnsOne(zone, n[0]);
+    if (c1 == null) return { cold_ms: null, warm_ms: null };
+    var c2 = await dnsOne(zone, n[1]);
+    var warm = await dnsOne(zone, n[0]);
+    var colds = [c1]; if (c2 != null) colds.push(c2);
+    return { cold_ms: mean(colds), warm_ms: warm };
+  }
+  var chunkBuf = null;
+  function uploadBlob(size) {
+    if (!chunkBuf) { chunkBuf = new Uint8Array(262144); for (var o = 0; o < chunkBuf.length; o += 65536) chunkBuf.set(randomBytes(65536), o); }
+    var parts = [], left = size;
+    while (left >= chunkBuf.length) { parts.push(chunkBuf); left -= chunkBuf.length; }
+    if (left > 0) parts.push(chunkBuf.subarray(0, left));
+    return new Blob(parts);
+  }
+  /**
+   * One direction of the on-network leg: parallel streams (start 4, grow while throughput keeps rising, capped for
+   * HTTP/1.1), request sizes ramping 100 kB -> ramp_max, ending when a request takes >= 1 s (ramp over) and enough samples
+   * were gathered, after 8 s, or when the direction's byte budget is spent. Speed = p90 of 250-ms aggregate samples taken
+   * after the ramp. Loaded latency is pinged on its own connection while this runs.
+   */
+  async function transferLeg(dir, budget) {
+    var lim = S.sess.limits, startN = Math.max(1, lim.streams_start || 4), maxN = Math.min(lim.streams_max || 8, MAX_STREAMS_H1);
+    var minB = 100000, maxB = Math.max(minB, Math.min(25000000, lim.ramp_max_bytes || 25000000));
+    var T = { dir: dir, bytes: 0, used: 0, inflight: 0, size: minB, streams: 0, stop: false, rampAt: null, bins: [], failures: 0, t0: now(), last: 0, lastT: 0 };
+    var ctrls = [], pings = [], pingStop = false;
+    function remaining() { return budget - T.used - T.inflight; }
+    function nextSize() { var share = Math.floor(remaining() / Math.max(1, T.streams)); return Math.min(T.size, share); }
+    function add(n) { T.bytes += n; }
+    function done(size, dur, moved) {
+      T.used += moved; T.inflight -= size;
+      if (moved >= size) {
+        if (dur >= 1000 && T.rampAt == null) T.rampAt = now() - T.t0;
+        else if (dur < 1000 && T.size < maxB) T.size = Math.min(maxB, T.size * 4);
+      } else if (!T.stop) T.failures++;
+    }
+    async function downReq(size, ctrl) {
+      var r = await fetch('/st/down?bytes=' + size, { headers: legHeaders(), cache: 'no-store', credentials: 'omit', signal: ctrl.signal });
+      if (r.status === 413) { var j = null; try { j = await r.json(); } catch (e) { /* ignore */ } return { moved: 0, refused: j && j.error && j.error.details && j.error.details.remaining }; }
+      if (!r.ok || !r.body) throw new Error('down ' + r.status);
+      var rd = r.body.getReader(), got = 0;
+      for (;;) { var c = await rd.read(); if (c.done) break; got += c.value.length; add(c.value.length); }
+      return { moved: got };
+    }
+    function upReq(size, ctrl) {
+      return new Promise(function (resolve, reject) {
+        var x = new XMLHttpRequest(), prev = 0;
+        x.open('POST', '/st/up'); x.timeout = 30000;
+        x.setRequestHeader('X-Exp-Leg-Token', S.sess.leg_token);
+        x.upload.onprogress = function (e) { add(e.loaded - prev); prev = e.loaded; };
+        x.onload = function () {
+          if (x.status === 204) { add(size - prev); resolve({ moved: size }); }
+          else if (x.status === 413) { var j = null; try { j = JSON.parse(x.responseText); } catch (e) { /* ignore */ } resolve({ moved: prev, refused: j && j.error && j.error.details && j.error.details.remaining }); }
+          else reject(new Error('up ' + x.status));
+        };
+        x.onerror = function () { reject(new Error('up network')); }; x.ontimeout = x.onerror; x.onabort = function () { resolve({ moved: prev, aborted: true }); };
+        ctrl.signal.addEventListener('abort', function () { x.abort(); }, { once: true });
+        x.send(uploadBlob(size));
+      });
+    }
+    async function stream() {
+      T.streams++;
+      while (!T.stop && !S.cancelled) {
+        var size = nextSize();
+        if (size < 50000) break;
+        var ctrl = new AbortController(); ctrls.push(ctrl); T.inflight += size;
+        var t = now(), res;
+        try { res = await (dir === 'down' ? downReq(size, ctrl) : upReq(size, ctrl)); }
+        catch (e) { T.inflight -= size; if (!T.stop) T.failures++; if (T.failures > 5) break; await sleep(100); continue; }
+        done(size, now() - t, res.moved);
+        if (res.refused != null && res.refused < 50000) break;
+        if (res.refused != null) T.size = Math.max(minB, Math.floor(res.refused / 2));
+      }
+      T.streams--;
+    }
+    async function pinger() {
+      var i = 0;
+      while (!pingStop && !S.cancelled) { try { pings.push([now(), await pingOnce(900 + (i++))]); } catch (e) { /* token ended or aborted */ } await sleep(220); }
+    }
+    var workers = [];
+    for (var i = 0; i < startN && i < maxN; i++) workers.push(stream());
+    var pingP = pinger();
+    var prevRate = 0, lastGrow = 0;
+    T.last = T.bytes; T.lastT = now();
+    await new Promise(function (resolve) {
+      var timer = setInterval(function () {
+        var tn = now(), dt = tn - T.lastT, rate = (T.bytes - T.last) * 8 / (dt / 1000) / 1e6;
+        T.last = T.bytes; T.lastT = tn;
+        var el0 = tn - T.t0;
+        T.bins.push({ t: el0, mbps: rate }); feedGauge(rate);
+        if (T.streams < maxN && T.rampAt == null && el0 - lastGrow > 500 && rate > prevRate * 1.1 && T.bins.length > 2) { workers.push(stream()); lastGrow = el0; }
+        prevRate = rate;
+        var after = T.bins.filter(function (b) { return b.t >= (T.rampAt != null ? T.rampAt : 1500); }).length;
+        if (S.cancelled || el0 >= 8000 || T.streams === 0 || (T.rampAt != null && after >= 8)) { clearInterval(timer); resolve(); }
+      }, 250);
+    });
+    T.stop = true; pingStop = true;
+    var grace = now() + 1500;
+    while (T.streams > 0 && now() < grace) await sleep(50);
+    ctrls.forEach(function (c) { try { c.abort(); } catch (e) { /* ignore */ } });
+    await Promise.all(workers.map(function (w) { return w.catch(function () {}); })); await pingP;
+    var from = T.rampAt != null ? T.rampAt : 1500;
+    var post = T.bins.filter(function (b) { return b.t >= from; }).map(function (b) { return b.mbps; });
+    if (post.length < 3) post = T.bins.slice(Math.floor(T.bins.length / 2)).map(function (b) { return b.mbps; });
+    var secs = Math.max(0.25, (now() - T.t0) / 1000);
+    var speed = post.length ? percentile(post, 0.9) : T.bytes * 8 / secs / 1e6;
+    var lat = pings.filter(function (p) { return p[0] - T.t0 >= 500 || pings.length < 4; }).map(function (p) { return p[1]; });
+    return { mbps: speed, cv: cv(post), failures: T.failures, bytes: T.bytes, loaded_ms: median(lat), samples: post.length };
+  }
+  async function localLeg(sess) {
+    var out = { status: 'ok' }, lim = sess.limits;
+    legActive('lan'); phase('Timing your Wi-Fi'); setSpeedMode(false); showMs(null);
+    var idle = await pingSeries(Math.max(5, Math.min(20, lim.ping_count || 20)), function (v) { showMs(v); });
+    out.idle_ms = median(idle); out.jitter_ms = jitterOf(idle);
+    legSet('lan', fmtMs(out.idle_ms) + ' ms', 'idle', grade(out.idle_ms, 30, 100));
+    legActive('dns'); phase('Timing name lookups'); showMs(null);
+    var dns = null;
+    try { dns = await dnsLeg(sess); } catch (e) { dns = null; }
+    out.dns = dns;
+    if (dns && dns.cold_ms != null) legSet('dns', fmtMs(dns.cold_ms) + ' ms', 'cached ' + fmtMs(dns.warm_ms) + ' ms', grade(dns.cold_ms, 80, 250));
+    else legSet('dns', '—', 'measured by the hall sensor', null);
+    var started = now();
+    ['gw', 'edge', 'edge1'].forEach(function (id) { legEls[id].what.textContent = legEls[id].defWhat; });
+    legActive('gw'); phase('Timing the venue path'); showMs(null);
+    while (now() - started < (reduced() ? 600 : 1500) && !(S.path && S.path.path && S.path.path.edge1_ms && S.path.path.edge1_ms.idle != null)) { checkCancel(); await sleep(100); }
+    legActive(null);
+    var budget = Math.max(200000, lim.bytes_local || 50000000), downB = Math.floor(budget * 0.6);
+    setSpeedMode(true); loopOn(); legActive('lan');
+    gaugeMode('down'); phase('On-network download', 'From the venue test box'); $('lgL').textContent = 'Download · live'; G.samples = []; G.target = 0;
+    var d = await transferLeg('down', downB);
+    checkCancel();
+    out.down_mbps = d.mbps; out.loaded_down_ms = d.loaded_ms; out.bytes = d.bytes; var failures = d.failures, cvs = [d.cv];
+    G.target = d.mbps; feedGauge(d.mbps);
+    await sleep(reduced() ? 0 : 250);
+    gaugeMode('up'); phase('On-network upload', 'To the venue test box'); $('lgL').textContent = 'Upload · live'; G.samples = []; G.target = 0;
+    var u = await transferLeg('up', Math.max(200000, budget - d.bytes));
+    checkCancel();
+    out.up_mbps = u.mbps; out.loaded_up_ms = u.loaded_ms; out.bytes += u.bytes; failures += u.failures; cvs.push(u.cv);
+    G.target = u.mbps; feedGauge(u.mbps);
+    out.cv = Math.max(cvs[0] || 0, cvs[1] || 0); out.failures = failures;
+    var worst = Math.max(out.loaded_down_ms || 0, out.loaded_up_ms || 0);
+    legSet('lan', fmtMs(out.idle_ms) + ' ms', 'loaded ' + (worst ? fmtMs(worst) + ' ms' : 'n/a'), grade(worst || out.idle_ms, 100, 300));
+    if (!(out.down_mbps > 0) && !(out.up_mbps > 0)) out.status = 'unavailable';
+    return out;
+  }
+  function internetPlan(budget) {
+    var downTiers = [[1e5, 1, true], [1e5, 9], [1e6, 8], [1e7, 6], [25e6, 4]], upTiers = [[1e5, 8], [1e6, 6], [1e7, 4], [25e6, 3]];
+    var meas = [{ type: 'latency', numPackets: 20 }];
+    function fill(type, tiers, limit) {
+      var cum = 0;
+      for (var i = 0; i < tiers.length; i++) {
+        var t = tiers[i], count = Math.min(t[1], Math.floor((limit - cum) / t[0]));
+        if (count < 1) break;
+        var m = { type: type, bytes: t[0], count: count }; if (t[2]) m.bypassMinDuration = true;
+        meas.push(m); cum += t[0] * count;
+        if (count < t[1]) break;
+      }
+    }
+    fill('download', downTiers, Math.floor(budget * 0.55)); fill('upload', upTiers, Math.floor(budget * 0.4));
+    return meas;
+  }
+  /** The colo is in the /cdn-cgi/trace BODY (not in __down headers, 12 section 4.2 / test/fixtures/cloudflare/README.md). */
+  async function cloudflareTrace() {
+    var ac = new AbortController(), timer = setTimeout(function () { ac.abort(); }, 4000);
+    try {
+      var r = await fetch(CF_BASE + '/cdn-cgi/trace', { mode: 'cors', cache: 'no-store', credentials: 'omit', signal: ac.signal });
+      if (!r.ok) return null;
+      var m = /^colo=([A-Za-z0-9]{1,8})$/m.exec((await r.text()).slice(0, 4096));
+      return { colo: m ? m[1].toUpperCase() : '' };
+    } catch (e) { return null; } finally { clearTimeout(timer); }
+  }
+  async function slotCall(action) {
+    var r = await http('POST', API + '/sessions/' + S.sess.session_id + '/internet-slot', { json: { action: action }, headers: { 'X-Exp-View-Proof': S.proof }, timeout: 6000 });
+    if (!r.ok || !r.body) { var e = new Error('slot'); e.status = r.status; throw e; }
+    return r.body;
+  }
+  function reasonText(why) { return INTERNET_REASON[why] || 'The internet part of the test is not available right now.'; }
+  async function internetLeg(sess) {
+    var cfg = S.cfg;
+    if (!cfg.internet_leg || !cfg.internet_leg.enabled || sess.internet_leg === 'unavailable') {
+      legSet('cf', 'n/a', 'not enabled here', null); return { status: 'unavailable', note: reasonText('disabled') };
+    }
+    legActive('cf'); setSpeedMode(false); showMs(null);
+    var slot = await slotCall('acquire'), waitUntil = now() + 45000;
+    while (slot.state === 'queued' && now() < waitUntil) {
+      var txt = 'Waiting for a free internet slot' + (slot.queue_position ? ' — you are #' + slot.queue_position : '');
+      phase(txt, 'Your on-network results are ready'); legSet('cf', '…', 'queued' + (slot.queue_position ? ' #' + slot.queue_position : ''), null); legEls.cf.li.classList.remove('done');
+      await sleep(Math.max(500, (slot.retry_after_s || 2) * 1000)); checkCancel();
+      slot = await slotCall('acquire');
+    }
+    if (slot.state === 'paused') { legSet('cf', 'paused', slot.reason === 'wan_utilization' ? 'venue link busy' : 'paused by the network team', null); return { status: 'paused', note: reasonText(slot.reason) }; }
+    if (slot.state === 'unavailable') { legSet('cf', 'n/a', 'not enabled here', null); return { status: 'unavailable', note: reasonText(slot.reason || 'disabled') }; }
+    if (slot.state !== 'granted') { legSet('cf', 'queued', 'no free slot', null); return { status: 'queued', note: reasonText('capacity') }; }
+    S.slot = true;
+    try {
+      phase('Timing Cloudflare'); showMs(null);
+      var trace = await cloudflareTrace();
+      if (!trace) { legSet('cf', 'n/a', 'could not reach Cloudflare', 'crit'); return { status: 'unavailable', note: 'Cloudflare could not be reached from this network, so the internet speed was not measured.' }; }
+      return await runCloudflare(trace.colo);
+    } finally {
+      if (S.slot) { S.slot = false; slotCall('release').catch(function () {}); }
+    }
+  }
+  function runCloudflare(colo) {
+    return new Promise(function (resolve) {
+      var Engine = window.CFSpeedTest, sess = S.sess, errors = 0, firstErr = null, finished = false, curType = null, engine;
+      var cfg = {
+        autoStart: false, logAimApiUrl: null, logMeasurementApiUrl: null, includeCredentials: false,       // results stay on-prem
+        measurements: internetPlan(sess.limits.bytes_internet || 200000000), abortTestDuration: 30000, bandwidthFinishRequestDuration: 1000
+      };
+      try { engine = new Engine(cfg); } catch (e) { legSet('cf', 'n/a', 'could not start', 'crit'); resolve({ status: 'unavailable', note: 'The internet test could not start.' }); return; }
+      S.cf = engine;
+      function finish() {
+        if (finished) return; finished = true; S.cf = null;
+        var R = engine.results, down = R.getDownloadBandwidth(), up = R.getUploadBandwidth();
+        if (down == null && up == null) { legSet('cf', 'n/a', 'could not reach Cloudflare', 'crit'); resolve({ status: 'unavailable', note: 'Cloudflare could not be reached from this network, so the internet speed was not measured.', colo: colo }); return; }
+        var dp = R.getDownloadBandwidthPoints() || [], upp = R.getUploadBandwidthPoints() || [];
+        var bytes = 0, rates = [];
+        dp.concat(upp).forEach(function (p) { bytes += (p.transferSize > 0 ? p.transferSize : p.bytes) || 0; rates.push(p.bps || 0); });
+        var out = { status: 'ok', colo: colo, down_mbps: down == null ? null : down / 1e6, up_mbps: up == null ? null : up / 1e6,
+          idle_ms: R.getUnloadedLatency(), jitter_ms: R.getUnloadedJitter(), loaded_down_ms: R.getDownLoadedLatency(), loaded_up_ms: R.getUpLoadedLatency(),
+          cv: cv(rates), failures: errors, bytes: bytes };
+        resolve(out);
+      }
+      engine.onPhaseChange = function (p) {
+        var t = p.measurement && p.measurement.type, lbl = { latency: 'Timing Cloudflare ' + colo, download: 'Internet download', upload: 'Internet upload' }[t];
+        if (t === curType) return; curType = t; if (!lbl) return;
+        if (t === 'latency') { setSpeedMode(false); showMs(null); phase(lbl); }
+        else { setSpeedMode(true); loopOn(); gaugeMode(t === 'upload' ? 'up' : 'down'); G.samples = []; G.target = 0; phase(lbl, (t === 'upload' ? 'To Cloudflare ' : 'From Cloudflare ') + colo); $('lgL').textContent = (t === 'upload' ? 'Upload' : 'Download') + ' · live'; }
+      };
+      engine.onResultsChange = function (p) {
+        var R = engine.results;
+        if (p.type === 'latency') { var pts = R.getUnloadedLatencyPoints(); if (pts.length) showMs(pts[pts.length - 1]); var idl = R.getUnloadedLatency(); if (idl != null) legSet('cf', fmtMs(idl) + ' ms', 'idle · ' + colo, grade(idl, 40, 120)); }
+        else if (p.type === 'download' || p.type === 'upload') {
+          var arr = p.type === 'download' ? R.getDownloadBandwidthPoints() : R.getUploadBandwidthPoints();
+          if (arr && arr.length) feedGauge(arr[arr.length - 1].bps / 1e6);
+        }
+      };
+      engine.onError = function (msg) { errors++; if (!firstErr) firstErr = msg; };
+      engine.onFinish = function () { finish(); };
+      engine.onRunningChange = function (running) { if (!running && !finished && engine.isFinished) finish(); };
+      if (S.cancelled) { finish(); return; }
+      engine.play();
+      var guard = setInterval(function () { if (finished) { clearInterval(guard); } else if (S.cancelled) { try { engine.pause(); } catch (e) { /* ignore */ } clearInterval(guard); finish(); } }, 300);
+    });
+  }
+  function numLeg(o) {
+    var out = { status: o.status };
+    if (o.status === 'ok') {
+      var m = { down_mbps: 100000, up_mbps: 100000, idle_ms: 60000, jitter_ms: 60000, loaded_down_ms: 60000, loaded_up_ms: 60000 };
+      Object.keys(m).forEach(function (k) { var v = clampNum(o[k], m[k]); if (v != null) out[k] = r2(v); });
+      var worst = Math.max(out.loaded_down_ms || 0, out.loaded_up_ms || 0);
+      if (worst > 0) out.rpm = Math.min(1000000, Math.round(60000 / worst));
+      var c = clampNum(o.cv, 10); if (c != null) out.cv = r2(c);
+      if (typeof o.failures === 'number') out.failures = Math.max(0, Math.min(10000, Math.round(o.failures)));
+      if (typeof o.bytes === 'number') out.bytes = Math.max(0, Math.min(1099511627776, Math.round(o.bytes)));
+    }
+    if (o.colo && /^[A-Za-z0-9]{1,8}$/.test(o.colo)) out.colo = o.colo;
+    return out;
+  }
+  function connectionHint() {
+    try { var t = navigator.connection && navigator.connection.type; return ['wifi', 'ethernet', 'cellular', 'other'].indexOf(t) >= 0 ? t : 'unknown'; } catch (e) { return 'unknown'; }
+  }
+  function buildSubmission(local, inet, dns) {
+    var sub = { schema: 'exp.speedtest.submission/1', legs: { local: numLeg(local) }, client: { connection_hint: connectionHint() },
+      duration_ms: Math.max(0, Math.min(60000, Math.round(now() - S.t0))) };
+    if (inet) sub.legs.internet = numLeg(inet);
+    var dl = { source: 'browser' };
+    if (dns && dns.cold_ms != null) dl.cold_ms = r1(clampNum(dns.cold_ms, 60000));
+    if (dns && dns.warm_ms != null) dl.warm_ms = r1(clampNum(dns.warm_ms, 60000));
+    sub.legs.dns = dl;
+    if (S.zoneHint) sub.zone_hint = S.zoneHint;
+    return sub;
+  }
+  async function submitResult(sub) {
+    var sid = S.sess.session_id, hdr = { 'X-Exp-View-Proof': S.proof };
+    for (var i = 0; i < 3; i++) {
+      var r;
+      try { r = await http('POST', API + '/sessions/' + sid + '/result', { json: sub, headers: hdr, timeout: 12000 }); }
+      catch (e) { await sleep(800 * (i + 1)); continue; }
+      if (r.status === 202 && r.body) return r.body;
+      if (r.status === 409 && errCode(r) === 'already_submitted') return null;
+      if (r.status === 503 && r.retryAfter && i < 2) { await sleep(Math.min(5000, r.retryAfter * 1000)); continue; }
+      if (r.status >= 500 || r.status === 0) { await sleep(800 * (i + 1)); continue; }
+      var err = new Error(errCode(r) || 'submit'); err.status = r.status; throw err;
+    }
+    throw new Error('submit');
+  }
+  function resetRun() {
+    legReset(); G.shown = G.target = 0; G.samples = []; trace(); G.mode = 'text';
+    $('results').hidden = true; S.animated = false; S.view = null; S.result = null; S.path = null; S.report = ''; S.zoneFix = ''; S.note = '';
+    $('scoreArc').setAttribute('stroke-dashoffset', String(SCORE_ARC)); $('scoreN').textContent = '0';
+    $('report').hidden = true; $('zonefix').hidden = true; $('rText').value = ''; $('zText').value = ''; $('rDone').textContent = ''; $('zDone').textContent = ''; $('copyStat').textContent = '';
+    $('reportBtn').setAttribute('aria-expanded', 'false'); $('fixZone').setAttribute('aria-expanded', 'false');
+    notice('');
+  }
+  async function acquireWake() {
+    try { if (window.isSecureContext && navigator.wakeLock) S.wake = await navigator.wakeLock.request('screen'); } catch (e) { S.wake = null; }
+  }
+  function releaseWake() { try { if (S.wake) S.wake.release(); } catch (e) { /* ignore */ } S.wake = null; }
+  function idleUi() {
+    S.running = false; loopOff(); releaseWake(); stopPathPoll(); legActive(null);
+    $('stage').classList.remove('running'); $('cancel').hidden = true; $('spinner').hidden = true;
+    setTimeout(function () { if (!S.running) { $('go').hidden = false; $('live').hidden = true; } }, reduced() ? 0 : 900);
+  }
+  async function runTest() {
+    if (S.running) return;
+    S.running = true; S.cancelled = false; S.ac = new AbortController(); S.t0 = now(); S.measured = null;
+    resetRun();
+    $('go').hidden = true; $('live').hidden = false; $('cancel').hidden = false; $('stage').classList.add('running'); phase('Starting…');
+    $('lgL').textContent = 'Live throughput'; $('lgR').textContent = '';
+    G.mode = 'text'; showMs(null); $('spinner').hidden = false;
+    acquireWake();
+    try {
+      try { S.sess = await createSession(); }
+      catch (e) { notice(sessionErrorText(e), true); phase('Test not started'); idleUi(); return; }
+      startPathPoll();
+      var local = await localLeg(S.sess);
+      checkCancel();
+      var inet = await internetLeg(S.sess);
+      checkCancel();
+      try { var pr = await http('GET', API + '/sessions/' + S.sess.session_id + '/path', { headers: { 'X-Exp-View-Proof': S.proof }, timeout: 3000 }); if (pr.ok && pr.body) { S.path = pr.body; applyPath(pr.body); } } catch (e) { /* ignore */ }
+      stopPathPoll();
+      var cfLoaded = inet && inet.status === 'ok' ? Math.max(inet.loaded_down_ms || 0, inet.loaded_up_ms || 0) : 0;
+      if (inet && inet.status === 'ok') legSet('cf', fmtMs(inet.idle_ms) + ' ms', 'loaded ' + (cfLoaded ? fmtMs(cfLoaded) + ' ms' : 'n/a') + ' · ' + (inet.colo || ''), grade(cfLoaded || inet.idle_ms, 100, 300));
+      S.measured = { local: local, inet: inet, dns: local.dns };
+      phase('Sending your result…'); setSpeedMode(false); showMs(null);
+      var acc = await submitResult(buildSubmission(local, S.cfg.internet_leg.enabled ? inet : null, local.dns));
+      phase('Done');
+      S.result = acc;
+      idleUi();
+      showResultsFromRun(acc);
+      pollView();
+    } catch (e) {
+      if (e && e.cancelled) { phase('Test stopped', 'Nothing was sent.'); notice('Test stopped. Nothing was sent.'); }
+      else { phase('Test stopped'); notice('Something went wrong while testing (' + (e && e.message || 'error') + '). Try again.', true); }
+      releaseSlotQuiet(); idleUi();
+    }
+  }
+  function releaseSlotQuiet() { if (S.slot && S.sess) { S.slot = false; slotCall('release').catch(function () {}); } }
+  function cancelTest() {
+    S.cancelled = true; try { if (S.ac) S.ac.abort(); } catch (e) { /* ignore */ } try { if (S.cf) S.cf.pause(); } catch (e) { /* ignore */ }
+  }
+  function bestLeg(legs) {
+    var i = legs && legs.internet, l = legs && legs.local;
+    return (i && i.status === 'ok' && (i.down_mbps != null || i.up_mbps != null)) ? i : l;
+  }
+  function verdictFor(score, leg, tg) {
+    if (score == null) return 'We could not measure a speed this time.';
+    var t = score.total, base = t >= 80 ? 'Great for video calls and streaming.' : t >= 60 ? 'Good for everyday use; some things may feel slow.' : t >= 40 ? 'Usable, but video calls may struggle.' : 'Your connection is struggling right now.';
+    if (t >= 60 && leg && leg.up_mbps != null && leg.up_mbps < tg.up_mbps) base += ' Big uploads are slower right now.';
+    return base;
+  }
+  function goodFor(leg, tg) {
+    if (!leg) return [];
+    var d = leg.down_mbps, u = leg.up_mbps, lat = Math.max(leg.loaded_down_ms || 0, leg.loaded_up_ms || 0) || leg.idle_ms || 0;
+    function lvl(good, mid) { return good ? 'ok' : (mid ? 'mid' : 'bad'); }
+    return [['Video calls', lvl(d >= 5 && u >= 3 && lat <= 150, d >= 2 && u >= 1 && lat <= 300)], ['HD streaming', lvl(d >= 10, d >= 5)],
+      ['Web and email', lvl(d >= 2 && (leg.idle_ms || 0) < 200, d >= 0.5)], ['Large uploads', lvl(u >= Math.max(10, tg.up_mbps), u >= 3)]];
+  }
+  function renderSpeeds(r, animate) {
+    var legs = r.legs || {}, loc = legs.local || {}, inet = legs.internet || {};
+    var tiles = [['Local down', loc, 'down_mbps', 'down'], ['Local up', loc, 'up_mbps', 'up'], ['Internet down', inet, 'down_mbps', 'down'], ['Internet up', inet, 'up_mbps', 'up']];
+    var maxv = Math.max.apply(null, tiles.map(function (t) { return t[1][t[2]] || 0; }).concat([1]));
+    var sp = $('speeds'); clear(sp);
+    tiles.forEach(function (t) {
+      var c = el('div', 'sp'), v = t[1][t[2]];
+      c.appendChild(el('span', 'k', t[0]));
+      var val = el('span', 'v', v == null ? '—' : fmtMbps(v)); if (v != null) val.appendChild(el('small', '', 'Mb/s')); c.appendChild(val);
+      var bar = el('div', 'bar'), i = el('i', t[3]); bar.appendChild(i); c.appendChild(bar);
+      if (v == null && t[1].status && t[1].status !== 'ok') c.appendChild(el('span', 'note', { paused: 'Paused by the network', queued: 'No free slot', unavailable: 'Not available', skipped: 'Skipped' }[t[1].status] || ''));
+      sp.appendChild(c);
+      var f = v ? Math.max(0.03, v / maxv) : 0;
+      if (animate && !reduced()) { requestAnimationFrame(function () { requestAnimationFrame(function () { i.style.transform = 'scaleX(' + f.toFixed(3) + ')'; }); }); } else i.style.transform = 'scaleX(' + f.toFixed(3) + ')';
+    });
+  }
+  function renderWaterfall(r, fine, animate) {
+    var legs = r.legs || {}, loc = legs.local || {}, inet = legs.internet || {}, p = legs.path || (S.path && S.path.path) || null;
+    var wf = $('wf'), key = $('wfKey'), note = $('wfNote'); clear(wf); clear(key);
+    $('colo').textContent = inet.server && /^cloudflare:[A-Z0-9]{1,8}$/.test(inet.server) ? inet.server.slice(11) : (S.measured && S.measured.inet && S.measured.inet.colo || '');
+    var lan = loc.idle_ms, cf = inet.status === 'ok' ? inet.idle_ms : null, segs = [];
+    if (lan != null && cf != null) {
+      var gw = p && p.gateway_ms && p.gateway_ms.idle, ed = p && p.edge_ms && p.edge_ms.idle, e1 = p && p.edge1_ms && p.edge1_ms.idle;
+      if (fine && gw != null && ed != null && e1 != null) {
+        segs = [['Wi-Fi and venue network', lan], ['core to gateway', gw], ['gateway to edge', Math.max(0.2, ed - gw)], ['edge to ISP first hop', Math.max(0.2, e1 - ed)],
+          ['internet to Cloudflare', Math.max(0.5, cf - lan - e1)]];
+      } else segs = [['On the venue network', lan], ['Beyond the venue, to Cloudflare', Math.max(0.5, cf - lan)]];
+      note.textContent = fine ? 'An estimate: your own measurements plus the venue’s timings from the test box, which are shared by everyone and not specific to you.' : 'An estimate. It fills in with more detail when the network team’s measurements for your device arrive.';
+    } else { note.textContent = 'Not available: it needs both the on-network and the internet legs.'; }
+    segs.forEach(function (s, i) {
+      var span = el('span', 'c' + i, s[1] >= 4 ? s[1].toFixed(0) : ''); wf.appendChild(span);
+      var grow = function () { span.style.flexGrow = String(s[1]); };
+      if (animate && !reduced()) requestAnimationFrame(function () { requestAnimationFrame(grow); }); else grow();
+      var k = el('span'), sw = el('i', 'sw c' + i); k.appendChild(sw); k.appendChild(document.createTextNode(s[0] + ' ')); k.appendChild(el('b', '', s[1].toFixed(1) + ' ms')); key.appendChild(k);
+    });
+    wf.setAttribute('aria-label', segs.length ? 'Estimated time to Cloudflare by segment: ' + segs.map(function (s) { return s[0] + ' ' + s[1].toFixed(1) + ' ms'; }).join(', ') : 'Not available');
+  }
+  function renderChecks(view) {
+    var ul = $('checks'); clear(ul);
+    var ev = view && view.evidence ? view.evidence.state : 'pending', got = (view && view.checks) || [], seen = {};
+    function row(kind, state, text) {
+      var li = el('li'), ic = el('span', 'ic ' + (state === 'checking' ? 'wait' : state === 'ok' ? 'ok' : state === 'attention' ? 'attention' : 'na'));
+      ic.appendChild(icon(state === 'checking' ? 'spin' : state === 'ok' ? 'check' : state === 'attention' ? 'bang' : 'dash')); li.appendChild(ic);
+      var body = el('div'); body.appendChild(el('b', '', CHECK_LABELS[kind] || 'Check'));
+      body.appendChild(document.createTextNode(' ')); body.appendChild(el('span', 'm', '— ' + (state === 'checking' ? 'checking…' : (text || { ok: 'nothing unusual', attention: 'worth a look', unavailable: 'not available here' }[state] || ''))));
+      li.appendChild(body); ul.appendChild(li);
+    }
+    got.forEach(function (c) { if (c && CHECK_LABELS[c.kind] && !seen[c.kind]) { seen[c.kind] = 1; row(c.kind, c.state, c.text); } });
+    if (ev === 'pending' || ev === 'correlating') DEFAULT_CHECKS.forEach(function (k) { if (!seen[k]) row(k, 'checking'); });
+    else if (!got.length) row('baseline', 'unavailable', 'Detailed measurements are not available at this event; you only get the test above.');
+  }
+  function renderWhere(view) {
+    var box = $('whereLine'); if (!view) { box.hidden = true; return; }
+    var named = view.zone_name && view.zone_source !== 'unresolved';
+    box.hidden = false; clear(box);
+    var sp = el('span'); if (named) { sp.appendChild(document.createTextNode('You were in ')); sp.appendChild(el('b', '', view.zone_name)); } else sp.textContent = 'We could not tell where you were.';
+    box.appendChild(sp);
+    var b = el('button', 'linkbtn', named ? 'Not right?' : 'Tell us'); b.type = 'button'; b.id = 'fixZone'; b.setAttribute('aria-expanded', String(!$('zonefix').hidden)); b.setAttribute('aria-controls', 'zonefix');
+    b.addEventListener('click', toggleZoneFix); box.appendChild(b);
+    if (named) zoneChip(view.zone_name);
+  }
+  function renderNote(view) {
+    var n = $('noteView'), c = view && typeof view.comment === 'string' && view.comment ? view.comment : (S.viewMode ? '' : S.note);
+    n.hidden = !c; n.textContent = c ? 'Your note: ' + c : '';
+  }
+  function renderFlags(flags) {
+    var notes = [], f = flags || [];
+    if (f.indexOf('internet_paused') >= 0) notes.push('The internet part of the test was paused by the network team.');
+    if (f.indexOf('internet_queued') >= 0) notes.push('The internet part of the test had to wait for a free slot and was skipped.');
+    if (f.indexOf('internet_unavailable') >= 0) notes.push('The internet part of the test was not available.');
+    if (f.indexOf('dns_fallback') >= 0) notes.push('Name-lookup timing is measured by the hall sensor, not by your device.');
+    if (f.indexOf('nat_suspected') >= 0) notes.push('We could not be sure which device this was, so the network team will not match it to your Wi-Fi.');
+    if (f.indexOf('bytes_capped') >= 0) notes.push('The test stopped early to protect the venue network.');
+    $('flagNote').textContent = notes.join(' ');
+  }
+  /** Renders a result. `view` is a session view (or null while it is not known yet). Safe to call again with fresher data. */
+  function showResults(r, view, diag, opt) {
+    opt = opt || {};
+    var first = !S.animated, animate = first && !opt.still, tg = S.cfg ? S.cfg.targets : { down_mbps: 25, up_mbps: 10 };
+    $('results').hidden = false;
+    var score = r.score;
+    if (first) {
+      S.animated = true;
+      var go = function () { $('scoreArc').setAttribute('stroke-dashoffset', (SCORE_ARC * (1 - (score ? score.total : 0) / 100)).toFixed(1)); };
+      if (animate && !reduced()) {
+        requestAnimationFrame(function () { requestAnimationFrame(go); });
+        var n = 0, tot = score ? score.total : 0, tick = setInterval(function () { n = Math.min(tot, n + 3); $('scoreN').textContent = String(n); if (n >= tot) clearInterval(tick); }, 30);
+      } else { go(); $('scoreN').textContent = score ? String(score.total) : '—'; }
+      if (!score) $('scoreN').textContent = '—';
+    }
+    var parts = $('parts'); clear(parts);
+    if (score) [['Speed', score.speed], ['Responsiveness', score.responsiveness], ['Stability', score.stability]].forEach(function (x) { parts.appendChild(el('span', 'part', x[0] + ' ' + x[1])); });
+    var leg = bestLeg(r.legs);
+    $('verdict').textContent = verdictFor(score, leg, tg);
+    $('why').textContent = diag && diag.user_text ? diag.user_text : (opt.viewOnly ? '' : 'The network team is looking at the venue side of your test.');
+    renderFlags(r.flags);
+    renderSpeeds(r, first && animate);
+    var fine = !!(view && view.evidence && view.evidence.state !== 'pending');
+    renderWaterfall(r, fine, first && animate);
+    var gf = $('goodFor'); clear(gf);
+    goodFor(leg, tg).forEach(function (x) { var d = el('div', 'gf'); d.appendChild(icon(x[1] === 'ok' ? 'check' : x[1] === 'mid' ? 'dash' : 'cross', x[1])); d.appendChild(document.createTextNode(x[0])); gf.appendChild(d); });
+    renderChecks(view); renderWhere(view); renderNote(view);
+    var dnsLeg = r.legs && r.legs.dns;
+    if (dnsLeg && dnsLeg.source === 'probe') legSet('dns', dnsLeg.cold_ms != null ? fmtMs(dnsLeg.cold_ms) + ' ms' : '—', 'measured by the hall sensor', null);
+    if (first && !S.viewMode && window.innerWidth < 900) setTimeout(function () { $('results').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); }, reduced() ? 0 : 400);
+    $('announce').textContent = 'Test complete.' + (score ? ' Score ' + score.total + ' out of 100.' : '');
+  }
+  function resultFromRun(acc) {
+    var m = S.measured, legs = { local: numLeg(m.local) };
+    if (m.inet) legs.internet = numLeg(m.inet);
+    var dl = m.dns && m.dns.cold_ms != null ? { cold_ms: m.dns.cold_ms, warm_ms: m.dns.warm_ms, source: 'browser' } : { cold_ms: null, warm_ms: null, source: 'probe' };
+    legs.dns = dl; if (S.path && S.path.path) legs.path = S.path.path;
+    if (m.inet && m.inet.colo) { legs.internet.server = 'cloudflare:' + m.inet.colo; }
+    return { legs: legs, score: acc ? acc.score : null, flags: acc ? acc.flags : [] };
+  }
+  function showResultsFromRun(acc) {
+    var shareId = S.sess.session_id;
+    S.shareId = shareId;
+    var r = acc ? resultFromRun(acc) : resultFromRun(null);
+    S.result = r;
+    var link = location.origin + '/st/r/' + shareId + '#k=' + S.key;
+    $('shareLink').textContent = link;
+    var minimalView = { evidence: { state: 'pending', kinds_done: [] }, checks: [], zone_name: null, zone_source: 'unresolved' };
+    showResults(r, minimalView, acc && acc.diagnosis, {});
+    $('whereLine').hidden = true;
+    var inet = S.measured.inet;
+    if (inet && inet.status !== 'ok' && inet.note) notice(inet.note);
+  }
+  async function pollView() {
+    var sid = S.sess.session_id, t0 = now(), delay = 1500;
+    if (S.pollTimer) clearTimeout(S.pollTimer);
+    var step = async function () {
+      if (!S.sess || S.sess.session_id !== sid || S.running) return;
+      try {
+        var r = await http('GET', API + '/sessions/' + sid, { headers: { 'X-Exp-View-Proof': S.proof }, timeout: 6000 });
+        if (r.ok && r.body) {
+          S.view = r.body;
+          var res = r.body.result || S.result;
+          showResults(res, r.body, r.body.diagnosis, {});
+          if (r.body.evidence && (r.body.evidence.state === 'final' || r.body.evidence.state === 'unavailable')) return;
+        }
+      } catch (e) { /* keep polling */ }
+      if (now() - t0 > 6 * 60 * 1000) return;
+      delay = Math.min(5000, delay + 500); S.pollTimer = setTimeout(step, delay);
+    };
+    S.pollTimer = setTimeout(step, 800);
+  }
+  async function postComment() {
+    var parts = [];
+    if (S.zoneFix) parts.push('[where I was] ' + S.zoneFix);
+    if (S.report) parts.push(S.report);
+    var text = cleanText(parts.join('\n'), 500);
+    if (!text || !S.sess) return false;
+    var r = await http('POST', API + '/sessions/' + S.sess.session_id + '/comment', { json: { comment: text }, headers: { 'X-Exp-View-Proof': S.proof }, timeout: 8000, raw: true });
+    if (r.status === 204) { S.note = text; renderNote({ comment: text }); return true; }
+    return false;
+  }
+  function toggleZoneFix() {
+    var f = $('zonefix'); f.hidden = !f.hidden; $('fixZone') && $('fixZone').setAttribute('aria-expanded', String(!f.hidden)); if (!f.hidden) $('zText').focus();
+  }
+  function selectLink() {
+    try { var r = document.createRange(); r.selectNodeContents($('shareLink')); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); return true; } catch (e) { return false; }
+  }
+  async function copyLink() {
+    var text = $('shareLink').textContent, stat = $('copyStat');
+    if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(text); stat.textContent = 'Link copied.'; return; } catch (e) { /* fall through to select-the-code */ }
+    }
+    selectLink();
+    var ok = false; try { ok = document.execCommand && document.execCommand('copy'); } catch (e) { ok = false; }
+    stat.textContent = ok ? 'Link copied.' : 'Link selected: press and hold, then choose Copy.';
+  }
+  async function loadShared(id, k) {
+    S.viewMode = true; document.body.classList.add('shared-only');
+    $('again').textContent = 'Run your own test'; $('shareBox').hidden = true; $('reportBtn').hidden = true; $('fixZone').hidden = true;
+    try { S.key = k; S.proof = viewProof(k); } catch (e) { sharedError(); return; }
+    S.sess = { session_id: id }; S.shareId = id;
+    var r = await retrying(function () { return http('GET', API + '/sessions/' + id, { headers: { 'X-Exp-View-Proof': S.proof } }); }, 3);
+    if (!r || !r.ok || !r.body) { sharedError(); return; }
+    S.view = r.body; S.measured = { inet: null };
+    var res = r.body.result || { legs: {}, score: null, flags: [] };
+    showResults(res, r.body, r.body.diagnosis, { still: true, viewOnly: true });
+    $('whereLine').querySelectorAll('button').forEach(function (b) { b.hidden = true; });
+    var again = function () {
+      if (!S.sess || S.sess.session_id !== id) return;
+      http('GET', API + '/sessions/' + id, { headers: { 'X-Exp-View-Proof': S.proof } }).then(function (q) {
+        if (q.ok && q.body) { S.view = q.body; showResults(q.body.result || res, q.body, q.body.diagnosis, { still: true, viewOnly: true }); $('whereLine').querySelectorAll('button').forEach(function (b) { b.hidden = true; });
+          if (q.body.evidence && (q.body.evidence.state === 'final' || q.body.evidence.state === 'unavailable')) return; }
+        S.pollTimer = setTimeout(again, 5000);
+      }, function () { S.pollTimer = setTimeout(again, 8000); });
+    };
+    if (!r.body.evidence || (r.body.evidence.state !== 'final' && r.body.evidence.state !== 'unavailable')) S.pollTimer = setTimeout(again, 4000);
+  }
+  function sharedError() {
+    $('results').hidden = true; var st = $('stage'); document.body.classList.remove('shared-only');
+    ['.gauge', '.trace', '.legend', '.phase'].forEach(function (q) { st.querySelector(q).hidden = true; }); document.querySelector('.legs').hidden = true;
+    notice('This link is not valid or the test is no longer stored. Ask the person who shared it for a new one, or run your own test.', true);
+    var b = el('button', 'btn primary', 'Run your own test'); b.type = 'button'; b.addEventListener('click', function () { location.assign('/'); });
+    st.querySelector('.ctrl').appendChild(b);
+  }
+  function onGo() {
+    if (S.running) return;
+    var v = String(S.cfg && S.cfg.consent && S.cfg.consent.version);
+    if (safeStorage('get', 'exp-st-consent') === v) { runTest(); return; }
+    $('consent').hidden = false; $('cAnon').focus();
+  }
+  function init() {
+    buildTicks(); buildLegs(); S.zoneHint = zoneHintFromUrl();
+    $('go').addEventListener('click', onGo);
+    $('cAnon').addEventListener('click', function () { $('consent').hidden = true; safeStorage('set', 'exp-st-consent', String(S.cfg.consent.version)); runTest(); });
+    $('cCancel').addEventListener('click', function () { $('consent').hidden = true; $('go').focus(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('consent').hidden) { $('consent').hidden = true; $('go').focus(); } });
+    $('cancel').addEventListener('click', cancelTest);
+    $('again').addEventListener('click', function () { if (S.viewMode) { location.assign('/'); return; } window.scrollTo({ top: 0, behavior: reduced() ? 'auto' : 'smooth' }); runTest(); });
+    $('reportBtn').addEventListener('click', function () { var r = $('report'); r.hidden = !r.hidden; $('reportBtn').setAttribute('aria-expanded', String(!r.hidden)); if (!r.hidden) $('rText').focus(); });
+    $('report').addEventListener('submit', async function (e) {
+      e.preventDefault(); var t = cleanText($('rText').value, 500).trim();
+      if (!t) { $('rDone').textContent = 'Add a few words first.'; return; }
+      S.report = t;
+      try { $('rDone').textContent = (await postComment()) ? 'Saved with your test.' : 'Could not save it. Try again.'; } catch (err) { $('rDone').textContent = 'Could not save it. Try again.'; }
+    });
+    $('zonefix').addEventListener('submit', async function (e) {
+      e.preventDefault(); var t = cleanText($('zText').value, 120).trim();
+      if (!t) { $('zDone').textContent = 'Say where you were first.'; return; }
+      S.zoneFix = t;
+      try { $('zDone').textContent = (await postComment()) ? 'Thanks, the network team will see this.' : 'Could not save it. Try again.'; } catch (err) { $('zDone').textContent = 'Could not save it. Try again.'; }
+    });
+    $('copy').addEventListener('click', copyLink);
+    $('shareLink').addEventListener('focus', selectLink);
+    var m = /^\/st\/r\/(st_[0-9A-HJKMNP-TV-Z]{26})\/?$/.exec(location.pathname), km = /^#k=([A-Za-z0-9_-]{43})$/.exec(location.hash);
+    loadConfig().then(function () {
+      if (m) { if (km) loadShared(m[1], km[1]); else { S.viewMode = true; document.body.classList.add('shared-only'); sharedError(); } }
+      else loadWhere();
+    }, function () { notice('Could not load the test page settings. Reload to try again.', true); $('go').disabled = true; });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
 </body>
 </html>

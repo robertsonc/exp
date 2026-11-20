@@ -131,8 +131,8 @@ jobs:
           ready="$(packaging/ready-components.sh)"
           echo "ready: ${ready:-none}"
           echo "list=$ready" >> "$GITHUB_OUTPUT"
-          for c in agent probe collector dashboard runner; do
-            case ",$ready," in *",$c,"*) ;; *) echo "::warning::component $c is not packageable yet (convention files missing); release.yml requires all five";; esac
+          for c in agent probe collector dashboard runner speedtest; do
+            case ",$ready," in *",$c,"*) ;; *) echo "::warning::component $c is not packageable yet (convention files missing); release.yml requires all six";; esac
           done
       - name: Unsigned build twice, byte-identical
         if: steps.comps.outputs.list != ''

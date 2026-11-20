@@ -67,7 +67,7 @@ argv, status reports or diagnostics (`AgentConfig.__repr__` hides it too).
 * **Manager unreachable / 5xx / 429:** keep the applied state, back off 30 s → 5 min (honouring `Retry-After`); components are
   never stopped. **401:** pause 5 min, log once, uninstall nothing. TLS: system CA store, hostname verification, ≥ TLS 1.2,
   `HTTPS_PROXY` honoured; only `MANAGER_URL` is ever contacted and redirects are never followed.
-* **Reconcile** (idempotent, order collector → runner → dashboard → probe): validate `exp.desired/1` → verify the signed release
+* **Reconcile** (idempotent, order collector → runner → speedtest → dashboard → probe): validate `exp.desired/1` → verify the signed release
   manifest (`openssl pkeyutl -verify -pubin -rawin`, cached per version, `min_agent_version` enforced) → self-update if the agent
   version differs → per component: download + sha256 against the *signed manifest* → safe unpack into staging → `requirements.apt`
   ∩ allowlist (anything else refuses the component) → service users → atomic rename to `/opt/exp/<c>/<ver>/` → render

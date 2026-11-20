@@ -54,12 +54,12 @@ without a token repairs the agent installation.
 1. Validate the doc against `exp.desired/1`; refuse invalid docs (report, keep the current state).
 2. Verify the release manifest signature (cache verified manifests per version).
 3. **Self-update** first if `agent.version` differs (§4).
-4. For each component in order **collector → runner → dashboard → probe**:
+4. For each component in order **collector → runner → speedtest → dashboard → probe**:
    1. Apt requirements: install only packages that are in **both** the artifact's `requirements.apt`
       and the agent's built-in allowlist (`busybox`, `busybox-static`, `iproute2`, `iputils-ping`,
       `iperf3`, `curl`, `openssl`, `ca-certificates`, `ethtool`, `iw`, `wpasupplicant`, `tcpdump`).
       Anything else → refuse the component and report.
-   2. Ensure the service user (`exp-collector`, `exp-vm`, `exp-dashboard`, `exp-runner`).
+   2. Ensure the service user (`exp-collector`, `exp-vm`, `exp-dashboard`, `exp-runner`, `exp-speedtest`).
    3. Install the artifact version if missing: download → sha256 against the manifest → safe-unpack
       into a staging dir → atomic rename to `/opt/exp/<c>/<ver>/`.
    4. Render `config.json` (atomic write, `0644`) and every `creds` entry (atomic, root `0600` in
@@ -67,7 +67,8 @@ without a token repairs the agent installation.
       the units reference but desired state left empty (missing files stop units from starting).
       For the collector, prepare `tls/` and `vm/` with the ownership in `01-contracts.md` §11 (root, never
       following symlinks) before the first start.
-   5. Type hooks: collector/dashboard → ensure TLS key + self-signed cert (`03-collector.md` §8);
+   5. Type hooks: speedtest → scoped `ping_group_range` drop-in + branding assets (`CR-m6-agent-packaging`);
+      collector/dashboard → ensure TLS key + self-signed cert (`03-collector.md` §8);
       probe → run `exp-probe preflight` against the new config and **refuse port changes that fail
       it**, keeping the previous config.
    6. Render units from the artifact's `systemd/` templates into `/etc/systemd/system/` (names

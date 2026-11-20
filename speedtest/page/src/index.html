@@ -41,7 +41,7 @@
           <g class="ticks" id="ticks"></g>
         </svg>
         <div class="readout">
-          <button class="go" id="go" type="button" aria-label="Start the speed test"><b id="goText">GO</b><span id="goSub">Start test</span></button>
+          <button class="go" id="go" type="button" disabled aria-label="Start the speed test"><b id="goText">GO</b><span id="goSub">Start test</span></button>
           <div class="live" id="live" hidden>
             <div class="num" id="num">0</div>
             <div class="unit" id="unit">Mb/s</div>
@@ -121,6 +121,7 @@
         <textarea id="rText" maxlength="500" placeholder="For example: video calls freeze at my booth"></textarea>
         <div><button class="btn primary" type="submit">Send with my test</button><span class="stat" id="rDone" role="status"></span></div>
       </form>
+      <p class="legnote" id="noteView" hidden></p>
       <div class="share" id="shareBox">
         <span>Share with support: give the help desk this link and they can open your test.</span>
         <div class="row"><span class="code" id="shareLink" tabindex="0"></span><button class="btn" id="copy" type="button">Copy link</button></div>

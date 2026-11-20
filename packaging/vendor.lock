@@ -88,5 +88,66 @@
     }
    ]
   }
- ]
+ ],
+ "committed_sources": {
+  "comment": "Third-party files COMMITTED into the repo at dev time (never fetched at build time): each is pinned by the sha256 of the committed file and by the sha256 of the upstream npm tarball it came from. exp.vendor.lock/1 readers (packaging/vendor.py) only look at 'items'; speedtest/tests/test_page_build.py checks these entries against the files.",
+  "items": [
+   {
+    "name": "@cloudflare/speedtest",
+    "version": "1.16.0",
+    "kind": "committed-source",
+    "component": "speedtest",
+    "file": "speedtest/page/vendor/speedtest.js",
+    "sha256": "4b4ec8c0388a27fd7450ce598460f2c6097918fea8888e256966a0071aea3da5",
+    "archive": "npm tarball @cloudflare/speedtest-1.16.0.tgz",
+    "archive_sha256": "08e3c0b4e69a2533dc0f4bca3e88e063c4fbc3c3b4e5c301557c1dcf767e866e",
+    "source_file": "package/dist/speedtest.js",
+    "license": "MIT",
+    "license_file": "speedtest/page/vendor/LICENSE-cloudflare-speedtest.txt",
+    "note": "The unmodified built dist (ES module). speedtest/page/build.py wraps it in a function inside the single self-contained page; the page configures logAimApiUrl = null so nothing is posted to Cloudflare."
+   },
+   {
+    "name": "archivo-subset",
+    "version": "5.3.0",
+    "kind": "committed-source",
+    "component": "speedtest",
+    "file": "speedtest/exp_speedtest/static/assets/archivo.woff2",
+    "sha256": "06e3111799cad5302fa96320d78b546d68860da65219b8181e6e7d2cc4a7197c",
+    "archive": "npm tarball @fontsource-variable/archivo-5.3.0.tgz",
+    "archive_sha256": "20c4384ed6219fc792761ad56fd578a70ba8758374b307f2f8da3db2009924a9",
+    "source_file": "package/files/archivo-latin-wdth-normal.woff2",
+    "license": "OFL-1.1",
+    "license_file": "speedtest/exp_speedtest/static/assets/OFL-archivo.txt",
+    "note": "Latin + digits + UI punctuation subset (wdth + wght axes kept), regenerate with speedtest/page/tools/subset_fonts.py (fonttools, dev-time only)."
+   },
+   {
+    "name": "inter-subset",
+    "version": "5.3.0",
+    "kind": "committed-source",
+    "component": "speedtest",
+    "file": "speedtest/exp_speedtest/static/assets/inter.woff2",
+    "sha256": "a24b162545571a3c067269f40e0c57f22b8230235227a454ff39e304a0af74a8",
+    "archive": "npm tarball @fontsource-variable/inter-5.3.0.tgz",
+    "archive_sha256": "d26710dd38e7217484a1d47ee76c024977ec550548876f26d06ed1844af09a14",
+    "source_file": "package/files/inter-latin-wght-normal.woff2",
+    "license": "OFL-1.1",
+    "license_file": "speedtest/exp_speedtest/static/assets/OFL-inter.txt",
+    "note": "Latin + digits + UI punctuation subset (wght axis kept), regenerate with speedtest/page/tools/subset_fonts.py."
+   },
+   {
+    "name": "jetbrains-mono-subset",
+    "version": "5.3.0",
+    "kind": "committed-source",
+    "component": "speedtest",
+    "file": "speedtest/exp_speedtest/static/assets/jetbrains-mono.woff2",
+    "sha256": "f96890b7d40fc7960bdb596c0a1acd07f070839380d523c6c376b15d967970fd",
+    "archive": "npm tarball @fontsource-variable/jetbrains-mono-5.3.0.tgz",
+    "archive_sha256": "996fe6368a480c9ce15d4de22a2682b7c40b403718fee2b15e7272f244fd993f",
+    "source_file": "package/files/jetbrains-mono-latin-wght-normal.woff2",
+    "license": "OFL-1.1",
+    "license_file": "speedtest/exp_speedtest/static/assets/OFL-jetbrains-mono.txt",
+    "note": "Latin + digits + UI punctuation subset (wght axis kept), regenerate with speedtest/page/tools/subset_fonts.py."
+   }
+  ]
+ }
 }

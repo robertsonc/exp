@@ -11,13 +11,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 import st_fake
 import ui_world
 
 HERE = Path(__file__).resolve().parent
 NODE = shutil.which("node")
-SHOTS = Path(os.environ.get(
-    "EXP_ST_SHOTS", "/tmp/claude-0/-home-user-exp/5fe304da-431d-56ac-8a9d-ec4bbb823c52/scratchpad/e2e-artifacts/m6/dashboard"))
+_ART = "/tmp/claude-0/-home-user-exp/5fe304da-431d-56ac-8a9d-ec4bbb823c52/scratchpad/e2e-artifacts/m6/dashboard"
+SHOTS = Path(os.environ.get("EXP_ST_SHOTS", _ART))
 
 
 def _have_playwright() -> bool:
@@ -40,7 +41,8 @@ class Driver:
     def config(self) -> dict[str, Any]:
         w = self.world
         SHOTS.mkdir(parents=True, exist_ok=True)
-        return {"base": f"https://127.0.0.1:{w.port}", "passwords": w.pw, "noc_token": w.noc_token, "xss": st_fake.XSS, "xss_host": st_fake.XSS_HOST,
+        return {"base": f"https://127.0.0.1:{w.port}", "passwords": w.pw, "noc_token": w.noc_token,
+                "xss": st_fake.XSS, "xss_host": st_fake.XSS_HOST,
                 "sso_tokens": [w.sso_token(role="admin") for _ in range(4)],
                 "ids": {"normal": st_fake.st_id(1001), "hostile": st_fake.st_id(1037)},
                 "raw": [st_fake.RAW_IP, st_fake.RAW_MAC, st_fake.RAW_USER, st_fake.RAW_HOST],
