@@ -55,9 +55,20 @@ class Server:
         f = Path(f"/proc/{self.proc.pid}/stat").read_text().rsplit(")", 1)[1].split()
         return (int(f[11]) + int(f[12])) / TICKS             # utime + stime (fields 14, 15 of the full line)
 
-    def server_bytes(self) -> int:
-        time.sleep(2.2)                                       # the status file refreshes every 2 s
-        return int(json.loads((self.run_dir / "status.json").read_text())["counters"]["local_bytes_total"])
+    def server_bytes(self, after: float) -> int:
+        """The byte counter from a status snapshot written after `after` (wall clock, the daemon's `ts`). The file refreshes
+        every 2 s, later when the host is loaded (a whole test suite in parallel), so a fixed sleep can read a stale counter."""
+        deadline = time.monotonic() + 20
+        while True:
+            try:
+                doc = json.loads((self.run_dir / "status.json").read_text())
+                if float(doc.get("ts", 0)) >= after:
+                    return int(doc["counters"]["local_bytes_total"])
+            except (OSError, ValueError, KeyError):
+                pass                                          # not written yet / caught mid-write: read again
+            if time.monotonic() > deadline:
+                raise AssertionError(f"no status snapshot newer than {after:.1f} within 20 s")
+            time.sleep(0.2)
 
     def stop(self) -> None:
         self.proc.terminate()
@@ -121,7 +132,7 @@ def measure(seconds: float, streams: int, tmp: Path) -> dict[str, float]:
         wall = time.monotonic() - t0
         cpu = srv.cpu_s() - cpu0
         client_bytes = sum(out)
-        server_bytes = srv.server_bytes()
+        server_bytes = srv.server_bytes(after=time.time() + 0.5)   # + the server's last in-flight segments
         gbps = client_bytes * 8 / wall / 1e9
         return {"gbps": gbps, "cpu_cores": cpu / wall, "cores_per_gbps": (cpu / wall) / gbps if gbps else 99.0,
                 "client_bytes": client_bytes, "server_bytes": server_bytes,
