@@ -201,6 +201,10 @@ def test_full_test_390(world: World):
     assert legs["local"]["status"] == "ok" and legs["local"]["down_mbps"] > 0 and legs["local"]["up_mbps"] > 0
     assert legs["internet"]["status"] == "ok" and legs["internet"]["colo"] == "FRA" and legs["internet"]["down_mbps"] > 0
     assert legs["dns"]["source"] == "browser" and "cold_ms" in legs["dns"]
+    # regression: internet stability is measured on steady-state samples per direction, not across every request size
+    # and both directions (that read CV >= 0.5 on a steady link and zeroed the stability part for nearly every user)
+    assert legs["internet"]["cv"] is not None and legs["internet"]["cv"] < 0.3, legs["internet"]
+    assert sub["res"]["score"]["stability"] >= 40, sub["res"]["score"]
     assert first["score"] == str(sub["res"]["score"]["total"])
     assert r["firstFocus"] == "go"
     # --- phases were walked through in order, animation ran (no reduced motion)

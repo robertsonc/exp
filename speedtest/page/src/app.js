@@ -59,6 +59,19 @@
   function percentile(a, p) { if (!a.length) return null; var b = a.slice().sort(function (x, y) { return x - y; }); return b[Math.min(b.length - 1, Math.max(0, Math.ceil(p * b.length) - 1))]; }
   function mean(a) { return a.length ? a.reduce(function (s, x) { return s + x; }, 0) / a.length : null; }
   function cv(a) { if (a.length < 2) return 0; var m = mean(a); if (!m) return 0; var v = mean(a.map(function (x) { return (x - m) * (x - m); })); return Math.sqrt(v) / m; }
+  // Stability of one direction of the internet leg: CV of the steady-state samples only. Small requests never leave TCP
+  // slow start, so mixing request sizes (or download with upload) measures the ramp, not the link: a perfectly steady
+  // connection would read CV >= 0.5 and lose the whole stability part. Steady = requests that lasted >= 500 ms; with
+  // fewer than 3 of those, the largest request size that was measured.
+  function steadyCv(points) {
+    var ok = points.filter(function (p) { return p && p.bps > 0; });
+    var steady = ok.filter(function (p) { return p.duration >= 500; });
+    if (steady.length < 3) {
+      var top = ok.reduce(function (m, p) { return Math.max(m, +p.bytes || 0); }, 0);
+      steady = ok.filter(function (p) { return (+p.bytes || 0) === top; });
+    }
+    return steady.length >= 2 ? cv(steady.map(function (p) { return p.bps; })) : null;
+  }
   function jitterOf(a) { if (a.length < 2) return 0; var d = []; for (var i = 1; i < a.length; i++) d.push(Math.abs(a[i] - a[i - 1])); return mean(d); }
   function clampNum(v, max) { return (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.min(max, v)) : null; }
   function r1(v) { return v == null ? null : Math.round(v * 10) / 10; }
@@ -606,11 +619,12 @@
         var R = engine.results, down = R.getDownloadBandwidth(), up = R.getUploadBandwidth();
         if (down == null && up == null) { legSet('cf', 'n/a', 'could not reach Cloudflare', 'crit'); resolve({ status: 'unavailable', note: 'Cloudflare could not be reached from this network, so the internet speed was not measured.', colo: colo }); return; }
         var dp = R.getDownloadBandwidthPoints() || [], upp = R.getUploadBandwidthPoints() || [];
-        var bytes = 0, rates = [];
-        dp.concat(upp).forEach(function (p) { bytes += (p.transferSize > 0 ? p.transferSize : p.bytes) || 0; rates.push(p.bps || 0); });
+        var bytes = 0;
+        dp.concat(upp).forEach(function (p) { bytes += (p.transferSize > 0 ? p.transferSize : p.bytes) || 0; });
+        var cvs = [steadyCv(dp), steadyCv(upp)].filter(function (c) { return c != null; }), legCv = cvs.length ? Math.max.apply(null, cvs) : null;
         var out = { status: 'ok', colo: colo, down_mbps: down == null ? null : down / 1e6, up_mbps: up == null ? null : up / 1e6,
           idle_ms: R.getUnloadedLatency(), jitter_ms: R.getUnloadedJitter(), loaded_down_ms: R.getDownLoadedLatency(), loaded_up_ms: R.getUpLoadedLatency(),
-          cv: cv(rates), failures: errors, bytes: bytes };
+          cv: legCv, failures: errors, bytes: bytes };
         resolve(out);
       }
       engine.onPhaseChange = function (p) {
