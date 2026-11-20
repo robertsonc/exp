@@ -61,7 +61,7 @@
             "sequence_id": 551,
             "severity": "major",
             "type": "tunnel",
-            "name": "Tunnel state",
+            "alarm_name": "Tunnel state",
             "description": "Tunnel to_dc degraded",
             "time_occurred_ms": 1763474400000,
             "occurrence_count": 2,

@@ -14,7 +14,7 @@
     "queries": [
       {
         "ts": "2026-11-18T14:02:14.000Z",
-        "name": "speed.cloudflare.com",
+        "qname": "speed.cloudflare.com",
         "qtype": "A",
         "rcode": "NOERROR",
         "rtt_ms": 410.0,

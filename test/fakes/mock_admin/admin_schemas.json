@@ -3386,6 +3386,291 @@
   ],
   "type": "object"
  },
+ "SpeedtestDeviceKeyState": {
+  "additionalProperties": false,
+  "description": "Never contains the secret.",
+  "properties": {
+   "key_id": {
+    "maxLength": 16,
+    "type": "string"
+   },
+   "set": {
+    "type": "boolean"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "set",
+   "updated_at",
+   "key_id"
+  ],
+  "type": "object"
+ },
+ "SpeedtestLogo": {
+  "additionalProperties": false,
+  "description": "The stored logo artifact (set as branding.logo_artifact and delivered via the desired state's assets[]).",
+  "properties": {
+   "artifact": {
+    "$ref": "common.schema.json#/$defs/art_id"
+   },
+   "content_type": {
+    "enum": [
+     "image/png",
+     "image/svg+xml",
+     "image/jpeg"
+    ]
+   },
+   "sha256": {
+    "$ref": "common.schema.json#/$defs/sha256_hex"
+   },
+   "size": {
+    "maximum": 262144,
+    "minimum": 1,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "artifact",
+   "sha256",
+   "size",
+   "content_type"
+  ],
+  "type": "object"
+ },
+ "SpeedtestPause": {
+  "additionalProperties": false,
+  "properties": {
+   "paused": {
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "paused"
+  ],
+  "type": "object"
+ },
+ "SpeedtestPauseState": {
+  "additionalProperties": false,
+  "properties": {
+   "paused": {
+    "type": "boolean"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   }
+  },
+  "required": [
+   "paused",
+   "updated_at"
+  ],
+  "type": "object"
+ },
+ "SpeedtestQr": {
+  "additionalProperties": false,
+  "description": "Signage data: one URL per zone, `http(s)://<hostname>/?z=<zone>`. The UI renders the QR codes (no server-side image).",
+  "properties": {
+   "items": {
+    "items": {
+     "additionalProperties": false,
+     "properties": {
+      "name": {
+       "maxLength": 64,
+       "type": "string"
+      },
+      "url": {
+       "maxLength": 256,
+       "pattern": "^https?://[^\\s]+$",
+       "type": "string"
+      },
+      "zone": {
+       "$ref": "common.schema.json#/$defs/slug"
+      }
+     },
+     "required": [
+      "zone",
+      "name",
+      "url"
+     ],
+     "type": "object"
+    },
+    "maxItems": 256,
+    "type": "array"
+   }
+  },
+  "required": [
+   "items"
+  ],
+  "type": "object"
+ },
+ "SpeedtestSettings": {
+  "additionalProperties": false,
+  "description": "Manager speedtest settings of a site (12 section 8): compiled into the speedtest, collector and runner configs of the all-in-one host. Connectors (Mist, EdgeConnect) use the existing integrations endpoints; HPE Aruba SSE has no API connector (CR-m6-spec-resolutions).",
+  "properties": {
+   "branding": {
+    "$ref": "speedtest.config.schema.json#/properties/branding"
+   },
+   "consent": {
+    "additionalProperties": false,
+    "properties": {
+     "text": {
+      "description": "Consent text. The manager increments `version` whenever the text changes (old tests keep the version they saw).",
+      "maxLength": 2000,
+      "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+      "type": "string"
+     },
+     "version": {
+      "description": "Read-only: assigned by the manager; ignored on write.",
+      "maximum": 1000000,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "type": "object"
+   },
+   "core_guard": {
+    "$ref": "speedtest.config.schema.json#/properties/core_guard"
+   },
+   "device_key": {
+    "additionalProperties": false,
+    "description": "Whether the per-org device_key secret exists (write-only; never returned).",
+    "properties": {
+     "set": {
+      "type": "boolean"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "null"
+       },
+       {
+        "$ref": "common.schema.json#/$defs/ts"
+       }
+      ]
+     }
+    },
+    "required": [
+     "set",
+     "updated_at"
+    ],
+    "type": "object"
+   },
+   "display": {
+    "$ref": "speedtest.config.schema.json#/properties/display"
+   },
+   "dns_leg": {
+    "$ref": "speedtest.config.schema.json#/properties/dns_leg"
+   },
+   "internet_leg": {
+    "$ref": "speedtest.config.schema.json#/properties/internet_leg"
+   },
+   "limits": {
+    "$ref": "speedtest.config.schema.json#/properties/limits"
+   },
+   "path": {
+    "$ref": "speedtest.config.schema.json#/properties/path"
+   },
+   "privacy": {
+    "$ref": "speedtest.config.schema.json#/properties/privacy"
+   },
+   "serve": {
+    "$ref": "speedtest.config.schema.json#/properties/serve"
+   },
+   "targets": {
+    "$ref": "speedtest.config.schema.json#/properties/targets"
+   },
+   "tls": {
+    "$ref": "speedtest.config.schema.json#/properties/tls"
+   },
+   "updated_at": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "zone_labels": {
+    "$ref": "speedtest.config.schema.json#/properties/zone_labels"
+   },
+   "zones": {
+    "$ref": "speedtest.config.schema.json#/properties/zones"
+   }
+  },
+  "required": [
+   "consent"
+  ],
+  "type": "object"
+ },
+ "SpeedtestSettingsPut": {
+  "additionalProperties": false,
+  "description": "Replace the settings. Unknown keys are rejected; `serve.listen_ip` must be an interface address of the speedtest host.",
+  "properties": {
+   "branding": {
+    "$ref": "speedtest.config.schema.json#/properties/branding"
+   },
+   "consent": {
+    "additionalProperties": false,
+    "properties": {
+     "text": {
+      "description": "Consent text. The manager increments `version` whenever the text changes (old tests keep the version they saw).",
+      "maxLength": 2000,
+      "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+      "type": "string"
+     },
+     "version": {
+      "description": "Read-only: assigned by the manager; ignored on write.",
+      "maximum": 1000000,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "type": "object"
+   },
+   "core_guard": {
+    "$ref": "speedtest.config.schema.json#/properties/core_guard"
+   },
+   "display": {
+    "$ref": "speedtest.config.schema.json#/properties/display"
+   },
+   "dns_leg": {
+    "$ref": "speedtest.config.schema.json#/properties/dns_leg"
+   },
+   "internet_leg": {
+    "$ref": "speedtest.config.schema.json#/properties/internet_leg"
+   },
+   "limits": {
+    "$ref": "speedtest.config.schema.json#/properties/limits"
+   },
+   "path": {
+    "$ref": "speedtest.config.schema.json#/properties/path"
+   },
+   "privacy": {
+    "$ref": "speedtest.config.schema.json#/properties/privacy"
+   },
+   "serve": {
+    "$ref": "speedtest.config.schema.json#/properties/serve"
+   },
+   "targets": {
+    "$ref": "speedtest.config.schema.json#/properties/targets"
+   },
+   "tls": {
+    "$ref": "speedtest.config.schema.json#/properties/tls"
+   },
+   "zone_labels": {
+    "$ref": "speedtest.config.schema.json#/properties/zone_labels"
+   },
+   "zones": {
+    "$ref": "speedtest.config.schema.json#/properties/zones"
+   }
+  },
+  "required": [
+   "consent"
+  ],
+  "type": "object"
+ },
  "SsoForm": {
   "description": "Self-contained HTML document with an auto-submitting form that POSTs `token` (the SSO handoff JWT) to `https://<dashboard>/auth/sso`. The token is never placed in a URL.",
   "type": "string"

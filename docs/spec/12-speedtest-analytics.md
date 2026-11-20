@@ -91,7 +91,7 @@ path breakdown comes from correlation.**
 ## 3.1 Where the user is: resolved by correlation, not by the box
 
 Because one box at the core serves everyone, the attendee's **location is reconstructed after the
-test from network data**, not from which box they reached (decision D16, which replaces the earlier
+test from network data**, not from which box they reached (decision D15, which replaces the earlier
 per-zone-steering design):
 
 - **Primary:** the runner resolves `client_ip` + time → Mist client → **AP, zone, SSID, band, RSSI,
@@ -158,7 +158,7 @@ correlation returns (≤ 5 min), the page shows on-network vs internet and the D
 per-user breakdown in when the evidence arrives. The whole breakdown is labelled an estimate.
 
 Implementation uses `fetch` streams and the Resource Timing API; no WebSockets or WebRTC. Total
-transfer is capped per test (default 400 MB local, 200 MB internet) and adapts down on slow links.
+transfer is capped per test (default 200 MB on-network, 200 MB internet; the 400 MB of the first draft is superseded by §4.4) and adapts down on slow links.
 
 **exp score** (0–100) = 40 × speed (min(down/target_down, 1) and min(up/target_up, 1), averaged) +
 40 × responsiveness (100 % at ≤ 30 ms loaded latency, 0 % at ≥ 300 ms, linear) + 20 × stability
@@ -276,7 +276,7 @@ Like line verdicts, the user text is plain and blame-free; the NOC text names th
 
 ## 6. Storage and metrics
 - Collector SQLite: `speedtests` (one row per test, §7.1), `evidence` (per kind, JSON), `diagnoses`.
-  Retention: tests 90 days (aggregates forever in VM), evidence 30 days; raw identifiers per §9.
+  Retention: tests, device metadata and evidence 30 days by default (aggregates forever in VM); raw identifiers per §9.
 - VictoriaMetrics (low cardinality — Principle 8; **no per-user or per-device labels**):
   `exp_st_down_mbps`, `exp_st_up_mbps`, `exp_st_loaded_latency_ms`, `exp_st_score` as histograms
   (`vmrange`) with labels `site`, `zone`, `leg`, `ssid`, `band`, `ap` (bounded by AP count), `os_family`;
@@ -284,7 +284,16 @@ Like line verdicts, the user text is plain and blame-free; the NOC text names th
 - Fleet health (`01-contracts.md` §8.1) gains a `speedtest` row: `tests_per_hour`, `active_tests`,
   `internet_leg_paused` (0/1), `queue_depth`, `local_leg_gbps_p95`, `rejected_per_hour`.
 
-## 7. Contracts (to be moved into `01-contracts.md` and `contracts/` by WP-0 at M6)
+## 7. Contracts
+
+> **Moved (M6 contracts step).** The normative contracts are `01-contracts.md` §14 and `shared/schemas/`
+> (`speedtest`, `speedtest.submission`, `evidence`, `speedtest.config`, plus additions to `common`, `runner.config`,
+> `collector.config`, `desired`, `health`), `shared/openapi/speedtest.yaml` (and the `speedtests` additions to
+> `collector.yaml` / `admin.yaml`) and `shared/python/exp_common/speedtest.py`. The subsections below are the original design
+> sketch; where they disagree with §14 or `changes/CR-m6-spec-resolutions.md` (transport, byte caps, retention, NAT guard,
+> D16 wording, A6.4 ground truth), **those win**. In particular: §3.1's "decision D16" means D15; §4.2/§7.5's 400 MB
+> on-network cap is 200 MB (§4.4); §6's 90-day test retention is 30 days (§9); §7.3's "HTTPS 443" is TCP 80 (plain HTTP)
+> unless `tls.mode = provided`.
 
 ### 7.1 `exp.speedtest/1` (result, client → speedtest → collector)
 `legs` also carries `dns` (`cold_ms`, `warm_ms`, `resolver_ip`, `source: browser|probe`) and `path`
@@ -316,7 +325,7 @@ checked against server-side byte counters for the local leg (> 20 % disagreement
 "data":{…kind-specific, bounded…},"raw_refs":[…source ids…]}`. Kind-specific `data` schemas are
 fixed in WP-0 from the vendor docs/recordings.
 
-### 7.3 Public speedtest API (`exp-speedtest`, HTTPS 443 on the event network, unauthenticated)
+### 7.3 Public speedtest API (`exp-speedtest`, plain HTTP TCP 80 on the event network by default, unauthenticated)
 | Route | Purpose |
 |---|---|
 | `GET /` | the page (one box; no redirect) |
@@ -341,7 +350,7 @@ There is no cloud component: the internet leg calls Cloudflare's public speed-te
 ### 7.5 `exp.speedtest.config/1` (desired state for the shape)
 `{site, zones:[{id,name}], branding:{title, logo_artifact, colors, languages, copy}, consent:{text, version,
 show_network_details:false, targets:{down_mbps:25, up_mbps:10},
-limits:{tests_per_10min_per_ip:6, max_concurrent_internet:10, bytes_local:400e6, bytes_internet:200e6},
+limits:{tests_per_10min_per_ip:6, max_concurrent_internet:10, max_concurrent_tests:20, bytes_local:200e6, bytes_internet:200e6},
 internet_leg:{enabled:true, provider:"cloudflare", auto_pause_wan_util_pct:80},
 serve:{placement:"core", hostname:"speed.summit.example", listen_ip:"10.0.0.9", require_real_client_ip:true},
 zone_labels:{subnets:[{cidr, zone}]}, dns_leg:{zone:"t.speed.summit.example", enabled:true},
@@ -359,7 +368,7 @@ is worse than plain HTTP for a user-facing page.
 ### 7.6 Runner config additions (`exp.runner.config/1`)
 `correlation: {enabled, window_before_s: 300, window_after_s: 120, sources: {mist:{sites:[…]},
 ec:{appliances:[…]}, syslog:{listen:["udp:5514","tcp:5514","tls:6514"], allow:["10.0.0.0/8"]},
-sse:{…}}}`; credentials in `integrations.json` (adds `sse`), never in config.
+sse:{enabled:false}}}`; credentials in `integrations.json` (`ec`, `mist`; **no `sse`**: no vendor documentation, CR-m6-spec-resolutions), never in config.
 
 ## 8. Analytics UI (dashboard, read by NOC; config in the manager)
 - **Speedtests overview**: tests/hour, median down/up/responsiveness by leg, score distribution, top

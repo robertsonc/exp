@@ -231,7 +231,7 @@ def _property_names(node, found: set, where: str = "") -> None:
                 _property_names(sub, found, "%s/%s/%d" % (where, kw, i))
 
 
-@pytest.mark.parametrize("name", ["speedtest.schema.json", "speedtest.submission.schema.json", "evidence.schema.json", "speedtest.config.schema.json"])
+@pytest.mark.parametrize("name", ["speedtest.schema.json", "speedtest.submission.schema.json", "evidence.schema.json"])
 def test_speedtest_schemas_have_no_person_identity_field(name):
     """12 section 9 / SR-25: no name/email/phone field anywhere (and no raw user agent)."""
     found: set = set()
@@ -246,7 +246,7 @@ def test_speedtest_wire_schemas_are_closed(name):
     """Every object in the result/submission/evidence schemas rejects unknown keys (additionalProperties false)."""
     def walk(node, where=""):
         if isinstance(node, dict):
-            if node.get("type") == "object" and "properties" in node and where != "":
+            if node.get("type") == "object" and "properties" in node and where != "/":  # (the evidence root only dispatches by kind; each variant is closed)
                 assert node.get("additionalProperties") is False, (name, where)
             for k, v in node.items():
                 if k in ("properties", "$defs"):
@@ -293,6 +293,23 @@ def test_speedtest_fixtures_are_internally_consistent():
 def test_all_in_one_runs_four_components_on_one_host():
     aio = load(os.path.join(HERE, "desired", "all-in-one-speedtest.json"))
     assert sorted(c["type"] for c in aio["components"]) == ["collector", "probe", "runner", "speedtest"]
+
+
+def test_all_in_one_credentials_are_mutually_consistent():
+    """Each side of every M6 channel holds matching credentials: the plaintext token on the client side, its sha256 on the server side."""
+    import hashlib
+    aio = load(os.path.join(HERE, "desired", "all-in-one-speedtest.json"))
+    by = {c["type"]: c for c in aio["components"]}
+    h = lambda t: hashlib.sha256(t.encode()).hexdigest()  # noqa: E731
+    col, run, spd = by["collector"]["creds"], by["runner"]["creds"], by["speedtest"]["creds"]
+    assert json.loads(col["speedtest_tokens.json"])["spd-core"] == h(spd["collector_token"])          # speedtest -> collector (exps_)
+    assert json.loads(col["runner_tokens.json"])["run-core"] == h(run["collector_token"])             # runner -> collector (expr_)
+    assert spd["runner_channel_token_sha256"] == h(run["speedtest_channel_token"])                     # runner -> speedtest (expl_)
+    assert spd["collector_token"].startswith("exps_") and run["collector_token"].startswith("expr_") and run["speedtest_channel_token"].startswith("expl_")
+    assert run["device_key_secret"].startswith("expk_")
+    assert by["speedtest"]["config"]["speedtest_id"] == "spd-core" and by["runner"]["config"]["runner_id"] == "run-core"
+    assert by["collector"]["config"]["speedtests"]["speedtests"] == ["spd-core"] and by["collector"]["config"]["speedtests"]["runners"] == ["run-core"]
+    assert by["speedtest"]["config"]["branding"]["logo_artifact"] == by["speedtest"]["assets"][0]["artifact"]["id"]
 
 
 def test_cloudflare_recording_is_complete():

@@ -39,7 +39,7 @@
       "properties": {
         "ip": {
           "$ref": "common.schema.json#/$defs/ip_addr",
-          "description": "Server-observed source address of the session (never client-reported). Correlation keys on it (D15)."
+          "description": "Server-observed source address of the session (never client-reported). Correlation keys on it (D15). Absent after the privacy scrub."
         },
         "ua": {
           "$ref": "#/$defs/ua"
@@ -55,10 +55,8 @@
           "description": "navigator.connection.type when the browser exposes it; a hint only."
         }
       },
-      "required": [
-        "ip"
-      ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "description": "ip is required at ingest (the collector refuses a result without it) but optional in the schema: the privacy scrub (scrub_after_diagnosis) and non-admin views remove it."
     },
     "consent": {
       "type": "object",

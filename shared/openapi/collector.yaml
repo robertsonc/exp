@@ -23,6 +23,7 @@ servers:
       default: collector.local
 tags:
 - name: query
+- name: speedtests
 - name: stream
 - name: drills
 - name: health
@@ -52,6 +53,18 @@ components:
       description: Cloudflare Access JWT. The Worker verifies RS256 signature (team JWKS), `aud`, `iss`,
         `exp`/`nbf` on every admin request; missing or invalid -> 401. `Cf-Access-Authenticated-User-Email`
         is never trusted alone.
+    speedtestToken:
+      type: http
+      scheme: bearer
+      bearerFormat: exps_<43 base64url chars>
+      description: Speedtest-to-collector token, prefix `exps_`; identity-bound per speedtest component (`speedtest_id`).
+        Valid only for `POST /speedtests`, `GET /speedtests/{id}/status`, `POST /speedtests/{id}/comment`.
+    runnerToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expr_<43 base64url chars>
+      description: Runner-to-collector token, prefix `expr_`; identity-bound per runner (`runner_id`). Valid
+        only for the new-test feed, evidence write/complete and the baseline read.
   parameters:
     Limit:
       name: limit
@@ -219,6 +232,44 @@ components:
                   details: {}
       headers:
         Retry-After: *id001
+    Conflict:
+      description: 'Wrong state for this call. Error codes: `evidence_final`, `already_final`, `conflict`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            conflict:
+              value:
+                error:
+                  code: conflict
+                  message: conflict
+                  details: {}
+            evidence_final:
+              value:
+                error:
+                  code: evidence_final
+                  message: evidence final
+                  details: {}
+    PayloadTooLarge:
+      description: 'Over a size limit. Error codes: `evidence_too_large` (256 KiB per test), `payload_too_large`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            evidence_too_large:
+              value:
+                error:
+                  code: evidence_too_large
+                  message: evidence too large
+                  details: {}
+            payload_too_large:
+              value:
+                error:
+                  code: payload_too_large
+                  message: payload too large
+                  details: {}
   schemas:
     Health:
       type: object
@@ -659,6 +710,574 @@ components:
           pattern: ^[^\x00-\x1f\x7f]*$
       additionalProperties: true
       description: Optional acknowledgement note.
+    SpeedtestRow:
+      type: object
+      additionalProperties: true
+      description: One test in a list. Never carries raw identifiers.
+      properties:
+        id:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        zone:
+          $ref: ../schemas/common.schema.json#/$defs/zone_id
+        zone_source:
+          enum:
+          - qr
+          - subnet
+          - mist
+          - dhcp
+          - unresolved
+        started:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        ended:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        score:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+            maximum: 100
+        local_down_mbps:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        local_up_mbps:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        internet_down_mbps:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        internet_up_mbps:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        loaded_ms:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+        flags:
+          type: array
+          items:
+            type: string
+            maxLength: 32
+          maxItems: 16
+        cause:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+          description: Top cause id of the latest diagnosis.
+        ap_name:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 128
+        ssid:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+        band:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 16
+        os_family:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 32
+        device_key:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/device_key
+        evidence_state:
+          enum:
+          - pending
+          - correlating
+          - final
+          - unavailable
+        has_comment:
+          type: boolean
+    SpeedtestList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpeedtestRow'
+        next_cursor:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 1024
+      required:
+      - items
+      - next_cursor
+    EvidenceState:
+      type: object
+      properties:
+        state:
+          enum:
+          - pending
+          - correlating
+          - final
+          - unavailable
+        kinds_done:
+          type: array
+          items:
+            enum:
+            - wifi
+            - wired
+            - flows
+            - wan
+            - security
+            - baseline
+            - dns
+            - identity
+          maxItems: 8
+          uniqueItems: true
+        final_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - state
+      - kinds_done
+      - final_at
+      additionalProperties: false
+    SpeedtestDetail:
+      type: object
+      additionalProperties: true
+      description: Test + evidence + diagnosis (12 section 7.4). With `identifiers=false` (default) the raw
+        `client.ip` and the identity evidence's ip/mac/hostname/username are removed; after the privacy scrub
+        they are gone for everyone.
+      properties:
+        test:
+          $ref: ../schemas/speedtest.schema.json
+        diagnosis:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/speedtest.schema.json#/$defs/diagnosis
+        evidence:
+          type: array
+          items:
+            $ref: ../schemas/evidence.schema.json
+          maxItems: 16
+        evidence_state:
+          $ref: '#/components/schemas/EvidenceState'
+        device_key:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/device_key
+      required:
+      - test
+      - diagnosis
+      - evidence
+      - evidence_state
+    SpeedtestAggregate:
+      type: object
+      properties:
+        group_by:
+          enum:
+          - zone
+          - ap
+          - ssid
+          - band
+          - os_family
+          - hour
+          - cause
+        metric:
+          enum:
+          - down_p50
+          - up_p50
+          - loaded_p50
+          - score_p50
+          - count
+        leg:
+          enum:
+          - local
+          - internet
+        from:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        to:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                maxLength: 128
+              value:
+                type: number
+              count:
+                type: integer
+                minimum: 0
+            required:
+            - key
+            - value
+            - count
+            additionalProperties: false
+      required:
+      - group_by
+      - metric
+      - leg
+      - from
+      - to
+      - items
+      additionalProperties: false
+      description: Aggregates computed from SQLite ground truth (the VM series carry the same figures without
+        per-device labels).
+    SpeedtestIngested:
+      type: object
+      properties:
+        id:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+        status:
+          enum:
+          - stored
+          - duplicate
+        diagnosis:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/speedtest.schema.json#/$defs/diagnosis
+      required:
+      - id
+      - status
+      - diagnosis
+      additionalProperties: false
+    SpeedtestStatus:
+      type: object
+      properties:
+        id:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+        state:
+          enum:
+          - submitted
+          - correlating
+          - final
+        zone:
+          $ref: ../schemas/common.schema.json#/$defs/zone_id
+        zone_name:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+        zone_source:
+          enum:
+          - qr
+          - subnet
+          - mist
+          - dhcp
+          - unresolved
+        diagnosis:
+          anyOf:
+          - type: 'null'
+          - type: object
+            properties:
+              stage:
+                enum:
+                - quick
+                - final
+              updated:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              cause:
+                type: array
+                maxItems: 8
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      maxLength: 64
+                    confidence:
+                      type: number
+                      minimum: 0
+                      maximum: 1
+                  required:
+                  - id
+                  - confidence
+                  additionalProperties: false
+              user_text:
+                type: string
+                maxLength: 280
+            required:
+            - stage
+            - updated
+            - cause
+            - user_text
+            additionalProperties: false
+        evidence:
+          $ref: '#/components/schemas/EvidenceState'
+        checks:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            properties:
+              kind:
+                enum:
+                - wifi
+                - wired
+                - flows
+                - wan
+                - security
+                - baseline
+                - dns
+                - identity
+              state:
+                enum:
+                - checking
+                - ok
+                - attention
+                - unavailable
+              text:
+                type: string
+                maxLength: 160
+            required:
+            - kind
+            - state
+            additionalProperties: false
+        network_details:
+          anyOf:
+          - type: 'null'
+          - type: object
+            properties:
+              ap_name:
+                type: string
+                maxLength: 128
+              band:
+                type: string
+                maxLength: 16
+              channel:
+                type: integer
+                minimum: 0
+                maximum: 400
+            additionalProperties: false
+        comment:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 500
+      required:
+      - id
+      - state
+      - zone
+      - zone_name
+      - zone_source
+      - diagnosis
+      - evidence
+      - checks
+      - network_details
+      - comment
+      additionalProperties: false
+      description: User-safe status for the speedtest (the box filters network_details by its display setting).
+        No MAC, username, flows or NOC text.
+    SpeedtestFeed:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            properties:
+              id:
+                $ref: ../schemas/common.schema.json#/$defs/st_id
+              site:
+                $ref: ../schemas/common.schema.json#/$defs/slug
+              started:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              ended:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              client_ip:
+                $ref: ../schemas/common.schema.json#/$defs/ip_addr
+              zone_hint:
+                anyOf:
+                - type: 'null'
+                - $ref: ../schemas/common.schema.json#/$defs/slug
+              zone:
+                $ref: ../schemas/common.schema.json#/$defs/zone_id
+              zone_source:
+                enum:
+                - qr
+                - subnet
+                - mist
+                - dhcp
+                - unresolved
+              window:
+                type: object
+                properties:
+                  from:
+                    $ref: ../schemas/common.schema.json#/$defs/ts
+                  to:
+                    $ref: ../schemas/common.schema.json#/$defs/ts
+                required:
+                - from
+                - to
+                additionalProperties: false
+              observed_server:
+                $ref: ../schemas/common.schema.json#/$defs/slug
+            required:
+            - id
+            - site
+            - started
+            - ended
+            - client_ip
+            - window
+            additionalProperties: false
+        next_cursor:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 1024
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+      description: 'New tests for the runner (`after` cursor, long-poll up to `wait_s`). Carries the raw client
+        IP: the runner needs it to correlate, and it is the only consumer besides admin views.'
+    EvidenceAccepted:
+      type: object
+      properties:
+        test_id:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+        kind:
+          enum:
+          - wifi
+          - wired
+          - flows
+          - wan
+          - security
+          - baseline
+          - dns
+          - identity
+        stored_bytes:
+          type: integer
+          minimum: 0
+        total_bytes:
+          type: integer
+          minimum: 0
+          maximum: 262144
+          description: Serialized evidence for this test so far (limit 256 KiB).
+      required:
+      - test_id
+      - kind
+      - stored_bytes
+      - total_bytes
+      additionalProperties: false
+    EvidenceComplete:
+      type: object
+      properties:
+        kinds:
+          type: array
+          items:
+            enum:
+            - wifi
+            - wired
+            - flows
+            - wan
+            - security
+            - baseline
+            - dns
+            - identity
+          maxItems: 8
+          uniqueItems: true
+          description: Kinds the runner delivered (the others are unavailable).
+        status:
+          enum:
+          - ok
+          - partial
+          - failed
+      required:
+      - kinds
+      - status
+      additionalProperties: false
+      description: Marks evidence final; triggers the final diagnosis and, when enabled, the privacy scrub.
+    SpeedtestPurgeRequest:
+      type: object
+      properties:
+        by:
+          enum:
+          - device_key
+          - mac
+          - ip
+          - test
+        value:
+          type: string
+          maxLength: 128
+        dry_run:
+          type: boolean
+          default: false
+      required:
+      - by
+      - value
+      additionalProperties: false
+      description: '`device_key`: 64 hex; `mac`: any MAC spelling (also matches device_key rows when the collector
+        holds the optional device_key_secret); `ip`: address; `test`: st_ id.'
+    SpeedtestPurgeResult:
+      type: object
+      properties:
+        dry_run:
+          type: boolean
+        matched_tests:
+          type: integer
+          minimum: 0
+        deleted:
+          type: object
+          properties:
+            tests:
+              type: integer
+              minimum: 0
+            evidence:
+              type: integer
+              minimum: 0
+            diagnoses:
+              type: integer
+              minimum: 0
+          required:
+          - tests
+          - evidence
+          - diagnoses
+          additionalProperties: false
+        device_key_matched:
+          type: boolean
+          description: 'False when `by=mac` could not be mapped to a device_key (no secret): only rows still
+            holding the raw MAC were matched.'
+        audited_by:
+          type: string
+          maxLength: 128
+      required:
+      - dry_run
+      - matched_tests
+      - deleted
+      - device_key_matched
+      - audited_by
+      additionalProperties: false
+      description: 'End state asserted by tests: the rows are gone. Audited (X-Exp-User); the dashboard allows
+        it for admin sessions only. Aggregates in VM carry no device labels and are not rewritten.'
+    SpeedtestCommentRequest:
+      type: object
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: ^[^\x00-\x08\x0b-\x1f\x7f]*$
+      required:
+      - comment
+      additionalProperties: false
 paths:
   /health:
     get:
@@ -1341,3 +1960,638 @@ paths:
                 type: string
                 enum:
                 - fail
+  /speedtests:
+    get:
+      operationId: listSpeedtests
+      summary: Query speedtests
+      tags:
+      - speedtests
+      x-exp-wp: WP-11
+      description: Newest first. `q` matches id, comment text, zone, AP, SSID (and IP/MAC only with `identifiers=true`).
+      parameters:
+      - name: site
+        in: query
+        required: false
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: zone
+        in: query
+        required: false
+        description: Zone.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/zone_id
+      - name: ap
+        in: query
+        required: false
+        description: AP name.
+        schema:
+          type: string
+          maxLength: 128
+      - name: ssid
+        in: query
+        required: false
+        description: SSID.
+        schema:
+          type: string
+          maxLength: 64
+      - name: cause
+        in: query
+        required: false
+        description: Diagnosis cause id.
+        schema:
+          type: string
+          maxLength: 64
+      - name: from
+        in: query
+        required: false
+        description: Start (inclusive).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: to
+        in: query
+        required: false
+        description: End (exclusive).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: min_score
+        in: query
+        required: false
+        description: Minimum score.
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100
+      - name: max_score
+        in: query
+        required: false
+        description: Maximum score.
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100
+      - name: q
+        in: query
+        required: false
+        description: Free text.
+        schema:
+          type: string
+          maxLength: 128
+      - name: identifiers
+        in: query
+        required: false
+        description: Return raw IP/MAC/username/hostname. The dashboard sets it only for admin-role sessions
+          (exports exclude raw identifiers otherwise, SR-25); `X-Exp-User` is audited.
+        schema:
+          type: boolean
+          default: false
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: ingestSpeedtest
+      summary: Speedtest result ingest (speedtest -> collector)
+      tags:
+      - speedtests
+      security:
+      - speedtestToken: []
+      x-exp-wp: WP-11
+      description: 'Authenticated with the speedtest''s `exps_` token. Identity binding: `observed.server_id`
+        must equal the token''s speedtest id and `site` its configured site (403 `identity_mismatch`). Idempotent
+        on `id` (a repeat returns `duplicate`). Stores to SQLite even when VictoriaMetrics is down; the
+        quick diagnosis is returned in the response.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/speedtest.schema.json
+      responses:
+        '201':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestIngested'
+        '200':
+          description: Duplicate (already stored)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestIngested'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /speedtests/aggregate:
+    get:
+      operationId: aggregateSpeedtests
+      summary: Aggregate speedtests
+      tags:
+      - speedtests
+      x-exp-wp: WP-11
+      parameters:
+      - name: group_by
+        in: query
+        required: true
+        description: Grouping.
+        schema:
+          enum:
+          - zone
+          - ap
+          - ssid
+          - band
+          - os_family
+          - hour
+          - cause
+      - name: metric
+        in: query
+        required: true
+        description: Metric.
+        schema:
+          enum:
+          - down_p50
+          - up_p50
+          - loaded_p50
+          - score_p50
+          - count
+      - name: leg
+        in: query
+        required: false
+        description: Leg (default local).
+        schema:
+          enum:
+          - local
+          - internet
+      - name: site
+        in: query
+        required: false
+        description: Site.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: from
+        in: query
+        required: false
+        description: Start.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: to
+        in: query
+        required: false
+        description: End.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestAggregate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /speedtests/stream:
+    get:
+      operationId: streamSpeedtests
+      summary: 'Server-sent events: new tests, evidence, diagnoses'
+      tags:
+      - speedtests
+      - stream
+      x-exp-wp: WP-11
+      parameters:
+      - name: site
+        in: query
+        required: false
+        description: Site.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: Last-Event-ID
+        in: header
+        required: false
+        description: Resume point (replay at most `stream_replay_s`, default 300 s).
+        schema:
+          type: string
+          maxLength: 128
+      - $ref: '#/components/parameters/XExpUser'
+      x-exp-sse-events:
+        speedtest:
+          data:
+            $ref: '#/components/schemas/SpeedtestRow'
+          description: A test was stored.
+        evidence:
+          data:
+            type: object
+            properties:
+              id:
+                $ref: ../schemas/common.schema.json#/$defs/st_id
+              kind:
+                enum:
+                - wifi
+                - wired
+                - flows
+                - wan
+                - security
+                - baseline
+                - dns
+                - identity
+            required:
+            - id
+            - kind
+            additionalProperties: false
+          description: Evidence of a kind arrived.
+        diagnosis:
+          data:
+            type: object
+            properties:
+              id:
+                $ref: ../schemas/common.schema.json#/$defs/st_id
+              stage:
+                enum:
+                - quick
+                - final
+              cause:
+                type: string
+                maxLength: 64
+            required:
+            - id
+            - stage
+            - cause
+            additionalProperties: false
+          description: A diagnosis was produced or updated.
+      x-exp-sse-comments:
+        keepalive_interval_s: 15
+        retry_ms: 3000
+        replay_window_s: 300
+      responses:
+        '200':
+          description: '`text/event-stream`. Events: `speedtest`, `evidence`, `diagnosis`. A `: keepalive`
+            comment every 15 s; `retry: 3000`.'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /speedtests/feed:
+    get:
+      operationId: speedtestFeed
+      summary: New-test feed for the runner
+      tags:
+      - speedtests
+      security:
+      - runnerToken: []
+      x-exp-wp: WP-11
+      description: 'Authenticated with the runner''s `expr_` token. Returns tests whose evidence is not
+        final, oldest first. `wait_s` long-polls (the runner polls every 5 s or long-polls). Identity binding:
+        only tests of the runner''s configured site.'
+      parameters:
+      - name: after
+        in: query
+        required: false
+        description: Cursor from a previous `next_cursor`.
+        schema:
+          type: string
+          maxLength: 1024
+      - $ref: '#/components/parameters/Limit'
+      - name: wait_s
+        in: query
+        required: false
+        description: Long-poll up to this many seconds when empty.
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 25
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestFeed'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /speedtests/baseline:
+    get:
+      operationId: speedtestBaseline
+      summary: Nearest probe's state at a time (the baseline evidence)
+      tags:
+      - speedtests
+      security:
+      - runnerToken: []
+      x-exp-wp: WP-11
+      description: 'Probe baseline read for the runner: the probe nearest to (zone, ap) in the same site,
+        its exp.state/1 verdict, DNS and Wi-Fi lines and latest throughput at `at`. Returns the `kind=baseline`
+        evidence data shape.'
+      parameters:
+      - name: site
+        in: query
+        required: true
+        description: Site.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: zone
+        in: query
+        required: false
+        description: Zone.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/zone_id
+      - name: ap
+        in: query
+        required: false
+        description: AP name.
+        schema:
+          type: string
+          maxLength: 128
+      - name: at
+        in: query
+        required: true
+        description: Evaluate at this instant.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/evidence.schema.json#/$defs/data_baseline
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /speedtests/purge:
+    post:
+      operationId: purgeSpeedtests
+      summary: Purge by device key, MAC, IP or test (data-subject request)
+      tags:
+      - speedtests
+      x-exp-wp: WP-11
+      description: 'Admin action: the dashboard allows it for admin-role sessions only and always sends
+        `X-Exp-User` (403 `forbidden` without it). Audited. `dry_run` counts without deleting.'
+      parameters:
+      - $ref: '#/components/parameters/XExpUser'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeedtestPurgeRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestPurgeResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /speedtests/{id}:
+    get:
+      operationId: getSpeedtest
+      summary: One test with evidence and diagnosis
+      tags:
+      - speedtests
+      x-exp-wp: WP-11
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Speedtest id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      - name: identifiers
+        in: query
+        required: false
+        description: Return raw IP/MAC/username/hostname. The dashboard sets it only for admin-role sessions
+          (exports exclude raw identifiers otherwise, SR-25); `X-Exp-User` is audited.
+        schema:
+          type: boolean
+          default: false
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /speedtests/{id}/status:
+    get:
+      operationId: getSpeedtestStatus
+      summary: User-safe status for the speedtest page
+      tags:
+      - speedtests
+      security:
+      - speedtestToken: []
+      x-exp-wp: WP-11
+      description: Read by the speedtest on behalf of the holder of the result key (the box verifies the
+        view proof). Only tests that came from this token's speedtest id are visible; others 404.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Speedtest id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /speedtests/{id}/comment:
+    post:
+      operationId: postSpeedtestComment
+      summary: Attach the user's problem report
+      tags:
+      - speedtests
+      security:
+      - speedtestToken: []
+      x-exp-wp: WP-11
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Speedtest id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeedtestCommentRequest'
+      responses:
+        '204':
+          description: Stored (text, <= 500 chars, parameterized SQL; SR-23).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /speedtests/{id}/evidence:
+    post:
+      operationId: postSpeedtestEvidence
+      summary: Runner posts one evidence document (exp.evidence/1)
+      tags:
+      - speedtests
+      security:
+      - runnerToken: []
+      x-exp-wp: WP-9
+      description: 'Authenticated with the runner''s `expr_` token. One document per kind; re-posting a
+        kind replaces it until the evidence is final. Bounds: at most 256 KiB serialized per test across
+        kinds (413 `evidence_too_large`), at most 50 flows, 200 log lines (schema). `test_id` must equal
+        the path id (400 `id_mismatch`). Once final: 409 `evidence_final`.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Speedtest id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/evidence.schema.json
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /speedtests/{id}/evidence/complete:
+    post:
+      operationId: completeSpeedtestEvidence
+      summary: Runner marks evidence final
+      tags:
+      - speedtests
+      security:
+      - runnerToken: []
+      x-exp-wp: WP-9
+      description: Triggers the final diagnosis (12 section 5.3) and, when `scrub_after_diagnosis` is on,
+        the privacy scrub of raw identifiers (A6.6).
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Speedtest id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvidenceComplete'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    $ref: ../schemas/common.schema.json#/$defs/st_id
+                  diagnosis:
+                    anyOf:
+                    - type: 'null'
+                    - $ref: ../schemas/speedtest.schema.json#/$defs/diagnosis
+                required:
+                - id
+                - diagnosis
+                additionalProperties: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'

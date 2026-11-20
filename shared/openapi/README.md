@@ -6,8 +6,9 @@ Changing these files after WP-0 needs a change request to the integrator.
 | File | Contract | Base path (`servers[0]`) | Auth |
 |---|---|---|---|
 | `ingest.yaml` | §4 probe -> collector | `https://{collector}:8443/ingest/v1` | `ingestToken` (`expi_`) |
-| `collector.yaml` | §5 dashboard -> collector, drills | `https://{collector}:8443/api/v1` | `dashboardToken` (`expd_`); `GET /drills/control` uses `ingestToken` |
+| `collector.yaml` | §5 dashboard -> collector, drills; §14.5 `speedtests` (M6) | `https://{collector}:8443/api/v1` | `dashboardToken` (`expd_`); `GET /drills/control` uses `ingestToken`; speedtest routes use `speedtestToken` (`exps_`) or `runnerToken` (`expr_`) |
 | `agent.yaml` | §6 agent -> manager | `https://{manager}/api/agent/v1` | `agentSecret` (`expa_`); `enrol` takes `expe_` in the body |
+| `speedtest.yaml` | §14.4 (M6) page, sessions, on-network leg, DNS-leg target, loopback runner channel | `http://{host}` (paths are absolute: `/`, `/st/...`, `/local/v1/...`) | public; `legToken` (`expt_`), `viewProof` (`expv_`), `runnerChannelToken` (`expl_`) |
 | `admin.yaml` | §13 UI -> manager (data model: `05-manager.md` §3; fleet/issues: `11-manager-ui.md`) | `https://{manager}/api/admin/v1` | `accessJwt` (`Cf-Access-Jwt-Assertion`) |
 
 Paths in each file are relative to that base (`/measurements`, `/state`, `/desired`, `/hosts/{id}` ...).
@@ -19,7 +20,7 @@ collector `GET /healthz`; agent `GET /install.sh` and `GET /healthz`.
 - **Security schemes** (all four defined in every file): `ingestToken`, `dashboardToken`, `agentSecret`
   (http bearer; prefixes `expi_`, `expd_`, `expa_`; 43 base64url chars after the prefix) and `accessJwt`
   (apiKey, header `Cf-Access-Jwt-Assertion`). Public operations declare `security: []` explicitly.
-- **Document schemas are referenced, not copied**: `../schemas/<name>.schema.json` (one of the 13 agreed
+- **Document schemas are referenced, not copied**: `../schemas/<name>.schema.json` (one of the 17 agreed (13 + the 4 M6 files)
   files, optionally with a `#/$defs/...` or `#/properties/...` fragment). Inline schemas use only the agreed
   JSON Schema keyword subset (see `test_openapi.py`), so a stdlib validator can implement them.
 - **Errors**: every non-2xx body is `{"error":{"code","message","details"}}` (`common.schema.json#/$defs/error_envelope`).

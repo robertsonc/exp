@@ -115,8 +115,8 @@
         "ingest_tokens.json": "{\"probe-a1\":\"4b6bc8e17052c613a1c5b1690674666cfa125e2c5fa62cfe453d215d348921fe\"}",
         "dashboard_tokens.json": "{\"dash-main\":\"b1da8a592532b2a953fca6688e1044562bbd1017070f304e0887006045b785f3\"}",
         "webhooks.json": "[{\"id\":\"wh_1\",\"format\":\"slack\",\"url\":\"https://hooks.example.invalid/services/FIXTURE\"}]",
-        "speedtest_tokens.json": "{\"spd-core\":\"35451ea1422b89aadab8e7e22a3bd4b9129b31bb59634f7c5f703cb184647e9a\"}",
-        "runner_tokens.json": "{\"run-core\":\"fa5e53744b99ec3194602c52f42f3508ece1f1ab656822890a5cf2566bd6f6cc\"}",
+        "speedtest_tokens.json": "{\"spd-core\":\"c3883fdc00a0eff12d7ea275955a2fda72f4ce4a4489200a2c16eba93637bfce\"}",
+        "runner_tokens.json": "{\"run-core\":\"0d4e1d5ad64298d255c0bbd30769d5be74481fc846ef3a09a3e1cec27356167a\"}",
         "device_key_secret": "expk_9bFuC_20gne6jmwhPYyzr5h3-skCg5B7DHr4aqxrKYM"
       }
     },
@@ -516,7 +516,7 @@
       ],
       "creds": {
         "collector_token": "exps_y0OUoDaO_TL8inJPCULBi21qhTorlva6dhkSanwX4_0",
-        "runner_channel_token_sha256": "fb87306e140f0c0db339d67d301b21759cf2c72d86f5acb6fd0c5fc40f756333"
+        "runner_channel_token_sha256": "fcfe81db7907ba118fd76b03fc3d449c09bf456b78dda751e0175cb0c132896f"
       }
     }
   ],

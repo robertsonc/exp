@@ -39,7 +39,7 @@
     },
     "ap": {
       "mac": "5c:5b:35:00:01:a0",
-      "name": "hallb-ap-12",
+      "ap_name": "hallb-ap-12",
       "model": "AP45",
       "num_clients": 74,
       "status": "connected",

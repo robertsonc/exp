@@ -2413,6 +2413,212 @@ components:
         handoff JWT) to `https://<dashboard>/auth/sso`. The token is never placed in a URL.
     Error:
       $ref: ../schemas/common.schema.json#/$defs/error_envelope
+    SpeedtestSettings:
+      type: object
+      additionalProperties: false
+      description: 'Manager speedtest settings of a site (12 section 8): compiled into the speedtest, collector
+        and runner configs of the all-in-one host. Connectors (Mist, EdgeConnect) use the existing integrations
+        endpoints; HPE Aruba SSE has no API connector (CR-m6-spec-resolutions).'
+      properties:
+        zones:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/zones
+        zone_labels:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/zone_labels
+        branding:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/branding
+        display:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/display
+        targets:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/targets
+        limits:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/limits
+        internet_leg:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/internet_leg
+        privacy:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/privacy
+        core_guard:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/core_guard
+        serve:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/serve
+        tls:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/tls
+        dns_leg:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/dns_leg
+        path:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/path
+        consent:
+          type: object
+          properties:
+            text:
+              type: string
+              maxLength: 2000
+              pattern: ^[^\x00-\x08\x0b-\x1f\x7f]*$
+              description: Consent text. The manager increments `version` whenever the text changes (old tests
+                keep the version they saw).
+            version:
+              type: integer
+              minimum: 1
+              maximum: 1000000
+              description: 'Read-only: assigned by the manager; ignored on write.'
+          required:
+          - text
+          additionalProperties: false
+        device_key:
+          type: object
+          properties:
+            set:
+              type: boolean
+            updated_at:
+              anyOf:
+              - type: 'null'
+              - $ref: ../schemas/common.schema.json#/$defs/ts
+          required:
+          - set
+          - updated_at
+          additionalProperties: false
+          description: Whether the per-org device_key secret exists (write-only; never returned).
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - consent
+    SpeedtestSettingsPut:
+      type: object
+      additionalProperties: false
+      properties:
+        zones:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/zones
+        zone_labels:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/zone_labels
+        branding:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/branding
+        display:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/display
+        targets:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/targets
+        limits:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/limits
+        internet_leg:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/internet_leg
+        privacy:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/privacy
+        core_guard:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/core_guard
+        serve:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/serve
+        tls:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/tls
+        dns_leg:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/dns_leg
+        path:
+          $ref: ../schemas/speedtest.config.schema.json#/properties/path
+        consent:
+          type: object
+          properties:
+            text:
+              type: string
+              maxLength: 2000
+              pattern: ^[^\x00-\x08\x0b-\x1f\x7f]*$
+              description: Consent text. The manager increments `version` whenever the text changes (old tests
+                keep the version they saw).
+            version:
+              type: integer
+              minimum: 1
+              maximum: 1000000
+              description: 'Read-only: assigned by the manager; ignored on write.'
+          required:
+          - text
+          additionalProperties: false
+      required:
+      - consent
+      description: Replace the settings. Unknown keys are rejected; `serve.listen_ip` must be an interface
+        address of the speedtest host.
+    SpeedtestLogo:
+      type: object
+      properties:
+        artifact:
+          $ref: ../schemas/common.schema.json#/$defs/art_id
+        sha256:
+          $ref: ../schemas/common.schema.json#/$defs/sha256_hex
+        size:
+          type: integer
+          minimum: 1
+          maximum: 262144
+        content_type:
+          enum:
+          - image/png
+          - image/svg+xml
+          - image/jpeg
+      required:
+      - artifact
+      - sha256
+      - size
+      - content_type
+      additionalProperties: false
+      description: The stored logo artifact (set as branding.logo_artifact and delivered via the desired state's
+        assets[]).
+    SpeedtestPause:
+      type: object
+      properties:
+        paused:
+          type: boolean
+      required:
+      - paused
+      additionalProperties: false
+    SpeedtestPauseState:
+      type: object
+      properties:
+        paused:
+          type: boolean
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - paused
+      - updated_at
+      additionalProperties: false
+    SpeedtestQr:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 256
+          items:
+            type: object
+            properties:
+              zone:
+                $ref: ../schemas/common.schema.json#/$defs/slug
+              name:
+                type: string
+                maxLength: 64
+              url:
+                type: string
+                maxLength: 256
+                pattern: ^https?://[^\s]+$
+            required:
+            - zone
+            - name
+            - url
+            additionalProperties: false
+      required:
+      - items
+      additionalProperties: false
+      description: 'Signage data: one URL per zone, `http(s)://<hostname>/?z=<zone>`. The UI renders the QR
+        codes (no server-side image).'
+    SpeedtestDeviceKeyState:
+      type: object
+      properties:
+        set:
+          type: boolean
+        updated_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        key_id:
+          type: string
+          maxLength: 16
+      required:
+      - set
+      - updated_at
+      - key_id
+      additionalProperties: false
+      description: Never contains the secret.
   responses:
     Unauthorized:
       description: Missing or invalid `Cf-Access-Jwt-Assertion` (signature, `aud`, `iss`, `exp`/`nbf`,
@@ -2521,6 +2727,32 @@ components:
                 error:
                   code: conflict
                   message: conflict
+                  details: {}
+    PayloadTooLarge:
+      description: 'Payload too large. Error codes: `payload_too_large`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            payload_too_large:
+              value:
+                error:
+                  code: payload_too_large
+                  message: payload too large
+                  details: {}
+    UnsupportedMediaType:
+      description: 'Unsupported media type. Error codes: `unsupported_media_type`.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            unsupported_media_type:
+              value:
+                error:
+                  code: unsupported_media_type
+                  message: unsupported media type
                   details: {}
 paths:
   /me:
@@ -5251,6 +5483,225 @@ paths:
                       code: last_owner
                       message: last owner
                       details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/speedtest:
+    get:
+      operationId: getSpeedtestSettings
+      summary: Get a site's speedtest settings
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: viewer
+      parameters:
+      - name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestSettings'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: putSpeedtestSettings
+      summary: Replace a site's speedtest settings
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: admin
+      x-exp-audited: true
+      parameters:
+      - name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeedtestSettingsPut'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestSettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/speedtest/logo:
+    post:
+      operationId: uploadSpeedtestLogo
+      summary: Upload the speedtest logo (PNG, SVG or JPEG, <= 256 KiB)
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: admin
+      x-exp-audited: true
+      description: Raw image bytes in the body. The Worker checks the magic number against the declared
+        type (SVG is parsed for scripts/foreign references and refused if any) and stores it as an artifact.
+      parameters:
+      - name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              type: string
+              maxLength: 262144
+          image/svg+xml:
+            schema:
+              type: string
+              maxLength: 262144
+          image/jpeg:
+            schema:
+              type: string
+              maxLength: 262144
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestLogo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/speedtest/internet-pause:
+    post:
+      operationId: setSpeedtestInternetPause
+      summary: Pause or resume the internet leg (e.g. during a keynote)
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: operator
+      x-exp-audited: true
+      description: Sets `internet_leg.paused` in the compiled config; the agent applies it on the next poll
+        (<= 30 s). The automatic WAN-utilization pause is separate (runner -> speedtest channel).
+      parameters:
+      - name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeedtestPause'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestPauseState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/speedtest/qr:
+    get:
+      operationId: getSpeedtestQr
+      summary: Per-zone QR signage data
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: viewer
+      parameters:
+      - name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestQr'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /settings/speedtest-device-key:
+    post:
+      operationId: rotateSpeedtestDeviceKey
+      summary: Create or rotate the per-org device_key secret
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: owner
+      x-exp-audited: true
+      description: 'Generates a new `expk_` secret and delivers it as the `device_key_secret` credential
+        of the runner (and the collector, for purge-by-MAC). The value is never returned and never reaches
+        the manager''s results path (the manager receives no results or evidence, SR-20). Rotating breaks
+        device_key continuity with older tests: aggregates by device are not comparable across the rotation.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestDeviceKeyState'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

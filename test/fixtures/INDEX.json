@@ -1059,6 +1059,10 @@
     "schema": "speedtest.schema.json",
     "expected": "valid"
   },
+  "speedtest/result.scrubbed.json": {
+    "schema": "speedtest.schema.json",
+    "expected": "valid"
+  },
   "speedtest/result.unresolved-nat.json": {
     "schema": "speedtest.schema.json",
     "expected": "valid"

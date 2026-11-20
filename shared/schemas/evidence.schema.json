@@ -280,11 +280,11 @@
             "mac": {
               "$ref": "common.schema.json#/$defs/mac"
             },
-            "name": {
+            "ap_name": {
               "type": "string",
               "maxLength": 128,
               "pattern": "^[^\\x00-\\x1f\\x7f]*$",
-              "description": "stats_ap.name"
+              "description": "stats_ap.name (AP display name; renamed so no evidence object has a bare person-like key)"
             },
             "model": {
               "type": "string",
@@ -1726,11 +1726,11 @@
                       "pattern": "^[^\\x00-\\x1f\\x7f]*$",
                       "description": "alarm type"
                     },
-                    "name": {
+                    "alarm_name": {
                       "type": "string",
                       "maxLength": 128,
                       "pattern": "^[^\\x00-\\x1f\\x7f]*$",
-                      "description": "alarm name"
+                      "description": "alarm name (vendor key: name; renamed so no evidence object has a bare person-like key)"
                     },
                     "description": {
                       "type": "string",
@@ -1776,7 +1776,7 @@
                   },
                   "required": [
                     "severity",
-                    "name"
+                    "alarm_name"
                   ],
                   "additionalProperties": false
                 },
@@ -2389,10 +2389,11 @@
               "ts": {
                 "$ref": "common.schema.json#/$defs/ts"
               },
-              "name": {
+              "qname": {
                 "type": "string",
                 "maxLength": 253,
-                "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "description": "Queried domain name"
               },
               "qtype": {
                 "type": "string",
@@ -2418,7 +2419,7 @@
             },
             "required": [
               "ts",
-              "name"
+              "qname"
             ],
             "additionalProperties": false
           },

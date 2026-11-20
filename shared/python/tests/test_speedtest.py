@@ -5,7 +5,8 @@ import re
 
 import pytest
 
-from exp_common import ids, speedtest as st
+from exp_common import ids
+from exp_common import speedtest as st
 
 
 def test_speedtest_id():

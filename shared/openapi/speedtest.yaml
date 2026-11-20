@@ -1,0 +1,1534 @@
+# exp OpenAPI contract (M6). Source of truth: docs/spec/01-contracts.md section 14
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: exp speedtest API (page, sessions, local leg, runner channel)
+  version: 1.0.0
+  description: '01-contracts.md section 14, 12-speedtest-analytics.md section 7.3. ONE exp-speedtest box
+    at the venue core / DC (D15): plain HTTP by default (TCP 80 on serve.listen_ip when tls.mode = none;
+    443 + a 80 -> 443 redirect only when tls.mode = provided). The public page API is unauthenticated
+    by design (SR-21): strict validation, size and rate limits, no reflection of internal data except
+    to the holder of the result key. Session credentials: the leg token `expt_` (X-Exp-Leg-Token, 60 s,
+    byte-budgeted, memory only) for the local-leg endpoints and the view proof `expv_` (X-Exp-View-Proof,
+    derived from the URL-fragment key) for every other session route. The runner channel (`/local/v1`)
+    is reachable on 127.0.0.1 only and needs the runner''s `expl_` bearer token.
+
+
+    Errors use the envelope `{"error":{"code","message","details"}}`. 429 and 503 carry `Retry-After`.
+    Paths here are absolute (the page, the assets and the local-leg endpoints are not all under one prefix).'
+servers:
+- url: http://{host}
+  description: The speedtest box (plain HTTP by default; https when tls.mode = provided).
+  variables:
+    host:
+      default: speed.summit.example
+tags:
+- name: page
+- name: session
+- name: local-leg
+- name: dns-leg
+- name: runner-channel
+security: []
+components:
+  securitySchemes:
+    legToken:
+      type: apiKey
+      in: header
+      name: X-Exp-Leg-Token
+      description: Session leg token, prefix `expt_` (43 base64url chars). 60 s, single session, byte-budgeted,
+        held in memory only. Plain HTTP exposure on the event LAN is low-value by design (SR-26).
+    viewProof:
+      type: apiKey
+      in: header
+      name: X-Exp-View-Proof
+      description: View proof `expv_` + base64url(HMAC-SHA256(k, "exp.st.view/1:" + session_id)) where
+        k is the fragment key of `/st/r/{id}#k=...`. The server stores only sha256(proof) (`view_verifier`,
+        supplied at session creation). The key itself never appears in a URL the server can log.
+    runnerChannelToken:
+      type: http
+      scheme: bearer
+      bearerFormat: expl_<43 base64url chars>
+      description: Runner -> speedtest localhost channel token, prefix `expl_`. Loopback (127.0.0.1) only;
+        the speedtest holds its sha256 (cred `runner_channel_token_sha256`).
+  parameters:
+    ViewProof:
+      name: X-Exp-View-Proof
+      in: header
+      required: true
+      description: View proof (`expv_...`).
+      schema:
+        $ref: ../schemas/common.schema.json#/$defs/expv_token
+  responses:
+    BadRequest:
+      description: Malformed or out-of-bounds request.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            invalid_request:
+              value:
+                error:
+                  code: invalid_request
+                  message: invalid request
+                  details: {}
+            invalid_result:
+              value:
+                error:
+                  code: invalid_result
+                  message: invalid result
+                  details: {}
+            consent_version_stale:
+              value:
+                error:
+                  code: consent_version_stale
+                  message: consent version stale
+                  details: {}
+    Unauthorized:
+      description: Missing, wrong or expired credential (leg token, view proof, channel token).
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            invalid_token:
+              value:
+                error:
+                  code: invalid_token
+                  message: invalid token
+                  details: {}
+            token_expired:
+              value:
+                error:
+                  code: token_expired
+                  message: token expired
+                  details: {}
+    NotFound:
+      description: 'Unknown session, or a missing/invalid view proof (indistinguishable on purpose: no
+        session enumeration).'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            not_found:
+              value:
+                error:
+                  code: not_found
+                  message: not found
+                  details: {}
+    Forbidden:
+      description: 'Forbidden: not the session''s client address, or not loopback.'
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: forbidden
+                  message: forbidden
+                  details: {}
+            ip_mismatch:
+              value:
+                error:
+                  code: ip_mismatch
+                  message: ip mismatch
+                  details: {}
+    Conflict:
+      description: Wrong state for this call.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            conflict:
+              value:
+                error:
+                  code: conflict
+                  message: conflict
+                  details: {}
+            already_submitted:
+              value:
+                error:
+                  code: already_submitted
+                  message: already submitted
+                  details: {}
+            result_deadline_passed:
+              value:
+                error:
+                  code: result_deadline_passed
+                  message: result deadline passed
+                  details: {}
+    PayloadTooLarge:
+      description: Over the byte budget or body limit.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            budget_exceeded:
+              value:
+                error:
+                  code: budget_exceeded
+                  message: budget exceeded
+                  details: {}
+            payload_too_large:
+              value:
+                error:
+                  code: payload_too_large
+                  message: payload too large
+                  details: {}
+    TooManyRequests:
+      description: Rate limit or capacity (per-IP tests per 10 min, one concurrent test per IP, total
+        concurrent tests, internet slots). `details.limit` names which.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            rate_limited:
+              value:
+                error:
+                  code: rate_limited
+                  message: rate limited
+                  details:
+                    limit: per_ip_10min
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 3600
+    ServiceUnavailable:
+      description: Collector unreachable for a call that needs it, or box at capacity.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common.schema.json#/$defs/error_envelope
+          examples:
+            unavailable:
+              value:
+                error:
+                  code: unavailable
+                  message: unavailable
+                  details: {}
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 3600
+  schemas:
+    ConsentRef:
+      type: object
+      properties:
+        text_version:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+      required:
+      - text_version
+      additionalProperties: false
+    SessionCreate:
+      type: object
+      properties:
+        consent:
+          $ref: '#/components/schemas/ConsentRef'
+        zone_hint:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+          description: Optional ?z= hint from a QR code / portal link (a hint only; 12 section 3.1).
+        view_verifier:
+          $ref: ../schemas/common.schema.json#/$defs/sha256_hex
+      required:
+      - consent
+      - view_verifier
+      additionalProperties: false
+      description: Body of POST /sessions. view_verifier = sha256 hex of the view proof the page derives
+        from its fragment key (`exp_common.speedtest.view_verifier`); the key itself never leaves the
+        browser (01-contracts.md section 14.2).
+    SessionLimits:
+      type: object
+      properties:
+        bytes_local:
+          type: integer
+          minimum: 1
+          maximum: 10000000000
+          description: Remaining on-network byte budget for this session (cap, adapted down by the core
+            guard).
+        bytes_internet:
+          type: integer
+          minimum: 1
+          maximum: 10000000000
+          description: Internet byte budget the page must honour.
+        streams_start:
+          type: integer
+          minimum: 1
+          maximum: 8
+        streams_max:
+          type: integer
+          minimum: 1
+          maximum: 8
+        ramp_min_bytes:
+          type: integer
+          minimum: 1
+          maximum: 100000000
+        ramp_max_bytes:
+          type: integer
+          minimum: 1
+          maximum: 100000000
+        ping_count:
+          type: integer
+          minimum: 1
+          maximum: 100
+        leg_token_ttl_s:
+          type: integer
+          minimum: 1
+          maximum: 300
+        result_deadline_s:
+          type: integer
+          minimum: 1
+          maximum: 900
+      additionalProperties: false
+      description: Limits the page applies; the box enforces them regardless (SR-21/22).
+    SessionCreated:
+      type: object
+      properties:
+        session_id:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+        leg_token:
+          $ref: ../schemas/common.schema.json#/$defs/expt_token
+        leg_token_expires_in_s:
+          type: integer
+          minimum: 1
+          maximum: 300
+        limits:
+          $ref: '#/components/schemas/SessionLimits'
+        dns_nonces:
+          type: array
+          items:
+            type: string
+            pattern: ^[a-f0-9]{16}$
+          minItems: 0
+          maxItems: 3
+          description: Two fresh nonces (cold) and one more; the page also repeats the first for the warm
+            lookup. Empty when the DNS leg is disabled.
+        dns_zone:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/host_or_ip
+        internet_leg:
+          enum:
+          - ok
+          - queued
+          - paused
+          - unavailable
+          description: ok = go now; queued = ask /internet-slot; paused = admin or WAN auto-pause (the
+            page says why); unavailable = disabled in config.
+        queue_position:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 1
+            maximum: 100000
+        server_time:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - session_id
+      - leg_token
+      - leg_token_expires_in_s
+      - limits
+      - dns_nonces
+      - dns_zone
+      - internet_leg
+      - server_time
+      additionalProperties: false
+    WhereResponse:
+      type: object
+      properties:
+        zone:
+          $ref: ../schemas/common.schema.json#/$defs/zone_id
+        zone_name:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+        source:
+          enum:
+          - qr
+          - subnet
+          - mist
+          - dhcp
+          - unresolved
+        nat_suspected:
+          type: boolean
+          description: True when identity would fail closed for this address (outside every client subnet,
+            a translated address, or ambiguous).
+      required:
+      - zone
+      - zone_name
+      - source
+      - nat_suspected
+      additionalProperties: false
+      description: Best-effort location echo (cached Mist lookup pushed by the runner, else subnet label,
+        else the ?z= hint). Never contains an identifier of the device.
+    PathResponse:
+      type: object
+      properties:
+        session_id:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+        updated:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        path:
+          $ref: ../schemas/speedtest.schema.json#/$defs/path_leg
+        resolver_seen:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ip_addr
+          description: The resolver IP the DNS-leg server saw for this session's nonces.
+        dns_cold_split:
+          type: object
+          properties:
+            device_to_resolver_ms:
+              anyOf:
+              - type: 'null'
+              - type: number
+                minimum: 0
+                maximum: 60000
+            resolver_to_authority_ms:
+              anyOf:
+              - type: 'null'
+              - type: number
+                minimum: 0
+                maximum: 60000
+          additionalProperties: false
+          description: The cold DNS time split by the authoritative server's view (12 section 4.2).
+      required:
+      - session_id
+      - updated
+      - path
+      - resolver_seen
+      additionalProperties: false
+      description: 'Box-timed legs so far. Polled every 500 ms, or consumed as SSE (`Accept: text/event-stream`,
+        event `path` carries the same object).'
+    InternetSlotRequest:
+      type: object
+      properties:
+        action:
+          enum:
+          - acquire
+          - release
+      required:
+      - action
+      additionalProperties: false
+    InternetSlot:
+      type: object
+      properties:
+        state:
+          enum:
+          - granted
+          - queued
+          - paused
+          - unavailable
+          - released
+        queue_position:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 1
+            maximum: 100000
+        retry_after_s:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+            maximum: 300
+        ttl_s:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 1
+            maximum: 300
+          description: How long a granted slot is held without a release.
+        reason:
+          anyOf:
+          - type: 'null'
+          - enum:
+            - admin_pause
+            - wan_utilization
+            - disabled
+            - capacity
+          description: Why the leg is paused/unavailable (shown to the user).
+      required:
+      - state
+      additionalProperties: false
+    ResultAccepted:
+      type: object
+      properties:
+        id:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+        flags:
+          type: array
+          items:
+            $ref: ../schemas/speedtest.schema.json#/properties/flags/items
+          maxItems: 16
+        score:
+          $ref: ../schemas/speedtest.schema.json#/properties/score
+        diagnosis:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/speedtest.schema.json#/$defs/diagnosis
+          description: The quick (legs-only) diagnosis when the collector answered in time, else null
+            (poll the session).
+      required:
+      - id
+      - flags
+      - score
+      - diagnosis
+      additionalProperties: false
+      description: The server recomputed score and flags; the page shows these, not its own.
+    EvidenceProgress:
+      type: object
+      properties:
+        state:
+          enum:
+          - pending
+          - correlating
+          - final
+          - unavailable
+          description: pending = not picked up; correlating = runner working; final = evidence complete;
+            unavailable = no runner/connectors (a quick diagnosis is all there will be).
+        kinds_done:
+          type: array
+          items:
+            enum:
+            - wifi
+            - wired
+            - flows
+            - wan
+            - security
+            - baseline
+            - dns
+            - identity
+          maxItems: 8
+          uniqueItems: true
+      required:
+      - state
+      - kinds_done
+      additionalProperties: false
+    SessionView:
+      type: object
+      properties:
+        id:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+        state:
+          enum:
+          - created
+          - running
+          - submitted
+          - correlating
+          - final
+        zone:
+          $ref: ../schemas/common.schema.json#/$defs/zone_id
+        zone_name:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+        zone_source:
+          enum:
+          - qr
+          - subnet
+          - mist
+          - dhcp
+          - unresolved
+        result:
+          anyOf:
+          - type: 'null'
+          - type: object
+            description: The stored exp.speedtest/1 minus client.ip (the key holder is the user; internal
+              addresses are not reflected back, SR-21).
+            properties: {}
+            additionalProperties: true
+        diagnosis:
+          anyOf:
+          - type: 'null'
+          - type: object
+            properties:
+              stage:
+                enum:
+                - quick
+                - final
+              updated:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              cause:
+                type: array
+                maxItems: 8
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      maxLength: 64
+                    confidence:
+                      type: number
+                      minimum: 0
+                      maximum: 1
+                  required:
+                  - id
+                  - confidence
+                  additionalProperties: false
+              user_text:
+                type: string
+                maxLength: 280
+            required:
+            - stage
+            - updated
+            - cause
+            - user_text
+            additionalProperties: false
+            description: 'User-safe diagnosis: plain, blame-free text and cause ids only. NOC text and
+              evidence citations are not exposed.'
+        evidence:
+          $ref: '#/components/schemas/EvidenceProgress'
+        checks:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            properties:
+              kind:
+                enum:
+                - wifi
+                - wired
+                - wan
+                - security
+                - baseline
+                - dns
+                - identity
+                - flows
+              state:
+                enum:
+                - checking
+                - ok
+                - attention
+                - unavailable
+              text:
+                type: string
+                maxLength: 160
+            required:
+            - kind
+            - state
+            additionalProperties: false
+          description: '''What the network team sees'' rows that flip from checking to a finding as evidence
+            arrives.'
+        network_details:
+          anyOf:
+          - type: 'null'
+          - type: object
+            properties:
+              ap_name:
+                type: string
+                maxLength: 128
+              band:
+                type: string
+                maxLength: 16
+              channel:
+                type: integer
+                minimum: 0
+                maximum: 400
+            additionalProperties: false
+          description: Only when the event enabled display.show_network_details; otherwise null.
+        comment:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 500
+      required:
+      - id
+      - state
+      - zone
+      - zone_name
+      - zone_source
+      - result
+      - diagnosis
+      - evidence
+      - checks
+      - network_details
+      - comment
+      additionalProperties: false
+      description: Full result view, returned ONLY with a valid X-Exp-View-Proof (404 otherwise). User-safe
+        fields only (12 section 7.3).
+    CommentRequest:
+      type: object
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: ^[^\x00-\x08\x0b-\x1f\x7f]*$
+      required:
+      - comment
+      additionalProperties: false
+      description: 'SR-23: stored as text, rendered with textContent only, length-bounded; at most 3 replacements
+        per session.'
+    PublicConfig:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 80
+        logo:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+            pattern: ^/st/assets/[a-z0-9._-]{1,64}$
+        colors:
+          type: object
+          properties: {}
+          additionalProperties:
+            type: string
+            maxLength: 7
+            pattern: ^#[0-9A-Fa-f]{6}$
+          maxProperties: 8
+        languages:
+          type: array
+          items:
+            type: string
+            maxLength: 8
+          maxItems: 8
+        copy:
+          type: object
+          properties: {}
+          additionalProperties:
+            type: string
+            maxLength: 280
+          maxProperties: 40
+        consent:
+          type: object
+          properties:
+            text:
+              type: string
+              maxLength: 2000
+            version:
+              type: integer
+              minimum: 1
+              maximum: 1000000
+          required:
+          - text
+          - version
+          additionalProperties: false
+        targets:
+          type: object
+          properties:
+            down_mbps:
+              type: number
+              minimum: 0.1
+              maximum: 100000
+            up_mbps:
+              type: number
+              minimum: 0.1
+              maximum: 100000
+          required:
+          - down_mbps
+          - up_mbps
+          additionalProperties: false
+        dns_zone:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/host_or_ip
+        internet_leg:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            paused:
+              type: boolean
+            provider:
+              enum:
+              - cloudflare
+          required:
+          - enabled
+          - paused
+          - provider
+          additionalProperties: false
+        show_network_details:
+          type: boolean
+        tls_mode:
+          enum:
+          - none
+          - provided
+        version:
+          type: string
+          maxLength: 64
+      required:
+      - title
+      - logo
+      - colors
+      - languages
+      - copy
+      - consent
+      - targets
+      - dns_zone
+      - internet_leg
+      - show_network_details
+      - tls_mode
+      - version
+      additionalProperties: false
+      description: Everything the page needs to brand and run; public, no secrets, no internal addressing.
+    WhereWanted:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            properties:
+              ip:
+                $ref: ../schemas/common.schema.json#/$defs/ip_addr
+              since:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+            required:
+            - ip
+            - since
+            additionalProperties: false
+      required:
+      - items
+      additionalProperties: false
+      description: Client IPs the page asked 'where' for that are not cached yet; the runner resolves
+        them (Mist) and PUTs the answers.
+    WherePut:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            properties:
+              ip:
+                $ref: ../schemas/common.schema.json#/$defs/ip_addr
+              zone:
+                $ref: ../schemas/common.schema.json#/$defs/zone_id
+              zone_source:
+                enum:
+                - mist
+                - dhcp
+                - subnet
+                - unresolved
+              ap_name:
+                anyOf:
+                - type: 'null'
+                - type: string
+                  maxLength: 128
+              ssid:
+                anyOf:
+                - type: 'null'
+                - type: string
+                  maxLength: 64
+              band:
+                anyOf:
+                - type: 'null'
+                - type: string
+                  maxLength: 16
+              nat_suspected:
+                type: boolean
+              ttl_s:
+                type: integer
+                minimum: 1
+                maximum: 3600
+                description: Cache lifetime on the speedtest (default 60)
+            required:
+            - ip
+            - zone
+            - zone_source
+            - nat_suspected
+            additionalProperties: false
+      required:
+      - items
+      additionalProperties: false
+      description: 'The ''where'' cache: answers keyed by client IP. Contains no MAC or username; the
+        speedtest never learns raw device identity.'
+    PausePut:
+      type: object
+      properties:
+        wan_util_pct:
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
+            maximum: 1000
+          description: Highest EdgeConnect WAN interface utilization (kind=wan evidence wan_util_pct).
+        source:
+          enum:
+          - ec
+        measured_at:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        pause:
+          type: boolean
+          description: The runner's verdict (wan_util_pct above internet_leg.auto_pause_wan_util_pct);
+            the speedtest applies its own threshold if absent.
+      required:
+      - wan_util_pct
+      - source
+      - measured_at
+      additionalProperties: false
+      description: Internet-leg auto-pause input. A stale value (older than 90 s) is ignored and the leg
+        reopens (fail open).
+    Ok:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required:
+      - ok
+      additionalProperties: false
+paths:
+  /:
+    get:
+      operationId: getPage
+      summary: The speedtest page (one self-contained file)
+      tags:
+      - page
+      security: []
+      x-exp-wp: WP-10
+      description: 'One box serves everyone (D15): no redirect. Plain HTTP by default. `?z=<zone>` is
+        an optional hint stamped on the test; unknown values are ignored.'
+      parameters:
+      - name: z
+        in: query
+        required: false
+        description: Optional zone hint (QR code / portal link).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      responses:
+        '200':
+          description: The page.
+          headers:
+            Content-Security-Policy:
+              description: '`default-src ''self''; script-src ''sha256-<build hashes>''; connect-src ''self''
+                http://*.<dns_zone> https://speed.cloudflare.com; img-src ''self'' data:` (12 section
+                4.3).'
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            text/html:
+              schema:
+                type: string
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/r/{id}:
+    get:
+      operationId: getResultPage
+      summary: 'Result page (the #k= fragment key authorizes the full view)'
+      tags:
+      - page
+      security: []
+      x-exp-wp: WP-10
+      description: 'Serves the same static page for any id: authorization happens in the page''s call
+        to `GET /st/api/v1/sessions/{id}` with the view proof derived from the fragment key. The fragment
+        is never sent to the server, so it cannot appear in any server or proxy log.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Session / result id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      responses:
+        '200':
+          description: The result page shell.
+          headers:
+            Content-Security-Policy:
+              description: '`default-src ''self''; script-src ''sha256-<build hashes>''; connect-src ''self''
+                http://*.<dns_zone> https://speed.cloudflare.com; img-src ''self'' data:` (12 section
+                4.3).'
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            text/html:
+              schema:
+                type: string
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /st/assets/{name}:
+    get:
+      operationId: getAsset
+      summary: Branding logo and fonts served by the box
+      tags:
+      - page
+      security: []
+      x-exp-wp: WP-10
+      description: 'A fixed set: `logo` (installed from the desired state''s assets[]) and the locally
+        served font subsets. No directory listing; unknown names 404.'
+      parameters:
+      - name: name
+        in: path
+        required: true
+        description: Asset name.
+        schema:
+          type: string
+          maxLength: 64
+          pattern: ^[a-z0-9][a-z0-9._-]{0,63}$
+      responses:
+        '200':
+          description: The asset.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            image/png:
+              schema:
+                type: string
+            image/svg+xml:
+              schema:
+                type: string
+            image/jpeg:
+              schema:
+                type: string
+            font/woff2:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/api/v1/config:
+    get:
+      operationId: getPublicConfig
+      summary: Branding and test configuration for the page
+      tags:
+      - page
+      security: []
+      x-exp-wp: WP-10
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicConfig'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/api/v1/where:
+    get:
+      operationId: getWhere
+      summary: Best-effort zone for the caller's source address
+      tags:
+      - session
+      security: []
+      x-exp-wp: WP-10
+      description: Keyed by the server-observed source address (never a client-supplied one). Lets the
+        page show "You're in Hall B". Cached Mist lookup (pushed by the runner) > subnet label > `?z=`
+        hint > unresolved.
+      parameters:
+      - name: z
+        in: query
+        required: false
+        description: Optional zone hint.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WhereResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/api/v1/sessions:
+    post:
+      operationId: createSession
+      summary: Consent + hint -> session, leg token and limits
+      tags:
+      - session
+      security: []
+      x-exp-wp: WP-10
+      description: 'Always anonymous: no name or email field exists. Limits (SR-21): at most 6 tests per
+        10 min and one concurrent test per client IP; total concurrent tests per box (default 20); a 429
+        carries `Retry-After` and `details.limit`. The leg token (`expt_`, 60 s, byte-budgeted) lives
+        in the box''s memory only.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /st/api/v1/sessions/{id}/path:
+    get:
+      operationId: getSessionPath
+      summary: Box-timed legs so far (gateway, edge, edge+1, resolver seen, device ICMP)
+      tags:
+      - session
+      security:
+      - viewProof: []
+      x-exp-wp: WP-10
+      description: The path timer probes only the configured gateway/edge/edge+1 and the requesting client
+        (SR-22), never a client-chosen target. gateway/edge/edge+1 are shared venue-infrastructure context,
+        not per user.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Session / result id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      - $ref: '#/components/parameters/ViewProof'
+      responses:
+        '200':
+          description: 'JSON, or `text/event-stream` (event `path`) when `Accept: text/event-stream`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PathResponse'
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/api/v1/sessions/{id}/internet-slot:
+    post:
+      operationId: internetSlot
+      summary: Acquire or release an internet-leg slot (queue position)
+      tags:
+      - session
+      security:
+      - viewProof: []
+      x-exp-wp: WP-10
+      description: The page asks before calling Cloudflare. At most `max_concurrent_internet` (default
+        10) slots; the rest get the on-network and DNS legs at once and a queue position. Honours the
+        admin pause and the runner's WAN auto-pause. A modified client can bypass this by calling Cloudflare
+        directly; the slots protect the event WAN from well-behaved pages at scale (12 section 4.4).
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Session / result id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      - $ref: '#/components/parameters/ViewProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InternetSlotRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternetSlot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/px:
+    get:
+      operationId: dnsLegTarget
+      summary: 'DNS-leg target: 204 with Timing-Allow-Origin'
+      tags:
+      - dns-leg
+      security: []
+      x-exp-wp: WP-10
+      description: 'Requested as `http://<nonce>.<dns_zone>/st/px` (the Host names a nonce under the delegated
+        DNS-leg zone; the box also runs the zone''s authoritative DNS server). The page reads Resource
+        Timing `domainLookupEnd - domainLookupStart` (cross-origin, so `Timing-Allow-Origin: *` is mandatory).
+        No certificate is needed over plain HTTP.'
+      servers:
+      - url: http://{nonce}.{dns_zone}
+        variables:
+          nonce:
+            default: 0123456789abcdef
+          dns_zone:
+            default: t.speed.summit.example
+      responses:
+        '204':
+          description: No content.
+          headers:
+            Timing-Allow-Origin:
+              schema:
+                type: string
+                const: '*'
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                const: '*'
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/ping:
+    get:
+      operationId: localPing
+      summary: On-network latency probe (warm connection, token required)
+      tags:
+      - local-leg
+      security:
+      - legToken: []
+      x-exp-wp: WP-10
+      parameters:
+      - name: n
+        in: query
+        required: false
+        description: Sequence number echoed in `X-Exp-Seq` (lets the page match samples).
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+      responses:
+        '204':
+          description: No content.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Exp-Seq:
+              schema:
+                type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/down:
+    get:
+      operationId: localDown
+      summary: On-network download (sendfile), byte-budgeted
+      tags:
+      - local-leg
+      security:
+      - legToken: []
+      x-exp-wp: WP-10
+      description: '`bytes` is clamped to the session''s remaining budget; a request that would exceed
+        it is refused with 413. The box counts bytes served per session and cross-checks the browser''s
+        figure (> 20 % disagreement flags `counters_disagree`).'
+      parameters:
+      - name: bytes
+        in: query
+        required: true
+        description: Bytes to send (100 kB .. 25 MB ramp, hard maximum 100 MB per request).
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000000
+      responses:
+        '200':
+          description: Exactly `bytes` octets.
+          headers:
+            Content-Length:
+              schema:
+                type: integer
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/up:
+    post:
+      operationId: localUp
+      summary: On-network upload sink (discards and counts), byte-budgeted
+      tags:
+      - local-leg
+      security:
+      - legToken: []
+      x-exp-wp: WP-10
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              maxLength: 100000000
+              description: Opaque octets.
+      responses:
+        '204':
+          description: Received and discarded.
+          headers:
+            X-Exp-Received:
+              schema:
+                type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /st/api/v1/sessions/{id}/result:
+    post:
+      operationId: submitResult
+      summary: Submit the browser's legs (exp.speedtest.submission/1)
+      tags:
+      - session
+      security:
+      - viewProof: []
+      x-exp-wp: WP-10
+      description: Allowed once, within `result_deadline_s` of session creation, and only from the session's
+        client address. The box overwrites client.ip, site, server, timestamps, byte counters and the
+        score, bounds every number (<= 100 Gb/s, <= 60 s), sets flags, forwards `exp.speedtest/1` to the
+        collector (`POST speedtests`).
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Session / result id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      - $ref: '#/components/parameters/ViewProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/speedtest.submission.schema.json
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /st/api/v1/sessions/{id}:
+    get:
+      operationId: getSession
+      summary: 'User-safe status: quick diagnosis, evidence progress, final diagnosis'
+      tags:
+      - session
+      security:
+      - viewProof: []
+      x-exp-wp: WP-10
+      description: 'Requires `X-Exp-View-Proof` (derived from the #k= fragment key). 404 without or with
+        a wrong proof. Returns user-safe fields only (the collector''s `speedtests/{id}/status` filtered
+        by display settings): no MAC, no username, no flows, no NOC text.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Session / result id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      - $ref: '#/components/parameters/ViewProof'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /st/api/v1/sessions/{id}/comment:
+    post:
+      operationId: postComment
+      summary: Report a problem (<= 500 chars)
+      tags:
+      - session
+      security:
+      - viewProof: []
+      x-exp-wp: WP-10
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Session / result id (`st_` + ULID).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/st_id
+      - $ref: '#/components/parameters/ViewProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+      responses:
+        '204':
+          description: Stored.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /local/v1/where/wanted:
+    get:
+      operationId: channelWhereWanted
+      summary: Runner polls the client IPs the page asked 'where' for
+      tags:
+      - runner-channel
+      security:
+      - runnerChannelToken: []
+      x-exp-wp: WP-10
+      description: Loopback only (127.0.0.1), `expl_` bearer. A request from any other address is refused
+        with 403 before the token is looked at.
+      servers:
+      - url: http://127.0.0.1:{port}
+        variables:
+          port:
+            default: '8480'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WhereWanted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /local/v1/where:
+    put:
+      operationId: channelPutWhere
+      summary: Runner publishes the Mist 'where' cache
+      tags:
+      - runner-channel
+      security:
+      - runnerChannelToken: []
+      x-exp-wp: WP-9
+      servers:
+      - url: http://127.0.0.1:{port}
+        variables:
+          port:
+            default: '8480'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WherePut'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /local/v1/pause:
+    put:
+      operationId: channelPutPause
+      summary: Runner publishes EC WAN utilization (internet-leg auto-pause)
+      tags:
+      - runner-channel
+      security:
+      - runnerChannelToken: []
+      x-exp-wp: WP-9
+      servers:
+      - url: http://127.0.0.1:{port}
+        variables:
+          port:
+            default: '8480'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PausePut'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'

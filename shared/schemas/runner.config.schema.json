@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "runner.config.schema.json",
   "title": "exp.runner.config/1",
-  "description": "Runner config (01 section 9.4, M5). The runner re-checks every drill target against its own allowlist before acting. Creds (integrations.json, ingest_token) are never in this document. M6 adds the optional correlation block (base + correlation only; no drills in M6: drills_enabled stays false). M6 adds the optional correlation block (base + correlation only; no drills in M6: drills_enabled stays false).",
+  "description": "Runner config (01 section 9.4, M5). The runner re-checks every drill target against its own allowlist before acting. Creds (integrations.json, ingest_token) are never in this document. M6 adds the optional correlation block (base + correlation only; no drills in M6: drills_enabled stays false). M6 adds the optional correlation block (base + correlation only; no drills in M6: drills_enabled stays false). M6 adds the optional correlation block (base + correlation only; no drills in M6: drills_enabled stays false). M6 adds the optional correlation block (base + correlation only; no drills in M6: drills_enabled stays false).",
   "type": "object",
   "properties": {
     "schema": {

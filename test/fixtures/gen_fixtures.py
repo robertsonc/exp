@@ -656,6 +656,9 @@ def gen_speedtest() -> None:
     q = st_result("queued", flags=["internet_queued"], legs={"local": st_leg(150.0, 60.0, 7.0, 1.0, 50.0, 60.0, 0.15, 150000000, "spd-core"),
                                                             "internet": {"status": "queued"}})
     put("speedtest/result.internet-queued.json", q, "speedtest.schema.json")
+    scr = st_result("scrubbed")
+    scr["client"].pop("ip")
+    put("speedtest/result.scrubbed.json", scr, "speedtest.schema.json")
     cd = st_result("counters", flags=["counters_disagree", "bytes_capped"])
     put("speedtest/result.counters-disagree.json", cd, "speedtest.schema.json")
 
@@ -722,7 +725,7 @@ def gen_speedtest() -> None:
     wifi = {"client": {"mac": ST_MAC, "ap_mac": "5c:5b:35:00:01:a0", "bssid": "5c:5b:35:00:01:a2", "ssid": "Summit-Guest", "band": "5", "channel": 44, "proto": "ax", "rssi": -61, "snr": 34,
                        "tx_rate_mbps": 433.3, "rx_rate_mbps": 390.0, "tx_retries": 812, "rx_retries": 40, "tx_pkts": 96000, "rx_pkts": 120000, "idle_time_s": 0.2, "uptime_s": 1820,
                        "power_saving": False, "dual_band": True, "key_mgmt": "WPA2-PSK/CCMP", "vlan_id": "160", "manufacture": "Apple", "os": "iOS", "last_seen": 1763474547, "retry_pct": 0.85},
-            "ap": {"mac": "5c:5b:35:00:01:a0", "name": "hallb-ap-12", "model": "AP45", "num_clients": 74, "status": "connected",
+            "ap": {"mac": "5c:5b:35:00:01:a0", "ap_name": "hallb-ap-12", "model": "AP45", "num_clients": 74, "status": "connected",
                    "radio": {"band": "5", "channel": 44, "bandwidth_mhz": 80, "power_dbm": 15, "noise_floor_dbm": -92, "num_clients": 61, "util_all": 81, "util_tx": 22,
                              "util_rx_in_bss": 31, "util_rx_other_bss": 20, "util_non_wifi": 8}},
             "roams": [{"timestamp": 1763474500, "from_ap_mac": "5c:5b:35:00:01:b0", "ap_mac": "5c:5b:35:00:01:a0", "type": "success", "latency_s": 0.11, "ssid": "Summit-Guest"}],
@@ -747,7 +750,7 @@ def gen_speedtest() -> None:
                         "max_wan_bandwidth_kbps": 200000, "rx_bps": 185000000, "tx_bps": 60000000, "util_pct": 92.5}],
         "health": {"latency": [{"tunnel_id": "to_dc", "health_status": "HEALTHY", "critical_mins": 0, "major_mins": 3, "normal_mins": 57, "max": 38}],
                    "loss": [{"tunnel_id": "to_dc", "health_status": "HEALTHY", "critical_mins": 0, "major_mins": 0, "normal_mins": 60, "max": 0.2}], "jitter": [], "mos": []},
-        "alarms": [{"sequence_id": 551, "severity": "major", "type": "tunnel", "name": "Tunnel state", "description": "Tunnel to_dc degraded", "time_occurred_ms": 1763474400000,
+        "alarms": [{"sequence_id": 551, "severity": "major", "type": "tunnel", "alarm_name": "Tunnel state", "description": "Tunnel to_dc degraded", "time_occurred_ms": 1763474400000,
                     "occurrence_count": 2, "service_affect": True, "closed": False, "host_name": "ec-core"}],
         "timeseries": {"columns": ["time", "rx_bps", "tx_bps"], "rows": [[1763474460, 180000000, 59000000], [1763474520, 185000000, 60000000]]}}], "wan_util_pct": 92.5})
     ev["security.policy-block"] = st_ev("policy-block", "security", "syslog", {
@@ -761,7 +764,7 @@ def gen_speedtest() -> None:
                                                        "lines": [{"key": "network", "state": "ok"}, {"key": "dns", "state": "ok"}, {"key": "wifi", "state": "warn", "detail": "rssi -71 dBm"}],
                                                        "throughput": {"down_mbps": 230.0, "up_mbps": 90.0, "latency_idle_ms": 8.0, "latency_loaded_ms": 40.0, "ts": "2026-11-18T14:00:00.000Z"},
                                                        "wifi": {"ssid": "Summit-Guest", "band": "5", "rssi_dbm": -71, "snr_db": 24}})
-    ev["dns.ok"] = st_ev("ok", "dns", "syslog", {"resolver_ip": "10.0.0.53", "queries": [{"ts": "2026-11-18T14:02:14.000Z", "name": "speed.cloudflare.com", "qtype": "A", "rcode": "NOERROR", "rtt_ms": 410.0, "client_ip": ST_IP}],
+    ev["dns.ok"] = st_ev("ok", "dns", "syslog", {"resolver_ip": "10.0.0.53", "queries": [{"ts": "2026-11-18T14:02:14.000Z", "qname": "speed.cloudflare.com", "qtype": "A", "rcode": "NOERROR", "rtt_ms": 410.0, "client_ip": ST_IP}],
                                                  "failures": 0, "slow": 1, "slowest_ms": 410.0, "probe_dns": {"state": "ok", "rtt_ms": 12.0, "resolver": "10.0.0.53"}})
     for k, v in ev.items():
         put("evidence/%s.json" % k, v, "evidence.schema.json")
@@ -831,8 +834,8 @@ def gen_speedtest() -> None:
     # ---- desired: the all-in-one profile (probe + collector + runner + speedtest on ONE box)
     col = comp_collector()
     col["config"] = collector_speedtests_cfg()
-    col["creds"] = dict(col["creds"], **{"speedtest_tokens.json": json.dumps({"spd-core": sha256_hex("token:spd-core")}, separators=(",", ":")),
-                                         "runner_tokens.json": json.dumps({"run-core": sha256_hex("token:run-core")}, separators=(",", ":")),
+    col["creds"] = dict(col["creds"], **{"speedtest_tokens.json": json.dumps({"spd-core": hashlib.sha256(token("exps", "spd-core").encode()).hexdigest()}, separators=(",", ":")),
+                                         "runner_tokens.json": json.dumps({"run-core": hashlib.sha256(token("expr", "run-core").encode()).hexdigest()}, separators=(",", ":")),
                                          "device_key_secret": ST_SECRET})
     run = {"type": "runner", "id": "run-core", "component_id": fid("cmp", "run-core"), "version": "0.1.0", "artifact": artifact("runner", "noarch", "runner"),
            "config": runner_corr_cfg(),
@@ -843,7 +846,7 @@ def gen_speedtest() -> None:
            "config": speedtest_cfg(),
            "assets": [{"name": "logo", "content_type": "image/svg+xml", "artifact": {"id": fid("art", "st-logo"), "name": "exp-speedtest-0.1.0-noarch.tar.gz", "url": "/api/agent/v1/artifacts/" + fid("art", "st-logo"),
                                                                                        "sha256": sha256_hex("artifact:st-logo"), "size": 18000}}],
-           "creds": {"collector_token": token("exps", "spd-core"), "runner_channel_token_sha256": sha256_hex("token:spd-core-channel")}}
+           "creds": {"collector_token": token("exps", "spd-core"), "runner_channel_token_sha256": hashlib.sha256(token("expl", "spd-core").encode()).hexdigest()}}
     prb = comp_probe()
     aio = desired("srv-core", [col, prb, run, spd], version=50)
     put("desired/all-in-one-speedtest.json", aio, "desired.schema.json")

@@ -16,11 +16,14 @@ from openapi_spec_validator import validate
 
 HERE = Path(__file__).resolve().parent
 SCHEMAS = HERE.parent / "schemas"
-FILES = ["ingest", "collector", "agent", "admin"]
+FILES = ["ingest", "collector", "agent", "admin", "speedtest"]
+ORIGINAL_FILES = ["ingest", "collector", "agent", "admin"]
 
 AGREED_SCHEMA_FILES = {
     "common", "measurement", "desired", "status", "health", "state", "beats", "incident", "manifest",
     "probe.config", "collector.config", "dashboard.config", "runner.config",
+    # M6 (CR-m6-contracts)
+    "speedtest", "speedtest.submission", "evidence", "speedtest.config",
 }
 AGREED_NAMES = {f"{n}.schema.json" for n in AGREED_SCHEMA_FILES}
 
@@ -30,6 +33,7 @@ BASES = {
     "collector": "/api/v1",
     "agent": "/api/agent/v1",
     "admin": "/api/admin/v1",
+    "speedtest": "",  # root-relative: /, /st/..., /local/v1/... (paths are absolute)
 }
 
 # (method, path relative to the base) per 01-contracts.md. Root-level routes (`/healthz`,
@@ -54,6 +58,18 @@ _TABLE = {
         POST /drills/{run_id}/abort
         GET /drills/control
         GET /healthz
+        GET /speedtests
+        POST /speedtests
+        GET /speedtests/aggregate
+        GET /speedtests/stream
+        GET /speedtests/feed
+        GET /speedtests/baseline
+        POST /speedtests/purge
+        GET /speedtests/{id}
+        GET /speedtests/{id}/status
+        POST /speedtests/{id}/comment
+        POST /speedtests/{id}/evidence
+        POST /speedtests/{id}/evidence/complete
     """,
     "agent": """
         POST /enrol
@@ -136,6 +152,32 @@ _TABLE = {
         GET /audit
         GET /settings
         PATCH /settings
+        GET /sites/{site}/speedtest
+        PUT /sites/{site}/speedtest
+        POST /sites/{site}/speedtest/logo
+        POST /sites/{site}/speedtest/internet-pause
+        GET /sites/{site}/speedtest/qr
+        POST /settings/speedtest-device-key
+    """,
+    "speedtest": """
+        GET /
+        GET /st/r/{id}
+        GET /st/assets/{name}
+        GET /st/api/v1/config
+        GET /st/api/v1/where
+        POST /st/api/v1/sessions
+        GET /st/api/v1/sessions/{id}/path
+        POST /st/api/v1/sessions/{id}/internet-slot
+        GET /st/px
+        GET /st/ping
+        GET /st/down
+        POST /st/up
+        POST /st/api/v1/sessions/{id}/result
+        GET /st/api/v1/sessions/{id}
+        POST /st/api/v1/sessions/{id}/comment
+        GET /local/v1/where/wanted
+        PUT /local/v1/where
+        PUT /local/v1/pause
     """,
 }
 EXPECTED = {
@@ -153,7 +195,18 @@ ALLOWED_KEYWORDS = {
 }
 METHODS = {"get", "put", "post", "delete", "patch", "options", "head", "trace"}
 ROLES = {"viewer", "operator", "admin", "owner"}
-PUBLIC_OK_NO_ROLE = {"collector", "agent", "ingest"}
+PUBLIC_OK_NO_ROLE = {"collector", "agent", "ingest", "speedtest"}
+# Operation-level `servers` overrides are allowed only for these root routes / the loopback channel.
+SERVER_OVERRIDE_OK = {"/healthz", "/install.sh", "/st/px", "/local/v1/where/wanted", "/local/v1/where",
+                      "/local/v1/pause"}
+REQUIRED_SCHEMES = {
+    "ingest": {"ingestToken", "dashboardToken", "agentSecret", "accessJwt"},
+    "collector": {"ingestToken", "dashboardToken", "agentSecret", "accessJwt", "speedtestToken",
+                  "runnerToken"},
+    "agent": {"ingestToken", "dashboardToken", "agentSecret", "accessJwt"},
+    "admin": {"ingestToken", "dashboardToken", "agentSecret", "accessJwt"},
+    "speedtest": {"legToken", "viewProof", "runnerChannelToken"},
+}
 
 
 def _load(name: str) -> dict:
@@ -236,9 +289,12 @@ def test_servers_use_documented_base(name):
     assert len(urls) == 1 and urls[0].endswith(BASES[name]), urls
     for p, _m, o in _operations(doc):
         for s in o.get("servers", []):
-            # only the root-level routes may override the base
-            assert p in ("/healthz", "/install.sh"), p
-            assert not s["url"].endswith("/v1")
+            # only the root-level routes (and, in speedtest.yaml, the DNS-leg host and the loopback
+            # channel) may override the base
+            assert p in SERVER_OVERRIDE_OK, p
+            if name != "speedtest":
+                assert p in ("/healthz", "/install.sh"), p
+                assert not s["url"].endswith("/v1")
 
 
 def test_external_refs_use_agreed_filenames(api):
@@ -250,7 +306,7 @@ def test_external_refs_use_agreed_filenames(api):
             fname, _, frag = ref.partition("#")
             assert fname.startswith("../schemas/"), ref
             base = fname[len("../schemas/"):]
-            assert base in AGREED_NAMES, f"{name}: {ref} is not one of the 13 agreed schema files"
+            assert base in AGREED_NAMES, f"{name}: {ref} is not one of the agreed schema files"
             assert frag == "" or frag.startswith("/"), ref
             seen.add(base)
     assert seen, f"{name}.yaml references no shared schema"
@@ -289,14 +345,22 @@ def test_every_operation_has_id_summary_and_4xx(api):
 def test_security_declared_on_every_operation(api):
     name, doc = api
     schemes = set(doc["components"]["securitySchemes"])
-    assert {"ingestToken", "dashboardToken", "agentSecret", "accessJwt"} <= schemes
-    assert doc["components"]["securitySchemes"]["accessJwt"] == {
-        "type": "apiKey", "in": "header", "name": "Cf-Access-Jwt-Assertion",
-        "description": doc["components"]["securitySchemes"]["accessJwt"]["description"],
-    }
-    for sname in ("ingestToken", "dashboardToken", "agentSecret"):
-        s = doc["components"]["securitySchemes"][sname]
-        assert s["type"] == "http" and s["scheme"] == "bearer"
+    assert REQUIRED_SCHEMES[name] <= schemes
+    if name != "speedtest":
+        assert doc["components"]["securitySchemes"]["accessJwt"] == {
+            "type": "apiKey", "in": "header", "name": "Cf-Access-Jwt-Assertion",
+            "description": doc["components"]["securitySchemes"]["accessJwt"]["description"],
+        }
+    bearer = ("ingestToken", "dashboardToken", "agentSecret", "speedtestToken", "runnerToken",
+              "runnerChannelToken")
+    for sname in bearer:
+        if sname in schemes:
+            s = doc["components"]["securitySchemes"][sname]
+            assert s["type"] == "http" and s["scheme"] == "bearer"
+    if name == "speedtest":
+        for sname, header in (("legToken", "X-Exp-Leg-Token"), ("viewProof", "X-Exp-View-Proof")):
+            s = doc["components"]["securitySchemes"][sname]
+            assert s == {"type": "apiKey", "in": "header", "name": header, "description": s["description"]}
     for p, m, o in _operations(doc):
         sec = o.get("security", doc.get("security"))
         assert sec is not None, f"{name} {m} {p}"
@@ -305,11 +369,17 @@ def test_security_declared_on_every_operation(api):
 
 
 def test_public_routes_are_explicitly_unauthenticated():
-    public = (("collector", "/healthz"), ("agent", "/install.sh"), ("agent", "/enrol"), ("agent", "/healthz"))
+    public = (("collector", "/healthz"), ("agent", "/install.sh"), ("agent", "/enrol"), ("agent", "/healthz"),
+              ("speedtest", "/"), ("speedtest", "/st/api/v1/sessions"), ("speedtest", "/st/api/v1/where"),
+              ("speedtest", "/st/px"))
     for name, path in public:
         o = _load(name)["paths"][path]
         o = o.get("get") or o.get("post")
         assert o["security"] == [], f"{name} {path} must be explicitly public"
+
+
+def test_ingest_agent_collector_admin_keep_their_original_tests():
+    assert ORIGINAL_FILES == ["ingest", "collector", "agent", "admin"]
 
 
 def test_admin_every_operation_has_min_role_and_jwt():
@@ -444,3 +514,114 @@ def test_no_secrets_or_real_hosts_in_examples():
         text = (HERE / f"{name}.yaml").read_text(encoding="utf-8")
         assert not re.search(r"exp[aeidn]_[A-Za-z0-9_-]{43}", text), f"{name}: token-shaped value present"
         assert "BEGIN PRIVATE KEY" not in text
+
+
+# --------------------------------------------------------------------------- M6 speedtest
+M6_COLLECTOR = {
+    "/speedtests", "/speedtests/aggregate", "/speedtests/stream", "/speedtests/feed", "/speedtests/baseline",
+    "/speedtests/purge", "/speedtests/{id}", "/speedtests/{id}/status", "/speedtests/{id}/comment",
+    "/speedtests/{id}/evidence", "/speedtests/{id}/evidence/complete",
+}
+
+
+def test_m6_operations_name_the_implementing_wp():
+    for name in ("speedtest", "collector", "admin"):
+        for p, m, o in _operations(_load(name)):
+            if name == "speedtest" or p in M6_COLLECTOR or "speedtest" in p:
+                assert o.get("x-exp-wp") in ("WP-9", "WP-10", "WP-11"), (name, m, p)
+
+
+def test_collector_speedtest_auth_matrix():
+    """Each speedtest route accepts exactly the credential of its caller (SR-1 style identity binding)."""
+    doc = _load("collector")
+    want = {
+        ("post", "/speedtests"): "speedtestToken",
+        ("get", "/speedtests/{id}/status"): "speedtestToken",
+        ("post", "/speedtests/{id}/comment"): "speedtestToken",
+        ("get", "/speedtests/feed"): "runnerToken",
+        ("get", "/speedtests/baseline"): "runnerToken",
+        ("post", "/speedtests/{id}/evidence"): "runnerToken",
+        ("post", "/speedtests/{id}/evidence/complete"): "runnerToken",
+        ("get", "/speedtests"): None, ("get", "/speedtests/{id}"): None,
+        ("get", "/speedtests/aggregate"): None, ("get", "/speedtests/stream"): None,
+        ("post", "/speedtests/purge"): None,
+    }
+    for p, m, o in _operations(doc):
+        if (m, p) in want:
+            sec = o.get("security", doc["security"])
+            names = {k for req in sec for k in req}
+            assert names == ({want[(m, p)]} if want[(m, p)] else {"dashboardToken"}), (m, p, names)
+
+
+def test_collector_purge_and_identifiers_are_admin_gated_in_the_description():
+    doc = _load("collector")
+    purge = doc["paths"]["/speedtests/purge"]["post"]
+    assert "admin" in purge["description"] and "X-Exp-User" in purge["description"]
+    params = doc["paths"]["/speedtests/{id}"]["get"]["parameters"]
+    ident = [q for q in params if q.get("name") == "identifiers"]
+    assert ident and ident[0]["schema"]["default"] is False
+    assert "SR-25" in ident[0]["description"]
+
+
+def test_collector_speedtest_stream_documents_sse():
+    o = _load("collector")["paths"]["/speedtests/stream"]["get"]
+    assert set(o["x-exp-sse-events"]) == {"speedtest", "evidence", "diagnosis"}
+    assert o["x-exp-sse-comments"] == {"keepalive_interval_s": 15, "retry_ms": 3000, "replay_window_s": 300}
+
+
+def test_speedtest_local_leg_requires_leg_token_and_session_routes_require_view_proof():
+    doc = _load("speedtest")
+    for p in ("/st/ping", "/st/down", "/st/up"):
+        o = next(o for pp, _m, o in _operations(doc) if pp == p)
+        assert o["security"] == [{"legToken": []}], p
+    for p, m, o in _operations(doc):
+        if p.startswith("/st/api/v1/sessions/{id}"):
+            assert o["security"] == [{"viewProof": []}], (m, p)
+        if p.startswith("/local/v1/"):
+            assert o["security"] == [{"runnerChannelToken": []}], (m, p)
+            assert o["servers"][0]["url"].startswith("http://127.0.0.1:"), p
+
+
+def test_speedtest_dns_leg_target_documents_timing_allow_origin_and_429():
+    o = _load("speedtest")["paths"]["/st/px"]["get"]
+    h = o["responses"]["204"]["headers"]
+    assert h["Timing-Allow-Origin"]["schema"]["const"] == "*"
+    assert "429" in o["responses"]
+
+
+def test_speedtest_429_carries_retry_after_everywhere_it_appears():
+    doc = _load("speedtest")
+    assert "Retry-After" in doc["components"]["responses"]["TooManyRequests"]["headers"]
+    for p, m, o in _operations(doc):
+        assert "429" in o["responses"], (m, p)
+
+
+def test_speedtest_no_person_identity_in_inline_schemas():
+    """No name/email/phone property anywhere in the public speedtest API (12 section 9)."""
+    doc = _load("speedtest")
+    forbidden = {"name", "email", "full_name", "first_name", "last_name", "phone"}
+    bad = []
+    for loc, sch in _schema_nodes(doc):
+        for k in (sch.get("properties") or {}):
+            if k.lower() in forbidden:
+                bad.append((loc, k))
+    # (the `name` path parameter of GET /st/assets/{name} is a parameter, not a body property)
+    assert not bad, bad
+
+
+def test_speedtest_session_create_has_no_free_identity_and_requires_view_verifier():
+    sc = _load("speedtest")["components"]["schemas"]["SessionCreate"]
+    assert sc["additionalProperties"] is False and set(sc["required"]) == {"consent", "view_verifier"}
+    assert set(sc["properties"]) == {"consent", "zone_hint", "view_verifier"}
+
+
+def test_admin_speedtest_settings_endpoints_and_roles():
+    doc = _load("admin")
+    role = {(m, p): o["x-exp-min-role"] for p, m, o in _operations(doc)}
+    assert role[("put", "/sites/{site}/speedtest")] == "admin"
+    assert role[("post", "/sites/{site}/speedtest/internet-pause")] == "operator"
+    assert role[("post", "/settings/speedtest-device-key")] == "owner"
+    assert role[("get", "/sites/{site}/speedtest")] == "viewer"
+    assert role[("get", "/sites/{site}/speedtest/qr")] == "viewer"
+    schema = doc["components"]["schemas"]["SpeedtestDeviceKeyState"]
+    assert "secret" not in schema["properties"] and "Never contains the secret" in schema["description"]
