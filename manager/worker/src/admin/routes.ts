@@ -21,6 +21,7 @@ import * as intent from "./intent";
 import * as read from "./read";
 import * as svc from "./service";
 import { buildSsoPage, mintLaunchNonce, verifyLaunchNonce } from "./sso";
+import * as speedtest from "../speedtest/settings";
 
 export const adminRoutes = new Hono<AppBindings>();
 adminRoutes.use("*", accessAuth);
@@ -66,7 +67,7 @@ const slugS = z.string().regex(SLUG_RE);
 const tzS = z.string().max(64).regex(/^(UTC|[A-Za-z]+(\/[A-Za-z0-9_+-]+){1,2})$/);
 const SiteCreate = z.object({ site: slugS, name: z.string().min(1).max(128), timezone: tzS, edge_label: z.string().max(32).optional(), retention: intent.RetentionSchema.optional() }).strict();
 const SitePatch = z.object({ name: z.string().min(1).max(128), timezone: tzS, edge_label: z.string().max(32), retention: intent.RetentionSchema }).partial().strict();
-const SHAPES = z.enum(["probe", "collector", "dashboard", "runner"]);
+const SHAPES = z.enum(["probe", "collector", "dashboard", "runner", "speedtest"]);
 const HostCreate = z.object({ name: z.string().min(1).max(128), site: slugS, shapes: z.array(SHAPES).max(4).optional() }).strict();
 const HostPatch = z.object({ name: z.string().min(1).max(128), site: slugS }).partial().strict();
 const ComponentCreate = z.object({ type: z.enum(["probe", "collector", "dashboard", "runner", "speedtest"]), id: slugS, config: z.record(z.string(), z.unknown()) }).strict();
@@ -113,6 +114,30 @@ adminRoutes.put("/sites/:site/alerts", requireRole("admin"), async (c) => {
   return c.json(await intent.putSiteAlerts(c.env, actorOf(c), c.req.param("site"), raw));
 });
 adminRoutes.post("/sites/:site/alerts/test", requireRole("admin"), async (c) => c.json(await intent.testSiteAlerts(c.env, actorOf(c), c.req.param("site"))));
+
+// ---- speedtest settings (M6, admin.yaml tag speedtest) ------------------------------------------------------
+// INTENT only: the manager never receives a test result or evidence (SR-20), so no route here takes or returns one.
+const PauseBody = z.object({ paused: z.boolean() }).strict();
+adminRoutes.get("/sites/:site/speedtest", requireRole("viewer"), async (c) => c.json(await speedtest.getSettings(c.env, c.req.param("site"))));
+adminRoutes.put("/sites/:site/speedtest", requireRole("admin"), async (c) => {
+  const raw = await readJson(c.req.raw, MAX_BODY);
+  if (raw === undefined) throw invalidRequest("a JSON body is required");
+  return c.json(await speedtest.putSettings(c.env, actorOf(c), c.req.param("site"), raw));
+});
+adminRoutes.get("/sites/:site/speedtest/consent-history", requireRole("admin"), async (c) => c.json(await speedtest.consentHistory(c.env, c.req.param("site"))));
+adminRoutes.post("/sites/:site/speedtest/logo", requireRole("admin"), async (c) => created(c, await speedtest.uploadLogo(c.env, actorOf(c), c.req.param("site"), c.req.raw)));
+adminRoutes.post("/sites/:site/speedtest/internet-pause", requireRole("operator"), async (c) => c.json(await speedtest.setPause(c.env, actorOf(c), c.req.param("site"), (await bodyOf(c, PauseBody)).paused)));
+adminRoutes.get("/sites/:site/speedtest/qr", requireRole("viewer"), async (c) => c.json(await speedtest.qrData(c.env, c.req.param("site"))));
+adminRoutes.get("/sites/:site/speedtest/tls", requireRole("admin"), async (c) => c.json(await speedtest.getSpeedtestTls(c.env, c.req.param("site"))));
+adminRoutes.put("/sites/:site/speedtest/tls", requireRole("admin"), async (c) => {
+  const raw = await readJson(c.req.raw, MAX_BODY);
+  if (raw === undefined) throw invalidRequest("a JSON body is required");
+  return c.json(await speedtest.putSpeedtestTls(c.env, actorOf(c), c.req.param("site"), raw));
+});
+adminRoutes.post("/settings/speedtest-device-key", requireRole("owner"), async (c) => {
+  await emptyBody(c);
+  return c.json(await speedtest.rotateDeviceKey(c.env, actorOf(c)));
+});
 
 // ---- hosts ----------------------------------------------------------------------------------------------
 async function managerBase(c: Ctx): Promise<string> {

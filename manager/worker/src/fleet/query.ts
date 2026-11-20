@@ -80,7 +80,7 @@ export function mgmtIpOf(factsJson: string): string | null {
   return null;
 }
 
-const SHAPES = new Set(["probe", "collector", "dashboard", "runner"]);
+const SHAPES = new Set(["probe", "collector", "dashboard", "runner", "speedtest"]);
 
 async function defaultStatusInterval(env: Env): Promise<number> {
   const r = await env.DB.prepare("SELECT agent_status_interval_s FROM settings WHERE org_id = 'default'").first<{ agent_status_interval_s: number }>();
@@ -450,7 +450,7 @@ export interface HostRowOut {
   disk_pct_max: number | null;
   uptime_s: number | null;
   net: { rx_pps: number | null; tx_pps: number | null; rx_bps: number | null; tx_bps: number | null } | null;
-  work: { measurements_per_min: number | null; ingest_records_per_s: number | null; sessions_active: number | null; drills_active: number | null };
+  work: { measurements_per_min: number | null; ingest_records_per_s: number | null; sessions_active: number | null; drills_active: number | null; tests_per_hour: number | null };
   cpu_spark: Array<number | null>;
   net_spark: Array<number | null>;
   agent_version: string | null;
@@ -503,7 +503,7 @@ async function sparks(env: Env, hostIds: string[]): Promise<Map<string, { cpu: A
 export async function fleetHosts(env: Env, q: FleetHostQuery) {
   if (q.health && !["ok", "degraded", "fail", "unknown"].includes(q.health)) throw invalidRequest("invalid health filter");
   if (q.state && !["pending", "enrolled", "stale", "offline", "decommissioning"].includes(q.state)) throw invalidRequest("invalid state filter");
-  if (q.type && !SHAPES.has(q.type) && q.type !== "speedtest") throw invalidRequest("invalid type filter");
+  if (q.type && !SHAPES.has(q.type)) throw invalidRequest("invalid type filter");
   const sortRaw = q.sort ?? "name";
   const desc = sortRaw.startsWith("-");
   const sortKey = desc ? sortRaw.slice(1) : sortRaw;
@@ -557,6 +557,7 @@ export async function fleetHosts(env: Env, q: FleetHostQuery) {
         ingest_records_per_s: sum("collector", "ingest_records_per_s"),
         sessions_active: sum("dashboard", "sessions_active"),
         drills_active: sum("runner", "drills_active"),
+        tests_per_hour: sum("speedtest", "tests_per_hour"),
       },
       cpu_spark: [],
       net_spark: [],

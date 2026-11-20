@@ -157,6 +157,9 @@ _TABLE = {
         POST /sites/{site}/speedtest/logo
         POST /sites/{site}/speedtest/internet-pause
         GET /sites/{site}/speedtest/qr
+        GET /sites/{site}/speedtest/consent-history
+        GET /sites/{site}/speedtest/tls
+        PUT /sites/{site}/speedtest/tls
         POST /settings/speedtest-device-key
     """,
     "speedtest": """
@@ -413,7 +416,9 @@ def test_admin_role_matrix_matches_spec():
     assert role[("get", "/settings/master-key")] == "admin"  # CR-m3-master-key-rotation
     for (m, p), r in role.items():
         admin_only = ("/audit", "/dashboards/{dashboard_id}/users", "/dashboards/{dashboard_id}/noc-tokens",
-                      "/dashboards/{dashboard_id}/tls", "/settings/master-key")
+                      "/dashboards/{dashboard_id}/tls", "/settings/master-key",
+                          # CR-m6-manager: consent history shows who edited the text; the TLS pair state is admin-only like the dashboard's
+                          "/sites/{site}/speedtest/consent-history", "/sites/{site}/speedtest/tls")
         if m == "get" and p not in admin_only:
             assert r == "viewer", (m, p)
 

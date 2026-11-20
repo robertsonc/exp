@@ -89,6 +89,10 @@ export function SitePage({ slug, me }: { slug: string; me: Me | undefined }): JS
           </dl>
         </Panel>
       </div>
+      <Panel title="Speedtest" id="sp">
+        <p class="dim">The branded speedtest page for this site: branding, consent text, zones, limits and signage.</p>
+        <Link to={`/sites/${slug}/speedtest`} class="btn btn-secondary">Open speedtest settings</Link>
+      </Panel>
       <div class="grid-2">
         <SiteReleasePanel site={s} me={me} />
         <SiteAlertsPanel slug={slug} me={me} />

@@ -306,6 +306,15 @@ export class DataStore {
     return parsed as T;
   }
 
+  /** Raw-bytes upload with its own content type (the speedtest logo: image/png, image/svg+xml or image/jpeg). */
+  async mutateBytes<T = unknown>(path: string, bytes: Blob | ArrayBuffer, contentType: string): Promise<T> {
+    const r = await this.send('POST', path, { body: bytes, contentType }, 'application/json');
+    const parsed = parseJson(r.text);
+    if (!r.ok) throw this.fail(r.status, parsed, r.text);
+    void this.refreshAll();
+    return parsed as T;
+  }
+
   private fail(status: number, parsed: unknown, text: string): ApiFailure {
     const f = failureFrom(status, parsed, text);
     if (f.status === 401) this.setConn({ auth: 'unauthorized', authMessage: f.message });
@@ -339,7 +348,7 @@ export class DataStore {
   }
 }
 
-interface MutationInit { body?: string; contentType?: string; form?: FormData }
+interface MutationInit { body?: BodyInit; contentType?: string; form?: FormData }
 
 function parseJson(text: string): unknown {
   if (!text) return undefined;

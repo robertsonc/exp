@@ -18,6 +18,7 @@ import {
 } from '../lib/intent';
 import { nocUrl } from '../lib/sso';
 import { MAX_CERT_PEM, MAX_KEY_PEM, certExpiry, fingerprintPending, tlsPemProblems } from '../lib/tls';
+import { applyRunnerForm, runnerFormFrom, runnerProblems, type RunnerForm } from '../lib/runner';
 import { MIN_PASSWORD_CHARS, hashPassword, passwordProblem } from '../lib/pbkdf2';
 import { RE } from '../lib/validate';
 import { safeHttpsUrl } from '../lib/redact';
@@ -589,5 +590,60 @@ export function DashboardEditor({ comp, me, tlsFingerprint, factsUrl }: { comp: 
       <UsersPanel comp={comp} allowed={allowed} />
       <NocPanel comp={comp} allowed={allowed} dashUrl={dashUrl} />
     </>
+  );
+}
+
+// ---- runner (M6 correlation sources) ----------------------------------------------------------------------------------
+
+export function RunnerEditor({ comp, me }: { comp: Component; me: Me | undefined }): JSX.Element {
+  const [f, setF] = useState<RunnerForm>(() => runnerFormFrom(comp.config));
+  const { busy, error, save } = useSaver(comp);
+  const p = runnerProblems(f);
+  const config = applyRunnerForm(comp.config, f);
+  const dirty = !sameConfig(config, comp.config);
+  const allowed = canAdmin(me);
+  const set = (patch: Partial<RunnerForm>) => setF((cur) => ({ ...cur, ...patch }));
+  return (
+    <form class="editor" onSubmit={(e) => { e.preventDefault(); if (allowed && dirty && !Object.keys(p).length) void save(config); }} aria-label={`Edit runner ${comp.id}`} noValidate>
+      <ReadOnlyNote me={me} />
+      <Panel title="Correlation" id="re-main">
+        <p class="dim">After each speedtest the runner looks up the client's access point, flows and WAN path and attaches them as evidence. Connector addresses and credentials are the organisation-wide integrations; here you choose what the runner reads. HPE Aruba SSE has no API connector, but its logs can arrive by syslog.</p>
+        <CheckField label="Correlate speedtests" checked={f.enabled} onChange={(v) => set({ enabled: v })} disabled={!allowed} />
+        <Fieldset legend="Juniper Mist" hint="Which Mist sites to search, and how an access point maps to a zone (first matching rule wins; without a rule the zone stays at the subnet fallback).">
+          <TextArea label="Mist site ids (one per line)" value={f.mistSites} onInput={(v) => set({ mistSites: v })} rows={2} error={p['mistSites']} disabled={!allowed} />
+          {f.zoneMap.map((z, i) => (
+            <div class="rowbox" key={i} role="group" aria-label={`Zone rule ${i + 1}`}>
+              <div class="form-grid form-grid-3">
+                <TextField label="Zone id" value={z.zone} onInput={(v) => set({ zoneMap: patchAt(f.zoneMap, i, { zone: v }) })} error={p[`zone-${i}`]} disabled={!allowed} />
+                <TextField label="AP name starts with" value={z.prefix} onInput={(v) => set({ zoneMap: patchAt(f.zoneMap, i, { prefix: v }) })} error={p[`prefix-${i}`]} disabled={!allowed} />
+                <TextField label="AP MAC addresses" value={z.macs} onInput={(v) => set({ zoneMap: patchAt(f.zoneMap, i, { macs: v }) })} error={p[`macs-${i}`]} disabled={!allowed} hint="Comma-separated, lower-case." />
+              </div>
+              <Button small disabled={!allowed} onClick={() => set({ zoneMap: f.zoneMap.filter((_, j) => j !== i) })} aria-label={`Remove zone rule ${i + 1}`}>Remove</Button>
+            </div>
+          ))}
+          <Button small disabled={!allowed || f.zoneMap.length >= 256} onClick={() => set({ zoneMap: [...f.zoneMap, { zone: '', prefix: '', macs: '' }] })}>Add zone rule</Button>
+        </Fieldset>
+        <Fieldset legend="HPE EdgeConnect" hint="Appliances whose flows and WAN utilisation the runner reads.">
+          {f.appliances.map((a, i) => (
+            <div class="rowbox" key={i} role="group" aria-label={`Appliance ${i + 1}`}>
+              <div class="form-grid">
+                <TextField label="Appliance id (nePk)" value={a.nePk} onInput={(v) => set({ appliances: patchAt(f.appliances, i, { nePk: v }) })} error={p[`ne-${i}`]} disabled={!allowed} />
+                <TextField label="WAN interfaces" value={a.wan} onInput={(v) => set({ appliances: patchAt(f.appliances, i, { wan: v }) })} error={p[`wan-${i}`]} disabled={!allowed} hint="Comma-separated." />
+              </div>
+              <Button small disabled={!allowed} onClick={() => set({ appliances: f.appliances.filter((_, j) => j !== i) })} aria-label={`Remove appliance ${i + 1}`}>Remove</Button>
+            </div>
+          ))}
+          <Button small disabled={!allowed || f.appliances.length >= 8} onClick={() => set({ appliances: [...f.appliances, { nePk: '', wan: '' }] })}>Add appliance</Button>
+          <CheckField label="Poll WAN utilisation (pauses the internet leg while the uplink is busy)" checked={f.wanUtil} onChange={(v) => set({ wanUtil: v })} disabled={!allowed} />
+        </Fieldset>
+        <Fieldset legend="Syslog" hint="The runner listens on UDP/TCP 5514 and TLS 6514 and keeps lines for the last hour only.">
+          <div class="form-grid">
+            <TextField label="Accept from (CIDR)" value={f.syslogAllow} onInput={(v) => set({ syslogAllow: v })} error={p['syslogAllow']} disabled={!allowed} hint="Comma-separated. Empty accepts nothing." />
+            <TextField label="Keep lines (minutes)" value={f.ringMinutes} onInput={(v) => set({ ringMinutes: v })} type="number" inputMode="numeric" placeholder="60" error={p['ringMinutes']} disabled={!allowed} />
+          </div>
+        </Fieldset>
+      </Panel>
+      <SaveBar dirty={dirty} problems={Object.keys(p).length} busy={busy} error={error} allowed={allowed} onSave={() => void save(config)} onReset={() => setF(runnerFormFrom(comp.config))} />
+    </form>
   );
 }

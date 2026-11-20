@@ -40,7 +40,8 @@ async function persist(env: Env, ring: KeyRing, body: DesiredBody, hash: string)
       sealedComponents.push({ ...c, creds });
     }
     const doc = { ...body, version, generated_at: now, components: sealedComponents };
-    const artifactIds = [body.agent?.artifact, ...body.components.map((c) => c.artifact.id)].filter((x): x is string => !!x);
+    // SR-6: everything the agent may download is referenced here (component artifacts and branding assets)
+    const artifactIds = [body.agent?.artifact, ...body.components.flatMap((c) => [c.artifact.id, ...(c.assets ?? []).map((a) => a.artifact.id)])].filter((x): x is string => !!x);
     const upsert = prev
       ? env.DB.prepare(
           `UPDATE desired_docs SET version = ?2, doc_json = ?3, content_hash = ?4, artifacts_json = ?5, updated_at = ?6, key_id = ?8

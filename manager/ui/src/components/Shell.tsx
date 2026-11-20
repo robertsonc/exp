@@ -18,6 +18,7 @@ const NAV: NavDef[] = [
   { to: '/issues', label: 'Issues', icon: 'alert', match: ['/issues'] },
   { to: '/hosts', label: 'Hosts', icon: 'host', match: ['/hosts'] },
   { to: '/sites', label: 'Sites', icon: 'site', match: ['/sites'] },
+  { to: '/speedtest', label: 'Speedtest', icon: 'internet', match: ['/speedtest'] },
   { to: '/releases', label: 'Releases', icon: 'release', match: ['/releases'] },
   { to: '/dashboards', label: 'Dashboards', icon: 'dashboard', match: ['/dashboards'] },
   { to: '/drills', label: 'Drills', icon: 'drill', match: ['/drills'] },

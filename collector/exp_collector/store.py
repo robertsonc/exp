@@ -18,9 +18,11 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from .speedtest import schema as _st_schema
+
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 INCIDENT_KEEP_DAYS = 90
 PRUNE_BATCH = 10_000
 READ_POOL = 4
@@ -41,6 +43,7 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         "CREATE INDEX incidents_start ON incidents (start_ms)",
         "CREATE TABLE vm_backlog (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)",
     ),
+    2: _st_schema.STATEMENTS,          # M6: speedtests, evidence, diagnoses, speedtest_audit
 }
 
 
@@ -110,6 +113,7 @@ class Store:
                                    check_same_thread=False)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA secure_delete=ON")      # purged / scrubbed identifiers must not linger in free pages
         conn.execute(f"PRAGMA busy_timeout={int(self.busy_timeout_s * 1000)}")
         return conn
 

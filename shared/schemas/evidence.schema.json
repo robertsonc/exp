@@ -2291,9 +2291,16 @@
           "description": "Probe wifi_hb figures, when the probe has a Wi-Fi port."
         }
       },
-      "required": [
-        "probe",
-        "severity"
+      "anyOf": [
+        {
+          "required": [
+            "probe",
+            "severity"
+          ]
+        },
+        {
+          "maxProperties": 0
+        }
       ],
       "additionalProperties": false,
       "description": "kind=baseline (source exp): the nearest probe's state at test time, from the collector's own records (GET speedtests/baseline)."

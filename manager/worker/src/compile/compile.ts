@@ -15,8 +15,13 @@ import {
   secretKey,
 } from "./types";
 import {
+  CHANNEL_TOKEN_KIND,
   DASH_TOKEN_KIND,
+  DEVICE_KEY_KIND,
+  DEVICE_KEY_OWNER,
   INGEST_KIND,
+  RUNNER_TOKEN_KIND,
+  SPEEDTEST_TOKEN_KIND,
   SSO_KIND,
   TLS_KIND,
   WEBHOOK_KIND,
@@ -31,7 +36,10 @@ import {
   pairOwner,
   probesOfCollector,
   runnersOfCollector,
+  speedtestOfRunner,
+  speedtestsOfCollector,
 } from "./wiring";
+import { collectorSpeedtests, integrationsJson, portConflicts, runnerCorrelation, speedtestConfig, speedtestCreds } from "./speedtest";
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -181,6 +189,7 @@ function buildCollector(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
   }
   const probes = probesOfCollector(w, c).sort((a, b) => (a.slug < b.slug ? -1 : 1));
   const runners = runnersOfCollector(w, c).sort((a, b) => (a.slug < b.slug ? -1 : 1));
+  const speedtests = speedtestsOfCollector(w, c).sort((a, b) => (a.slug < b.slug ? -1 : 1));
   const dashes = dashboardsOfCollector(w, c).sort((a, b) => (a.slug < b.slug ? -1 : 1));
   const withUrl = dashes.map((d) => dashboardUrl(ctx, d)).find((u) => !!u) ?? null;
   const rulesCfg = isObj(cfg.rules) ? cfg.rules : {};
@@ -209,6 +218,8 @@ function buildCollector(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
     ...pick(cfg, ["vm", "reflector", "iperf3", "ingest"]),
     rules: { edge_label: site.edge_label, ...(Array.isArray(rulesCfg.lines) ? { lines: rulesCfg.lines } : {}) },
     alerts,
+    // M6: the speedtest block exists only when a speedtest reports here; it is what makes the collector accept exps_/expr_
+    ...(speedtests.length > 0 ? { speedtests: collectorSpeedtests(w, ctx.host.site, speedtests, runners) } : {}),
   };
   const ingest: Array<[string, WSecret | undefined]> = [
     ...probes.map((p): [string, WSecret | undefined] => [p.slug, w.secrets[secretKey(p.component_id, INGEST_KIND)]]),
@@ -225,12 +236,23 @@ function buildCollector(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
       const url = w.secrets[secretKey(h.webhook_id, WEBHOOK_KIND)];
       return url ? [{ id: h.webhook_id, format: h.format, url: url.plaintext }] : [];
     });
+  const devKey = w.secrets[secretKey(DEVICE_KEY_OWNER, DEVICE_KEY_KIND)];
+  const m6: Record<string, string> =
+    speedtests.length > 0
+      ? {
+          "speedtest_tokens.json": canonicalJson(hashMap(speedtests.map((p): [string, WSecret | undefined] => [p.slug, w.secrets[secretKey(p.component_id, SPEEDTEST_TOKEN_KIND)]]))),
+          "runner_tokens.json": canonicalJson(hashMap(runners.map((p): [string, WSecret | undefined] => [p.slug, w.secrets[secretKey(p.component_id, RUNNER_TOKEN_KIND)]]))),
+          // optional: lets purge-by-MAC reach rows whose raw MAC was scrubbed (CR-m6-spec-resolutions B.8)
+          ...(devKey ? { device_key_secret: devKey.plaintext } : {}),
+        }
+      : {};
   return {
     config,
     creds: {
       "ingest_tokens.json": canonicalJson(hashMap(ingest)),
       "dashboard_tokens.json": canonicalJson(hashMap(dash)),
       "webhooks.json": canonicalJson(hooks),
+      ...m6,
     },
   };
 }
@@ -315,30 +337,71 @@ function buildDashboard(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
 }
 
 function buildRunner(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | null {
-  const ep = collectorEndpoint(collectorFor(ctx.w, c));
+  const { w, host } = ctx;
+  const ep = collectorEndpoint(collectorFor(w, c));
   if (!ep) {
     ctx.warnings.push(`runner ${c.slug}: collector has not reported listen + TLS pin yet; component not compiled`);
     return null;
   }
-  const tok = ctx.w.secrets[secretKey(c.component_id, INGEST_KIND)];
+  const tok = w.secrets[secretKey(c.component_id, INGEST_KIND)];
   if (!tok) {
     ctx.warnings.push(`runner ${c.slug}: ingest token not provisioned`);
     return null;
   }
   const cfg = c.config;
+  const correlation = runnerCorrelation(w, c, host);
+  const creds: Record<string, string> = { ingest_token: tok.plaintext, "integrations.json": integrationsJson(w) };
+  // M6: the runner's own collector token (expr_), the org device_key secret and the localhost channel token
+  const rt = w.secrets[secretKey(c.component_id, RUNNER_TOKEN_KIND)];
+  const dk = w.secrets[secretKey(DEVICE_KEY_OWNER, DEVICE_KEY_KIND)];
+  const sp = speedtestOfRunner(w, c);
+  const ch = sp ? w.secrets[secretKey(pairOwner(c.component_id, sp.component_id), CHANNEL_TOKEN_KIND)] : undefined;
+  if (rt) creds.collector_token = rt.plaintext;
+  if (dk) creds.device_key_secret = dk.plaintext;
+  if (ch) creds.speedtest_channel_token = ch.plaintext;
+  if (correlation && (!rt || !dk || (sp && !ch))) {
+    ctx.warnings.push(`runner ${c.slug}: correlation credentials not provisioned yet; component not compiled`);
+    return null;
+  }
   return {
     config: {
       schema: "exp.runner.config/1",
       runner_id: c.slug,
-      site: ctx.host.site,
+      site: host.site,
       collector: { url: ep.url, tls_fingerprint_sha256: ep.pin, fallback: [] },
       drills_enabled: cfg.drills_enabled === true,
       pullers: Array.isArray(cfg.pullers) ? cfg.pullers : [],
       allowlist: isObj(cfg.allowlist) ? cfg.allowlist : {},
       drills: Array.isArray(cfg.drills) ? cfg.drills : [],
+      ...(correlation ? { correlation } : {}),
     },
-    creds: { ingest_token: tok.plaintext, "integrations.json": "{}" },
+    creds,
   };
+}
+
+function buildSpeedtest(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj; assets: NonNullable<DesiredComponent["assets"]> } | null {
+  const { w, host } = ctx;
+  const ep = collectorEndpoint(collectorFor(w, c));
+  if (!ep) {
+    ctx.warnings.push(`speedtest ${c.slug}: collector has not reported listen + TLS pin yet; component not compiled`);
+    return null;
+  }
+  if (!w.secrets[secretKey(c.component_id, SPEEDTEST_TOKEN_KIND)]) {
+    ctx.warnings.push(`speedtest ${c.slug}: collector token not provisioned`);
+    return null;
+  }
+  const cfg = speedtestConfig(w, c, host, ep);
+  if ("error" in cfg) {
+    ctx.warnings.push(`speedtest ${c.slug}: ${cfg.error}; component not compiled`);
+    return null;
+  }
+  const cr = speedtestCreds(w, c, host);
+  if (cr.error) {
+    ctx.warnings.push(`speedtest ${c.slug}: ${cr.error}; component not compiled`);
+    return null;
+  }
+  const logo = w.speedtest?.[host.site]?.logo ?? null;
+  return { config: cfg.config, creds: cr.creds, assets: logo ? [{ name: "logo", content_type: logo.content_type, artifact: artifactRef(logo.artifact) }] : [] };
 }
 
 /** Minimal document for an enrolled host with nothing to run yet: no release, no components. */
@@ -411,11 +474,12 @@ export function compile(world: World, hostId: string): CompileResult {
   if (decommission) return { doc: body, warnings };
 
   const ctx: Ctx = { w: world, host, site, version, warnings };
+  // all-in-one profile (D15): one host runs probe + collector + runner + speedtest; their listeners must not collide.
+  // A colliding speedtest is left out (fail closed) with the reason; the admin API refuses such a layout up front.
+  const collisions = comps.some((c) => c.type === "speedtest") ? portConflicts(world, hostId) : [];
+  for (const m of collisions) warnings.push(`host ${hostId}: port collision, speedtest not compiled: ${m}`);
   for (const c of comps) {
-    if (c.type === "speedtest") {
-      warnings.push(`component ${c.slug}: speedtest is not compiled before M6`);
-      continue;
-    }
+    if (c.type === "speedtest" && collisions.length > 0) continue;
     const art = pickArtifact(world.artifacts, version, c.type, arch);
     if (!art) {
       return { doc: null, warnings: [...warnings, `release ${version}: no ${c.type} artifact for arch ${arch ?? "unknown"}; host ${hostId} held`] };
@@ -424,6 +488,7 @@ export function compile(world: World, hostId: string): CompileResult {
       c.type === "probe" ? buildProbe(ctx, c)
       : c.type === "collector" ? buildCollector(ctx, c)
       : c.type === "dashboard" ? buildDashboard(ctx, c)
+      : c.type === "speedtest" ? buildSpeedtest(ctx, c)
       : buildRunner(ctx, c);
     if (!built) continue;
     const comp: DesiredComponent = {
@@ -435,6 +500,8 @@ export function compile(world: World, hostId: string): CompileResult {
       config: built.config,
       creds: built.creds as Record<string, string>,
     };
+    const assets = (built as { assets?: DesiredComponent["assets"] }).assets;
+    if (assets && assets.length > 0) comp.assets = assets;
     body.components.push(comp);
   }
   return { doc: body, warnings };

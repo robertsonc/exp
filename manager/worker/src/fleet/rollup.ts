@@ -25,7 +25,9 @@ export const COMPONENT_KEYS: Record<string, readonly string[]> = {
     "probes_reporting",
   ],
   dashboard: ["sessions_active", "requests_per_min", "collectors_reachable"],
-  runner: ["drills_active"],
+  // M6 (01-contracts.md section 8.1): runner correlation figures, speedtest figures
+  runner: ["drills_active", "correlations_per_hour", "evidence_lag_s_p95", "syslog_lines_per_s", "syslog_dropped_per_min"],
+  speedtest: ["tests_per_hour", "active_tests", "queue_depth", "internet_leg_paused", "local_leg_gbps_p95", "rejected_per_hour"],
 };
 
 /** Test names of the catalog (01-contracts.md section 3) whose `by_test_per_min` counts are rolled up (item 5 of

@@ -12,6 +12,8 @@ const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const JSON_CT = /^application\/json\s*(;\s*charset=("?)utf-8\2\s*)?$/i;
 const MULTIPART_CT = /^multipart\/form-data\s*;/i;
 const MULTIPART_PATHS = new Set(["/api/admin/v1/releases/upload"]);
+// the speedtest logo upload carries the raw image (admin.yaml uploadSpeedtestLogo): PNG, SVG or JPEG, nothing else
+const LOGO_PATH = /^\/api\/admin\/v1\/sites\/[a-z0-9][a-z0-9-]{0,63}\/speedtest\/logo$/;
 
 const refuse = (why: string): ApiError => new ApiError(403, "csrf_refused", `request refused: ${why}`);
 
@@ -31,7 +33,10 @@ export const csrfGuard: MiddlewareHandler<AppBindings> = async (c, next) => {
   const hasBody = ct !== null || req.headers.has("transfer-encoding") || (len !== null && len !== "0");
   if (hasBody) {
     const path = url.pathname.replace(/\/+$/, "");
-    if (MULTIPART_PATHS.has(path)) {
+    if (LOGO_PATH.test(path)) {
+      // the handler answers 415 for a wrong image type; here only "has a content type" and "not a form/JSON smuggle" matter
+      if (!ct) throw refuse("the logo upload requires a content type");
+    } else if (MULTIPART_PATHS.has(path)) {
       if (!ct || !MULTIPART_CT.test(ct)) throw refuse("this endpoint requires multipart/form-data");
     } else if (!ct || !JSON_CT.test(ct.trim())) throw refuse("a JSON content type is required");
   }

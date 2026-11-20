@@ -45,7 +45,7 @@ def test_schema_is_exactly_section_4(store):
         idx = {r[1]: [x[2] for x in c.execute(f"PRAGMA index_info({r[1]})")] for r in c.execute("PRAGMA index_list(records)")
                if not r[1].startswith("sqlite_autoindex")}
         assert ["probe", "ts_ms"] in idx.values() and ["probe", "test", "ts_ms"] in idx.values()
-    assert store.schema_version() == SCHEMA_VERSION == 1
+    assert store.schema_version() == SCHEMA_VERSION == 2
 
 
 def test_wal_synchronous_normal_and_private_file_mode(store):
@@ -120,7 +120,7 @@ def test_migration_is_idempotent_and_newer_schema_refused(tmp_path):
     s.insert_records([row()])
     s.close()
     s = Store(p).open()                                   # reopen: no re-migration, data intact
-    assert s.count_records() == 1 and s.schema_version() == 1
+    assert s.count_records() == 1 and s.schema_version() == SCHEMA_VERSION == 2
     s.close()
     c = sqlite3.connect(p)
     c.execute("UPDATE meta SET value='99' WHERE key='schema_version'")

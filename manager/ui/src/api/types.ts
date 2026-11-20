@@ -4,7 +4,7 @@
 export type Role = 'owner' | 'admin' | 'operator' | 'viewer';
 export type Health = 'ok' | 'degraded' | 'fail' | 'unknown';
 export type HostState = 'pending' | 'enrolled' | 'stale' | 'offline' | 'decommissioning' | 'removed';
-export type Shape = 'probe' | 'collector' | 'dashboard' | 'runner';
+export type Shape = 'probe' | 'collector' | 'dashboard' | 'runner' | 'speedtest';
 export type ComponentType = Shape | 'speedtest';
 export type Severity = 'warn' | 'crit';
 
@@ -68,7 +68,7 @@ export interface FleetHostRow {
   disk_pct_max?: number | null;
   uptime_s?: number | null;
   net?: { rx_pps?: number | null; tx_pps?: number | null; rx_bps?: number | null; tx_bps?: number | null } | null;
-  work?: { measurements_per_min?: number | null; ingest_records_per_s?: number | null; sessions_active?: number | null; drills_active?: number | null };
+  work?: { measurements_per_min?: number | null; ingest_records_per_s?: number | null; sessions_active?: number | null; drills_active?: number | null; tests_per_hour?: number | null };
   cpu_spark?: (number | null)[];
   net_spark?: (number | null)[];
   agent_version?: string | null;
@@ -216,3 +216,31 @@ export interface OrgSettings {
 export interface PlatformWebhook { format: 'slack' | 'teams' | 'json'; url: SecretState }
 export type FleetThresholds = Record<string, Record<string, number>>;
 export interface WebhookTestResult { ok: boolean; http_status?: number | null; error?: string | null }
+
+// ---- speedtest settings (M6, shared/openapi/admin.yaml tag speedtest) ---------------------------------------------
+// Intent only: the manager never receives a test result or evidence (SR-20), so nothing here carries one.
+
+export interface SpeedtestZone { id: string; name: string }
+export interface SpeedtestSettings {
+  zones?: SpeedtestZone[];
+  zone_labels?: { subnets: { cidr: string; zone: string }[] };
+  branding?: { title?: string; logo_artifact?: string | null; colors?: { primary?: string; accent?: string; background?: string; text?: string }; languages?: string[]; copy?: Record<string, string> };
+  display?: { show_network_details?: boolean };
+  targets?: { down_mbps?: number; up_mbps?: number };
+  limits?: { tests_per_10min_per_ip?: number; max_concurrent_per_ip?: number; max_concurrent_tests?: number; max_concurrent_internet?: number; bytes_local?: number; bytes_internet?: number; leg_token_ttl_s?: number; result_deadline_s?: number };
+  internet_leg?: { enabled?: boolean; provider?: 'cloudflare'; paused?: boolean; auto_pause_wan_util_pct?: number };
+  privacy?: { retention_days?: number; scrub_after_diagnosis?: boolean };
+  core_guard?: { iface?: string; util_pct?: number; min_bytes?: number };
+  serve?: { placement?: 'core' | 'dc' | 'other'; hostname?: string; listen_ip?: string; require_real_client_ip?: boolean; client_subnets?: string[]; translated_addresses?: string[]; port?: number };
+  tls?: { mode: 'none' | 'provided' };
+  dns_leg?: { enabled?: boolean; zone?: string; port?: number };
+  path?: { gateway?: string; edge?: string | null; edge1?: string | null; note?: string };
+  consent: { text: string; version?: number };
+  device_key?: { set: boolean; updated_at: string | null };
+  updated_at?: string;
+}
+export interface SpeedtestLogo { artifact: string; sha256: string; size: number; content_type: 'image/png' | 'image/svg+xml' | 'image/jpeg' }
+export interface SpeedtestConsentHistory { items: { version: number; text: string; changed_by: string; created_at: string }[] }
+export interface SpeedtestQr { items: { zone: string; name: string; url: string }[] }
+export interface SpeedtestTls { set: boolean; updated_at: string | null; cert: DashboardTlsCert | null }
+export interface SpeedtestDeviceKeyState { set: boolean; updated_at: string; key_id: string }

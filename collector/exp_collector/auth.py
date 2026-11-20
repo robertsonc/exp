@@ -18,7 +18,9 @@ _BEARER = re.compile(r"Bearer ([A-Za-z0-9_-]{1,128})\Z")
 
 SCOPE_INGEST = "ingest"
 SCOPE_DASHBOARD = "dashboard"
-_PREFIX = {SCOPE_INGEST: "expi", SCOPE_DASHBOARD: "expd"}
+SCOPE_SPEEDTEST = "speedtest"     # M6: exps_ (speedtest -> collector), only /api/v1/speedtests ingest/status/comment
+SCOPE_RUNNER = "runner"           # M6: expr_ (runner -> collector), only the speedtest feed/evidence/baseline routes
+_PREFIX = {SCOPE_INGEST: "expi", SCOPE_DASHBOARD: "expd", SCOPE_SPEEDTEST: "exps", SCOPE_RUNNER: "expr"}
 
 
 def bearer_token(header: str | None) -> str | None:
@@ -38,5 +40,6 @@ def authenticate(creds: CredStore, scope: str, header: str | None) -> str | None
         raise ValueError(f"unknown auth scope {scope!r}")
     if not exp_ids.is_token(token, _PREFIX[scope]):
         return None
-    table = creds.ingest if scope == SCOPE_INGEST else creds.dashboard
+    table = {SCOPE_INGEST: creds.ingest, SCOPE_DASHBOARD: creds.dashboard,
+             SCOPE_SPEEDTEST: creds.speedtest, SCOPE_RUNNER: creds.runner}[scope]
     return table.lookup(token)

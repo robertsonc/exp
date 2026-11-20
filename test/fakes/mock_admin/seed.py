@@ -33,8 +33,10 @@ COMPONENT_KEYS = {
     "probe": ("measurements_per_min", "fail_per_min", "push_lag_s", "spool_depth", "cpu_pct", "rss_mb"),
     "collector": ("ingest_records_per_s", "rejects_per_min", "vm_lag_s", "probes_reporting", "cpu_pct", "rss_mb"),
     "dashboard": ("sessions_active", "cpu_pct", "rss_mb"),
-    "runner": ("drills_active", "cpu_pct", "rss_mb"),
-    "speedtest": ("cpu_pct", "rss_mb"),
+    "runner": ("drills_active", "correlations_per_hour", "evidence_lag_s_p95", "syslog_lines_per_s",
+               "syslog_dropped_per_min", "cpu_pct", "rss_mb"),
+    "speedtest": ("tests_per_hour", "active_tests", "queue_depth", "internet_leg_paused", "local_leg_gbps_p95",
+                  "rejected_per_hour", "cpu_pct", "rss_mb"),
 }
 PCT_KEYS = {"cpu_pct", "mem_pct", "disk_pct"}
 # CR-wp5-fleet-api-gaps item 5: per-test measurements per minute (test names of 01-contracts section 3), chartable
@@ -158,7 +160,11 @@ def component_profile(ctype: str, bad: bool = False) -> dict[str, tuple[float, f
     elif ctype == "dashboard":
         p.update(sessions_active=(3.0, 2.0, 1.0))
     elif ctype == "runner":
-        p.update(drills_active=(0.0, 0.0, 0.0))
+        p.update(drills_active=(0.0, 0.0, 0.0), correlations_per_hour=(58.0, 20.0, 6.0), evidence_lag_s_p95=(9.0, 3.0, 2.0),
+                 syslog_lines_per_s=(75.0, 30.0, 8.0), syslog_dropped_per_min=(0.0, 0.0, 0.0))
+    elif ctype == "speedtest":
+        p.update(tests_per_hour=(64.0, 40.0, 8.0), active_tests=(2.0, 2.0, 1.0), queue_depth=(0.0, 0.0, 0.0),
+                 internet_leg_paused=(0.0, 0.0, 0.0), local_leg_gbps_p95=(1.4, 0.6, 0.2), rejected_per_hour=(1.0, 1.0, 0.5))
     return p
 
 
@@ -176,7 +182,8 @@ HOST_PLAN: list[tuple[str, str, list[str], str, int, dict[str, Any]]] = [
     *[(f"hb-probe-{i:02d}", "hall-b", ["probe"],
        {6: "stale", 8: "offline"}.get(i, "enrolled"), 30 + i,
        {"bad": i == 5, "drift": i == 4, "runway": i == 2}) for i in range(1, 9)],
-    ("hb-run-01", "hall-b", ["runner"], "enrolled", 40, {}),
+    # M6 all-in-one box: runner + speedtest (+ its routed interface eno2) on one host
+    ("hb-run-01", "hall-b", ["runner", "speedtest"], "enrolled", 40, {}),
     ("hc-col-01", "hall-c", ["collector"], "enrolled", 25, {"hot": "mem"}),
     ("hc-dash-01", "hall-c", ["dashboard"], "enrolled", 30, {}),
     *[(f"hc-probe-{i:02d}", "hall-c", ["probe"],
@@ -243,6 +250,9 @@ def build_world(now: float) -> dict[str, Any]:
         desired_v = 40 + idx if online else None
         applied_v = (desired_v - 1) if (extra.get("drift") and desired_v) else desired_v
         facts = make_facts(name, ip, 4 if role == "probe" else 0, role) if online else None
+        if facts is not None and "speedtest" in shapes:
+            facts["interfaces"].append({"name": "eno2", "mac": _mac(name, 9), "state": "up", "speed_mbps": 10000, "driver": "ixgbe",
+                                        "addrs": ["10.0.0.9/24"], "default_route": False, "in_use_by": "none"})
         host = {
             "host_id": hid, "name": name, "site": site, "shapes": list(shapes), "state": state,
             "mgmt_ip": ip if online else None, "facts": facts,
@@ -311,6 +321,8 @@ def _component_slug(shape: str, hostname: str, site: str) -> str:
         return "dash-main" if site == "hall-b" else "dash-" + site.replace("-", "")
     if shape == "runner":
         return "run-" + site.replace("-", "")
+    if shape == "speedtest":
+        return "spd-" + site.replace("-", "")
     return f"{shape}-{site}"
 
 
@@ -365,6 +377,13 @@ def _config_for(comp: dict[str, Any], host: dict[str, Any], col: dict[str, Any] 
         cfg.update(runner_id=comp["id"], site=site)
         cfg["collector"].update(url=col_url, tls_fingerprint_sha256=col_fp)
         cfg["drills"] = []
+        if any(c["type"] == "speedtest" and c["host_id"] == comp["host_id"] for c in comps.values()):
+            cfg["correlation"] = fc.load_fixture("configs/runner.correlation.json")["correlation"]
+        return cfg
+    if t == "speedtest":
+        cfg = fc.load_fixture("configs/speedtest.json")
+        cfg.update(speedtest_id=comp["id"], site=site)
+        cfg["collector"].update(url=col_url, tls_fingerprint_sha256=col_fp)
         return cfg
     return {}
 
@@ -436,6 +455,12 @@ def make_report(host: dict[str, Any], comps: list[dict[str, Any]], at: float) ->
         if c["type"] == "collector":
             tpl["facts"] = dict(c["facts"])
             tpl["metrics"] = collector_metrics(host, c, at)
+        elif c["type"] == "speedtest":
+            tpl["facts"] = {"url": "http://speed.summit.example/", "tls_mode": "none"}
+            tpl["metrics"] = {k: metric_value(c["component_id"], k, c["_profile"], at) for k in COMPONENT_KEYS["speedtest"][:6]}
+        elif c["type"] == "runner":
+            tpl["facts"] = {}
+            tpl["metrics"] = {k: metric_value(c["component_id"], k, c["_profile"], at) for k in COMPONENT_KEYS["runner"][:5]}
         elif c["type"] == "probe":
             tpl["metrics"]["by_test_per_min"] = {t: round(metric_value(c["component_id"], f"by_test_{t}", c["_profile"], at))
                                                  for t in BY_TEST_NAMES if f"by_test_{t}" in c["_profile"]}
@@ -554,6 +579,21 @@ def _seed_rest(world: dict[str, Any], now: float) -> None:
                        "hold_down_s": 20, "hold_back_s": 60, "reopen_s": 300, "calm_s": 600},
             "webhooks": [{"id": "wh_1", "format": "slack", "_url": "https://hooks.example.invalid/services/FIXTURE",
                           "_updated": iso(now - 6 * day)}]}
+    # --- M6 speedtest settings (admin.yaml tag speedtest): intent only; hall-b is configured, the others show defaults
+    st = fc.load_fixture("configs/speedtest.json")
+    keep = ("zones", "zone_labels", "branding", "display", "targets", "limits", "internet_leg", "serve", "tls", "dns_leg",
+            "path", "privacy", "core_guard")
+    st_settings = {k: copy.deepcopy(st[k]) for k in keep}
+    st_settings["branding"].pop("logo_artifact", None)
+    st_settings["internet_leg"].pop("paused", None)
+    world["speedtest"] = {"hall-b": {"settings": st_settings, "consent": {"text": st["consent"]["text"], "version": 3}, "paused": False,
+                                      "logo": None, "updated_at": iso(now - 3 * day)}}
+    world["speedtest_history"] = {"hall-b": [
+        {"version": 1, "text": "We measure your speed. No name or email is collected.", "changed_by": OWNER_EMAIL, "created_at": iso(now - 9 * day)},
+        {"version": 2, "text": "We measure your speed and look at this device's Wi-Fi metadata to diagnose it.", "changed_by": "admin@example.com", "created_at": iso(now - 6 * day)},
+        {"version": 3, "text": st["consent"]["text"], "changed_by": "admin@example.com", "created_at": iso(now - 3 * day)}]}
+    world["speedtest_tls"] = {}
+    world["device_key"] = {"set": True, "updated_at": iso(now - 5 * day), "version": 1}
     world["platform_webhook"] = {"format": "slack", "_url": "https://hooks.example.invalid/services/PLATFORM",
                                  "_updated": iso(now - 4 * day)}
     world["integrations"] = {

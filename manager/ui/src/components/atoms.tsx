@@ -81,6 +81,7 @@ const SHAPE_ICON: Record<string, { letter: string; icon: IconName }> = {
   collector: { letter: 'C', icon: 'collector' },
   dashboard: { letter: 'D', icon: 'dashboard' },
   runner: { letter: 'R', icon: 'runner' },
+  speedtest: { letter: 'S', icon: 'internet' },
 };
 export function ShapeBadges({ shapes }: { shapes: readonly string[] }): JSX.Element {
   return (

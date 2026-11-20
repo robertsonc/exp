@@ -21,7 +21,8 @@ const SHAPES: { id: Shape; label: string; hint: string }[] = [
   { id: 'probe', label: 'Probe', hint: 'Measures the network as a client and serves test targets.' },
   { id: 'collector', label: 'Collector', hint: 'Receives probe data and evaluates alerts.' },
   { id: 'dashboard', label: 'Dashboard', hint: 'The live experience board and NOC view.' },
-  { id: 'runner', label: 'Runner', hint: 'Runs failure drills (arrives in M5).' },
+  { id: 'runner', label: 'Runner', hint: 'Correlates speedtest results with Wi-Fi, WAN and syslog evidence (drills arrive later).' },
+  { id: 'speedtest', label: 'Speedtest', hint: 'The branded speedtest page. One box at the venue core or data centre, together with a collector and a runner.' },
 ];
 
 type StepId = 'name' | 'enrol' | 'interfaces' | 'apply';

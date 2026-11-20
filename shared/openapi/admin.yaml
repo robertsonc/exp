@@ -127,7 +127,8 @@ components:
       - collector
       - dashboard
       - runner
-      description: 'Host shape badge: P, C, D, R.'
+      - speedtest
+      description: 'Host shape badge: P, C, D, R, S (speedtest, M6: CR-m6-manager).'
     HostState:
       enum:
       - pending
@@ -684,6 +685,7 @@ components:
           - collector
           - dashboard
           - runner
+          - speedtest
         arch:
           enum:
           - amd64
@@ -2603,6 +2605,98 @@ components:
       additionalProperties: false
       description: 'Signage data: one URL per zone, `http(s)://<hostname>/?z=<zone>`. The UI renders the QR
         codes (no server-side image).'
+    SpeedtestConsentHistory:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            properties:
+              version:
+                type: integer
+                minimum: 1
+                maximum: 1000000
+              text:
+                type: string
+                maxLength: 2000
+              changed_by:
+                type: string
+                maxLength: 254
+              created_at:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+            required:
+            - version
+            - text
+            - changed_by
+            - created_at
+            additionalProperties: false
+      required:
+      - items
+      additionalProperties: false
+    SpeedtestTls:
+      type: object
+      properties:
+        set:
+          type: boolean
+        updated_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        cert:
+          anyOf:
+          - type: 'null'
+          - type: object
+            properties:
+              subject:
+                type: string
+                maxLength: 1024
+              issuer:
+                type: string
+                maxLength: 1024
+              not_before:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              not_after:
+                $ref: ../schemas/common.schema.json#/$defs/ts
+              sha256:
+                type: string
+                pattern: ^([0-9A-F]{2}:){31}[0-9A-F]{2}$
+              san:
+                type: array
+                maxItems: 64
+                items:
+                  type: string
+                  maxLength: 256
+            required:
+            - subject
+            - issuer
+            - not_before
+            - not_after
+            - sha256
+            - san
+            additionalProperties: false
+      required:
+      - set
+      - updated_at
+      - cert
+      additionalProperties: false
+      description: Provided TLS pair state of the speedtest. Write-only; the key and the PEM are never returned.
+    SpeedtestTlsPut:
+      type: object
+      properties:
+        cert_pem:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        key_pem:
+          type: string
+          minLength: 1
+          maxLength: 16384
+      required:
+      - cert_pem
+      - key_pem
+      additionalProperties: false
     SpeedtestDeviceKeyState:
       type: object
       properties:
@@ -5676,6 +5770,117 @@ paths:
                 $ref: '#/components/schemas/SpeedtestQr'
         '404':
           $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/speedtest/consent-history:
+    get:
+      operationId: getSpeedtestConsentHistory
+      summary: Every version of the consent text (newest first)
+      description: Additive (CR-m6-manager). The manager keeps each consent text it ever published; a test stores
+        the version it was taken under, so the text a user agreed to can always be shown.
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: admin
+      parameters:
+      - name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestConsentHistory'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/speedtest/tls:
+    get:
+      operationId: getSpeedtestTls
+      summary: Provided TLS pair of the site's speedtest (never the key)
+      description: Additive (CR-m6-manager). Only needed when `tls.mode` is `provided` (TCP 443 + 80 -> 443 redirect);
+        the default is plain HTTP (D15). Write-only like the dashboard's pair.
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: admin
+      parameters:
+      - name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestTls'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: putSpeedtestTls
+      summary: Store the certificate pair used when tls.mode is provided
+      description: 'Validated like the dashboard''s pair (PEM, X.509, not expired, the key matches), stored encrypted,
+        delivered only to the speedtest host as creds `tls.crt` / `tls.key` once `tls.mode` is `provided`.
+        Setting `tls.mode` to `provided` without a stored pair is refused (400).'
+      tags:
+      - speedtest
+      x-exp-wp: WP-11
+      x-exp-min-role: admin
+      x-exp-audited: true
+      parameters:
+      - name: site
+        in: path
+        required: true
+        description: Site slug.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeedtestTlsPut'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeedtestTls'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: 'Unprocessable. Error codes: `invalid_config` (garbage PEM, expired certificate, key does not match, oversize).'
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/common.schema.json#/$defs/error_envelope
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

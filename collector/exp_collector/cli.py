@@ -230,6 +230,43 @@ def cmd_prune(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------------------------------ speedtest purge
+
+def cmd_speedtest_purge(args: argparse.Namespace) -> int:
+    """Data-subject purge of speedtest rows (12 section 9, SR-25): the tests that match, with their evidence and
+    diagnoses, are deleted and the purge is audited (who, what kind of subject, how many; never the identifier)."""
+    from .server import HttpError
+    from .speedtest.service import SpeedtestService
+    from .store import Store
+    logging.basicConfig(level=logging.INFO)
+    cfg = _load_or_exit(args)
+    paths = _paths(args)
+    if not paths.db_path.exists():
+        print(f"exp-collector speedtest purge: no database at {paths.db_path}", file=sys.stderr)
+        return 1
+    by, value = next((k, v) for k, v in (("device_key", args.device_key), ("mac", args.mac), ("ip", args.ip),
+                                         ("test", args.test)) if v)
+    secret: str | None = None
+    if paths.creds_dir is not None:
+        try:
+            secret = exp_creds.optional_credential("device_key_secret", paths.creds_dir)
+        except exp_creds.CredentialError as exc:
+            log.warning("device_key_secret is unusable (%s): purge-by-MAC matches raw MACs only", exc)
+    store = Store(paths.db_path).open()
+    try:
+        svc = SpeedtestService(cfg, store, None, device_key_secret=lambda: secret.strip() if secret else None)
+        actor = "cli:" + (args.user or os.environ.get("USER") or str(os.getuid()))
+        try:
+            res = svc.purge(by, value, bool(args.dry_run), actor, cli=True)
+        except HttpError as exc:
+            print(f"exp-collector speedtest purge: {exc.message}", file=sys.stderr)
+            return 2
+    finally:
+        store.close()
+    print(json.dumps(res))
+    return 0
+
+
 # ------------------------------------------------------------------------- VictoriaMetrics launch
 
 def vm_args(cfg: CollectorConfig, state_dir: Path) -> list[str]:
@@ -396,6 +433,20 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
     p.add_argument("--now", action="store_true", help="run immediately")
     p.set_defaults(fn=cmd_prune)
+
+    p = sub.add_parser("speedtest", help="speedtest analytics tools")
+    ssub = p.add_subparsers(dest="speedtest_cmd", required=True)
+    e = ssub.add_parser("purge", help="delete the tests of one device / IP / test (data-subject request; audited)")
+    _common(e)
+    sel = e.add_mutually_exclusive_group(required=True)
+    sel.add_argument("--device-key", help="64 hex chars: the device_key of the device")
+    sel.add_argument("--mac", help="a MAC address (matches rows whose raw MAC is still stored, and, when the "
+                                   "device_key secret is available, every row of that device)")
+    sel.add_argument("--ip", help="the client IP of the tests")
+    sel.add_argument("--test", help="one test id (st_...)")
+    e.add_argument("--dry-run", action="store_true", help="count what would be deleted, delete nothing")
+    e.add_argument("--user", help="who asked, for the audit trail (default: the invoking OS user)")
+    e.set_defaults(fn=cmd_speedtest_purge)
 
     p = sub.add_parser("vm-args", help="print the VictoriaMetrics arguments derived from the config")
     _common(p)

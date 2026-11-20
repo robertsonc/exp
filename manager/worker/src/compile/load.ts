@@ -13,14 +13,48 @@ import {
   type WDashboardUser,
   type WHost,
   type WHostFacts,
+  type LogoContentType,
+  type WIntegration,
   type WNocToken,
   type WSecret,
   type WSite,
+  type WSpeedtest,
   type WWebhook,
   type World,
   secretKey,
 } from "./types";
-import { DASH_TOKEN_KIND, INGEST_KIND, SSO_KIND, TLS_KIND, WEBHOOK_KIND, requiredSecrets } from "./wiring";
+import {
+  CHANNEL_TOKEN_KIND,
+  DASH_TOKEN_KIND,
+  DEVICE_KEY_KIND,
+  INGEST_KIND,
+  INTEGRATION_SECRET_KIND,
+  RUNNER_TOKEN_KIND,
+  SPEEDTEST_TLS_KIND,
+  SPEEDTEST_TOKEN_KIND,
+  SSO_KIND,
+  TLS_KIND,
+  WEBHOOK_KIND,
+  requiredSecrets,
+} from "./wiring";
+
+/** Secret kinds the compiler reads (the rest, e.g. the platform webhook, never enter a desired state). */
+const COMPILED_KINDS = [
+  INGEST_KIND, DASH_TOKEN_KIND, SSO_KIND, WEBHOOK_KIND, TLS_KIND,
+  SPEEDTEST_TOKEN_KIND, RUNNER_TOKEN_KIND, CHANNEL_TOKEN_KIND, DEVICE_KEY_KIND, SPEEDTEST_TLS_KIND, INTEGRATION_SECRET_KIND,
+];
+
+/** exp token prefix of each generated token kind (01-contracts.md section 14.2). */
+const TOKEN_PREFIX_OF: Record<string, "expi" | "expd" | "exps" | "expr" | "expl" | "expk"> = {
+  [INGEST_KIND]: "expi",
+  [DASH_TOKEN_KIND]: "expd",
+  [SPEEDTEST_TOKEN_KIND]: "exps",
+  [RUNNER_TOKEN_KIND]: "expr",
+  [CHANNEL_TOKEN_KIND]: "expl",
+  [DEVICE_KEY_KIND]: "expk",
+};
+/** kinds whose consumer only needs a verifier: sha256 of the plaintext is kept next to the sealed value */
+const HASHED_KINDS = new Set([INGEST_KIND, DASH_TOKEN_KIND, SPEEDTEST_TOKEN_KIND, RUNNER_TOKEN_KIND, CHANNEL_TOKEN_KIND]);
 
 export function parseJson<T>(s: unknown, fallback: T): T {
   if (typeof s !== "string") return fallback;
@@ -68,6 +102,9 @@ interface Rows {
   hooks: Array<Record<string, unknown>>;
   arts: Array<Record<string, unknown>>;
   secrets: SecretRow[];
+  speedtest: Array<Record<string, unknown>>;
+  logos: Array<Record<string, unknown>>;
+  integrations: Array<Record<string, unknown>>;
 }
 
 async function readRows(env: Env): Promise<Rows> {
@@ -83,7 +120,10 @@ async function readRows(env: Env): Promise<Rows> {
     q(`SELECT artifact_id, version, name, component, arch, sha256, size FROM artifacts
        WHERE version IN (SELECT release_version FROM sites WHERE release_version IS NOT NULL
                          UNION SELECT target_version FROM sites WHERE target_version IS NOT NULL)`),
-    q(`SELECT * FROM secrets WHERE kind IN ('${INGEST_KIND}','${DASH_TOKEN_KIND}','${SSO_KIND}','${WEBHOOK_KIND}','${TLS_KIND}')`),
+    q(`SELECT * FROM secrets WHERE kind IN (${COMPILED_KINDS.map((k) => `'${k}'`).join(",")})`),
+    q("SELECT * FROM speedtest_settings"),
+    q("SELECT artifact_id, version, name, component, arch, sha256, size FROM artifacts WHERE component = 'speedtest-logo'"),
+    q("SELECT kind, config_json, secret_id FROM integrations"),
   ]);
   const rows = (i: number) => (r[i]?.results ?? []) as Array<Record<string, unknown>>;
   return {
@@ -96,7 +136,44 @@ async function readRows(env: Env): Promise<Rows> {
     hooks: rows(6),
     arts: rows(7),
     secrets: rows(8) as unknown as SecretRow[],
+    speedtest: rows(9),
+    logos: rows(10),
+    integrations: rows(11),
   };
+}
+
+const LOGO_TYPES = new Set(["image/png", "image/svg+xml", "image/jpeg"]);
+
+function speedtestOf(rows: Rows): Record<string, WSpeedtest> {
+  const out: Record<string, WSpeedtest> = {};
+  const logos = new Map(rows.logos.map((l) => [String(l.artifact_id), l]));
+  for (const r of rows.speedtest) {
+    const l = r.logo_artifact_id ? logos.get(String(r.logo_artifact_id)) : undefined;
+    const ct = String(r.logo_content_type ?? "");
+    out[String(r.site)] = {
+      settings: parseJson(r.settings_json, {}),
+      consent: { text: String(r.consent_text ?? ""), version: Number(r.consent_version ?? 1) },
+      paused: Number(r.paused) === 1,
+      logo: l && LOGO_TYPES.has(ct) ? { artifact: l as unknown as WArtifact, content_type: ct as LogoContentType } : null,
+    };
+  }
+  return out;
+}
+
+function integrationsOf(rows: Rows, secrets: Record<string, WSecret>): World["integrations"] {
+  const out: { ec?: WIntegration; mist?: WIntegration } = {};
+  for (const r of rows.integrations) {
+    const kind = String(r.kind);
+    if (kind !== "ec" && kind !== "mist") continue;
+    let credentials: Record<string, string> = {};
+    const sec = secrets[secretKey(`integration:${kind}`, INTEGRATION_SECRET_KIND)];
+    if (sec) {
+      const j = parseJson<Record<string, unknown>>(sec.plaintext, {});
+      credentials = Object.fromEntries(Object.entries(j).filter(([, v]) => typeof v === "string")) as Record<string, string>;
+    }
+    out[kind] = { config: parseJson(r.config_json, {}), credentials };
+  }
+  return out;
 }
 
 function buildWorld(env: Env, rows: Rows, secrets: Record<string, WSecret>): World {
@@ -164,6 +241,8 @@ function buildWorld(env: Env, rows: Rows, secrets: Record<string, WSecret>): Wor
     noc_tokens: rows.nocs as unknown as WNocToken[],
     webhooks: rows.hooks as unknown as WWebhook[],
     artifacts: rows.arts as unknown as WArtifact[],
+    speedtest: speedtestOf(rows),
+    integrations: integrationsOf(rows, secrets),
     now: isoNow(),
   };
 }
@@ -193,8 +272,8 @@ async function provisionSecrets(env: Env, rows: Rows): Promise<boolean> {
       {
         ownerRef: need.ownerRef,
         kind: need.kind,
-        plaintext: isSso ? newSsoSecret() : newToken(need.kind === DASH_TOKEN_KIND ? "expd" : "expi"),
-        withHash: !isSso,
+        plaintext: isSso ? newSsoSecret() : newToken(TOKEN_PREFIX_OF[need.kind] ?? "expi"),
+        withHash: HASHED_KINDS.has(need.kind),
         secretId: `sec_${need.kind}_${need.ownerRef}`,
       },
       true,

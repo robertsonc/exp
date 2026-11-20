@@ -16,6 +16,7 @@ import { IssuesPage } from './pages/IssuesPage';
 import { NotFound } from './pages/Placeholder';
 import { ReleasesPage } from './pages/ReleasesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SpeedtestIndex, SpeedtestPage } from './pages/SpeedtestPage';
 import { SitePage, SitesPage } from './pages/SitesPage';
 import { matchRoute, useLocation } from './router';
 
@@ -33,6 +34,8 @@ export function App(): JSX.Element {
     case 'component': page = <ComponentPage key={m.params['cid']} id={m.params['id'] ?? ''} cid={m.params['cid'] ?? ''} me={me} />; break;
     case 'sites': page = <SitesPage me={me} />; break;
     case 'site': page = <SitePage key={m.params['site']} slug={m.params['site'] ?? ''} me={me} />; break;
+    case 'speedtest': page = <SpeedtestIndex />; break;
+    case 'speedtestsite': page = <SpeedtestPage key={m.params['site']} slug={m.params['site'] ?? ''} me={me} />; break;
     case 'releases': page = <ReleasesPage me={me} />; break;
     case 'dashboards': page = <DashboardsPage />; break;
     case 'drills': page = <DrillsPage />; break;

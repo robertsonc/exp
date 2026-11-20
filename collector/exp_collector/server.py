@@ -49,6 +49,9 @@ MAX_REJECT_THREADS = 32
 AUTH_NONE = "none"
 AUTH_INGEST = auth.SCOPE_INGEST
 AUTH_DASHBOARD = auth.SCOPE_DASHBOARD
+AUTH_SPEEDTEST = auth.SCOPE_SPEEDTEST
+AUTH_RUNNER = auth.SCOPE_RUNNER
+SPEEDTEST_PREFIX = "/api/v1/speedtests"
 # The ONE /api route an executor (probe or runner) calls with its ingest token: the drill kill switch.
 EXECUTOR_ROUTE = "/api/v1/drills/control"
 
@@ -84,12 +87,14 @@ class Router:
 
     def add(self, method: str, template: str, handler: Callable[[Handler], None], *, auth: str,
             max_body: int = 0) -> None:
-        if auth not in (AUTH_NONE, AUTH_INGEST, AUTH_DASHBOARD):
+        if auth not in (AUTH_NONE, AUTH_INGEST, AUTH_DASHBOARD, AUTH_SPEEDTEST, AUTH_RUNNER):
             raise ValueError(f"bad auth scope {auth!r}")
+        if auth in (AUTH_SPEEDTEST, AUTH_RUNNER) and not template.startswith(SPEEDTEST_PREFIX):
+            raise ValueError("speedtest/runner tokens are valid only on /api/v1/speedtests routes")
         if template.startswith("/ingest/") and auth != AUTH_INGEST:
             raise ValueError("/ingest/* routes must use ingest-token auth")
         if template.startswith("/api/") and auth != AUTH_DASHBOARD and not (
-                template == EXECUTOR_ROUTE and auth == AUTH_INGEST):
+                template == EXECUTOR_ROUTE and auth == AUTH_INGEST) and auth not in (AUTH_SPEEDTEST, AUTH_RUNNER):
             raise ValueError("/api/* routes must use dashboard-token auth")
         rx = "^" + _PARAM.sub(lambda m: f"(?P<{m.group(1)}>{_SEGMENT})", re.escape(template).replace("\\{", "{")
                               .replace("\\}", "}")) + "$"

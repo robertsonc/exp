@@ -53,6 +53,8 @@ const ROUTES: [string, RegExp, string[]][] = [
   ['component', /^\/hosts\/(h_[0-9A-Za-z]+)\/components\/(cmp_[0-9A-Za-z]+)$/, ['id', 'cid']],
   ['sites', /^\/sites$/, []],
   ['site', /^\/sites\/([a-z0-9][a-z0-9-]{0,63})$/, ['site']],
+  ['speedtestsite', /^\/sites\/([a-z0-9][a-z0-9-]{0,63})\/speedtest$/, ['site']],
+  ['speedtest', /^\/speedtest$/, []],
   ['releases', /^\/releases$/, []],
   ['dashboards', /^\/dashboards$/, []],
   ['drills', /^\/drills$/, []],

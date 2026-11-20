@@ -347,6 +347,54 @@
           },
           "additionalProperties": false
         },
+        "network": {
+          "type": "object",
+          "properties": {
+            "require_real_client_ip": {
+              "type": "boolean",
+              "description": "Mirror of speedtest serve.require_real_client_ip (D15). Default true."
+            },
+            "client_subnets": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/ipv4_cidr"
+              },
+              "maxItems": 64,
+              "description": "Attendee subnets (NAT guard input; mirror of speedtest serve.client_subnets)."
+            },
+            "translated_addresses": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/ipv4"
+              },
+              "maxItems": 64,
+              "description": "Known NAT/edge/translated addresses (mirror of speedtest serve.translated_addresses)."
+            },
+            "zone_subnets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "cidr": {
+                    "$ref": "common.schema.json#/$defs/ipv4_cidr"
+                  },
+                  "zone": {
+                    "$ref": "common.schema.json#/$defs/slug"
+                  }
+                },
+                "required": [
+                  "cidr",
+                  "zone"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 256,
+              "description": "Subnet to coarse zone table (mirror of speedtest zone_labels.subnets); longest prefix wins."
+            }
+          },
+          "additionalProperties": false,
+          "description": "CR-m6-runner-network: identity-resolution inputs the runner needs but which live in the speedtest config; the manager compiles them into both configs from the same site settings."
+        },
         "speedtest_channel": {
           "type": "object",
           "properties": {

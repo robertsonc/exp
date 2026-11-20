@@ -1,0 +1,58 @@
+[Unit]
+Description=exp runner @VERSION@ (speedtest correlation, syslog receiver)
+Documentation=file://@PREFIX@/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=exp-runner
+Group=exp-runner
+ExecStart=@PREFIX@/bin/exp-runner run --config @CONFIG@
+Restart=always
+RestartSec=2
+TimeoutStopSec=30
+# Credentials: the agent guarantees each file exists (possibly empty). Read with exp_common.creds from
+# $CREDENTIALS_DIRECTORY; never in config, argv or logs. A credential change restarts the unit (agent).
+LoadCredential=collector_token:@CREDS@/collector_token
+LoadCredential=speedtest_channel_token:@CREDS@/speedtest_channel_token
+LoadCredential=device_key_secret:@CREDS@/device_key_secret
+LoadCredential=integrations.json:@CREDS@/integrations.json
+LoadCredential=ingest_token:@CREDS@/ingest_token
+LoadCredential=syslog_tls.crt:@CREDS@/syslog_tls.crt
+LoadCredential=syslog_tls.key:@CREDS@/syslog_tls.key
+# /var/lib/exp/runner (syslog.db ring, runner.db, tls/) and /run/exp/runner (health snapshot)
+StateDirectory=exp/runner
+StateDirectoryMode=0700
+RuntimeDirectory=exp/runner
+RuntimeDirectoryMode=0755
+UMask=0077
+# Hardening. No capabilities: the syslog ports are 5514/6514 (never a privileged port).
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

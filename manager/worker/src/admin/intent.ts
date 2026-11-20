@@ -162,6 +162,11 @@ export async function deleteSite(env: Env, actor: Actor, site: string): Promise<
   await env.DB.batch([
     ...hooks.map((h) => env.DB.prepare("DELETE FROM secrets WHERE secret_id = ?1").bind(h.secret_id)),
     env.DB.prepare("DELETE FROM webhooks WHERE site = ?1").bind(site),
+    // M6: the site's speedtest intent (settings, consent history, provided TLS pair) goes with it
+    env.DB.prepare("DELETE FROM secrets WHERE owner_ref = ?1 AND kind = 'speedtest_tls'").bind(`speedtest:${site}`),
+    env.DB.prepare("DELETE FROM speedtest_consent_history WHERE site = ?1").bind(site),
+    env.DB.prepare("DELETE FROM artifacts WHERE artifact_id = (SELECT logo_artifact_id FROM speedtest_settings WHERE site = ?1) AND component = 'speedtest-logo'").bind(site),
+    env.DB.prepare("DELETE FROM speedtest_settings WHERE site = ?1").bind(site),
     env.DB.prepare("DELETE FROM hosts WHERE site = ?1 AND state = 'removed'").bind(site),
     env.DB.prepare("DELETE FROM sites WHERE site = ?1").bind(site),
     auditStmt(env.DB, { actor: actor.email, action: "site.delete", resource: `site:${site}`, ip: actor.ip }),
@@ -475,6 +480,8 @@ export async function putIntegration(env: Env, actor: Actor, kind: string, body:
     auditStmt(env.DB, { actor: actor.email, action: "integration.update", resource: `integration:${kind}`, details: { config_keys: Object.keys(config), allowlist: allowlist?.length ?? null, secret_set: secretSet }, ip: actor.ip }),
   );
   await env.DB.batch(stmts);
+  // M6: the runner's integrations.json is compiled from the stored connectors (credentials flow to the runner only)
+  await recompile(env, { all: true });
   return getIntegration(env, kind);
 }
 
