@@ -401,6 +401,25 @@ describe("logo", () => {
     expect(box.host_id).toBeTruthy();
   });
 
+  it("regression: two sites with the same image share one artifact; removing it on one site keeps it for the other", async () => {
+    const box = await allInOne();
+    await createSite(env, ADMIN_ACTOR, { site: "hall-c", name: "Hall C", timezone: "UTC" });
+    await put(BODY());
+    const a = (await (await upload(PNG, "image/png")).json()) as { artifact: string };
+    const resC = await h.api("admin", "POST", "/sites/hall-c/speedtest/logo", PNG, { "content-type": "image/png" });
+    const c = (await resC.json()) as { artifact: string };
+    expect(c.artifact).toBe(a.artifact);
+    // hall-b drops its logo: the artifact (and its object) must survive for hall-c
+    await put(BODY({ branding: { logo_artifact: null } }));
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM artifacts WHERE artifact_id = ?1").bind(a.artifact).first<{ n: number }>())!.n).toBe(1);
+    const key = (await env.DB.prepare("SELECT r2_key FROM artifacts WHERE artifact_id = ?1").bind(a.artifact).first<{ r2_key: string }>())!.r2_key;
+    expect(await env.ARTIFACTS.get(key)).not.toBeNull();
+    // deleting hall-c (no hosts) removes the last reference and the artifact row
+    expect((await h.api("admin", "DELETE", "/sites/hall-c")).status).toBe(204);
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM artifacts WHERE artifact_id = ?1").bind(a.artifact).first<{ n: number }>())!.n).toBe(0);
+    expect(box.host_id).toBeTruthy();
+  });
+
   it("refuses wrong magic numbers, oversize bodies, unsupported types and non-admins", async () => {
     await allInOne();
     expect((await upload("GIF89a", "image/png")).status).toBe(400);

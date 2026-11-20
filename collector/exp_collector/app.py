@@ -111,7 +111,7 @@ class CollectorApp:
         incident engine's state is checkpointed on every tick, so a restart does not page twice."""
         self.started = False
         self.hub.close()                                  # releases every open SSE connection thread
-        self.speedtests.hub.close()
+        self.speedtests.begin_stop()                      # long polls and speedtest streams end now
         if self.server is not None:
             if self._serve_thread is not None and self._serve_thread.is_alive():
                 self.server.shutdown()          # blocks forever if serve_forever never started

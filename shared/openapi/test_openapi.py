@@ -417,8 +417,8 @@ def test_admin_role_matrix_matches_spec():
     for (m, p), r in role.items():
         admin_only = ("/audit", "/dashboards/{dashboard_id}/users", "/dashboards/{dashboard_id}/noc-tokens",
                       "/dashboards/{dashboard_id}/tls", "/settings/master-key",
-                          # CR-m6-manager: consent history shows who edited the text; the TLS pair state is admin-only like the dashboard's
-                          "/sites/{site}/speedtest/consent-history", "/sites/{site}/speedtest/tls")
+                      # CR-m6-manager: consent history names editors; the TLS pair state is admin-only
+                      "/sites/{site}/speedtest/consent-history", "/sites/{site}/speedtest/tls")
         if m == "get" and p not in admin_only:
             assert r == "viewer", (m, p)
 

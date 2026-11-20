@@ -165,7 +165,12 @@ export async function deleteSite(env: Env, actor: Actor, site: string): Promise<
     // M6: the site's speedtest intent (settings, consent history, provided TLS pair) goes with it
     env.DB.prepare("DELETE FROM secrets WHERE owner_ref = ?1 AND kind = 'speedtest_tls'").bind(`speedtest:${site}`),
     env.DB.prepare("DELETE FROM speedtest_consent_history WHERE site = ?1").bind(site),
-    env.DB.prepare("DELETE FROM artifacts WHERE artifact_id = (SELECT logo_artifact_id FROM speedtest_settings WHERE site = ?1) AND component = 'speedtest-logo'").bind(site),
+    // identical images share one artifact: keep it while another site's settings still point at it
+    env.DB.prepare(
+      `DELETE FROM artifacts WHERE component = 'speedtest-logo'
+         AND artifact_id = (SELECT logo_artifact_id FROM speedtest_settings WHERE site = ?1)
+         AND NOT EXISTS (SELECT 1 FROM speedtest_settings o WHERE o.logo_artifact_id = artifacts.artifact_id AND o.site != ?1)`,
+    ).bind(site),
     env.DB.prepare("DELETE FROM speedtest_settings WHERE site = ?1").bind(site),
     env.DB.prepare("DELETE FROM hosts WHERE site = ?1 AND state = 'removed'").bind(site),
     env.DB.prepare("DELETE FROM sites WHERE site = ?1").bind(site),

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
 from collections import OrderedDict
@@ -173,7 +172,3 @@ class InternetLeg:
     def housekeeping(self) -> None:
         with self._lock:
             self._sweep()
-
-
-def runtime_path_ok(path: Path) -> bool:
-    return os.access(path.parent, os.W_OK)

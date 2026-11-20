@@ -202,3 +202,13 @@ export function logoProblem(type: string, size: number, head: Uint8Array): strin
 
 /** CSS colour only if it is a plain #rrggbb value: anything else is ignored in the live preview. */
 export const safeColor = (v: string, fallback: string): string => (HEX.test(v) ? v : fallback);
+
+const channel = (v: number): number => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const luminance = (hex: string): number => 0.2126 * channel(parseInt(hex.slice(1, 3), 16)) + 0.7152 * channel(parseInt(hex.slice(3, 5), 16)) + 0.0722 * channel(parseInt(hex.slice(5, 7), 16));
+
+/** WCAG contrast ratio of two #rrggbb colours (1 to 21); null when either is not a plain hex colour. */
+export function contrastRatio(a: string, b: string): number | null {
+  if (!HEX.test(a) || !HEX.test(b)) return null;
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+}

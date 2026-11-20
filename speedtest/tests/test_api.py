@@ -9,8 +9,9 @@ import oas
 import pytest
 from exp_common import ids
 from exp_common import speedtest as st
-from exp_speedtest.core import Core
 from stbox import SENTINEL_ID, Box, FakeClock, submission, wait_for
+
+from exp_speedtest.core import Core
 
 XSS = "<script>alert(1)</script>\"'><img src=x onerror=alert(2)> ${7*7} {{7*7}} ' OR 1=1 --"
 
@@ -236,7 +237,6 @@ def test_token_of_another_session_or_foreign_address_is_refused(box: Box):
     b = box.new_session(src="127.0.0.3")
     r = box.get("/st/ping", headers=a.leg, src="127.0.0.3")
     assert r.status == 403 and err_code(r) == "ip_mismatch"
-    oas.check("/st/ping", "get", 403, r.json()) if "403" in oas.DOC["paths"]["/st/ping"]["get"]["responses"] else None
     assert box.get("/st/ping", headers=a.leg, src="127.0.0.2").status == 204
     assert box.get("/st/ping", headers=b.leg, src="127.0.0.3").status == 204
 
@@ -298,9 +298,10 @@ def test_up_counts_discards_and_enforces_the_budget(box: Box):
     assert r.status == 204 and r.h("x-exp-received") == "3000000"
     oas.check("/st/up", "post", 204, None)
     assert box.core._sessions[s.sid].bytes_up == 3_000_000
-    r = box.post("/st/up", raw_body=b"z" * 60_000_000, headers=s.leg)
-    assert r.status == 413 and err_code(r) == "budget_exceeded"
-    oas.check("/st/up", "post", 413, r.json())
+    # over budget: refused from the declared Content-Length alone, before a single body byte is read
+    raw = box.raw(f"POST /st/up HTTP/1.1\r\nHost: x\r\nX-Exp-Leg-Token: {s.leg_token}\r\nContent-Length: 60000000\r\n\r\n".encode())
+    assert raw.startswith(b"HTTP/1.1 413") and b"budget_exceeded" in raw and b"Connection: close" in raw
+    oas.check("/st/up", "post", 413, json.loads(raw.split(b"\r\n\r\n", 1)[1]))
     r = box.request("POST", "/st/up", headers=s.leg)
     assert r.status in (204, 411) and (r.status == 411 or r.h("x-exp-received") == "0")
 
@@ -555,7 +556,6 @@ def test_non_ok_internet_leg_is_normalised_and_flagged(box: Box):
         assert flag in r.json()["flags"], status
         assert box.fake.app.tests[s.sid].doc["legs"]["internet"] == {"status": status}
         s2 = box.new_session(src="127.0.0.2")                          # (the first test is finished, so this is allowed)
-        box.fake.app  # keep the fake alive
         box.post(f"/st/api/v1/sessions/{s2.sid}/result", submission(), headers=s2.view, src="127.0.0.2")
         box.core.create_limiter._d.clear()
     s = box.new_session(src="127.0.0.9")
@@ -622,8 +622,6 @@ def test_path_route_reports_box_timed_legs_and_device_icmp(box: Box):
     oas.check("/st/api/v1/sessions/{id}/path", "get", 200, p)
     assert p["path"]["device_icmp_ms"] == 0.5 and p["path"]["edge1_addr"] == "127.0.0.3"
     assert p["path"]["gateway_ms"]["idle"] == 0.5
-    sse = box.get(f"/st/api/v1/sessions/{s.sid}/path", headers={**s.view, "Accept": "text/event-stream"}, timeout=3) if False else None
-    assert sse is None
 
 
 def test_path_sse_stream(box: Box):

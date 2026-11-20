@@ -333,12 +333,13 @@ class SpeedtestService:
                 check["text"] = dx.USER_TEXT[diag["cause"][0]["id"]][:160]
             checks.append(check)
         details = None
+        nat = "nat_suspected" in json.loads(row["flags"])         # failed closed: no per-device detail goes out
         wifi = (ev.get("wifi") or {}).get("data") or {}
         ident = (ev.get("identity") or {}).get("data") or {}
         ap_name = row["ap_name"] or (wifi.get("ap") or {}).get("ap_name")
         band = row["band"] or (wifi.get("client") or {}).get("band")
         chan = (wifi.get("client") or {}).get("channel")
-        if ap_name or band or ident.get("band"):
+        if not nat and (ap_name or band or ident.get("band")):
             details = {k: v for k, v in (("ap_name", dx.clean(ap_name, 128) if ap_name else None),
                                          ("band", dx.clean(band, 16) if band else None),
                                          ("channel", chan if isinstance(chan, int) else None)) if v is not None}
@@ -606,6 +607,13 @@ class SpeedtestService:
             self._last_retention = now
             self.retention_once()
 
+    def begin_stop(self) -> None:
+        """First step of a shutdown: end long polls and SSE streams so connection threads can finish."""
+        self._stop.set()
+        self.hub.close()
+        with self.cond:
+            self.cond.notify_all()
+
     def start(self) -> None:
         if not self.enabled or self._thread is not None:
             return
@@ -614,10 +622,7 @@ class SpeedtestService:
         self._thread.start()
 
     def stop(self) -> None:
-        self._stop.set()
-        self.hub.close()
-        with self.cond:
-            self.cond.notify_all()
+        self.begin_stop()
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None

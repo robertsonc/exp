@@ -195,7 +195,10 @@ export async function setPause(env: Env, actor: Actor, site: string, paused: boo
 // ---- logo ----------------------------------------------------------------------------------------------------------
 const LOGO_TYPES = ["image/png", "image/svg+xml", "image/jpeg"] as const;
 
+/** Deletes a logo artifact (row + object) unless another site's settings still point at it (identical images share one artifact). */
 async function dropLogoArtifact(env: Env, artifactId: string): Promise<void> {
+  const still = await env.DB.prepare("SELECT 1 AS x FROM speedtest_settings WHERE logo_artifact_id = ?1 LIMIT 1").bind(artifactId).first();
+  if (still) return;
   const a = await env.DB.prepare("SELECT r2_key FROM artifacts WHERE artifact_id = ?1 AND component = 'speedtest-logo'").bind(artifactId).first<{ r2_key: string }>();
   if (!a) return;
   await env.DB.prepare("DELETE FROM artifacts WHERE artifact_id = ?1").bind(artifactId).run();

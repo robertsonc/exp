@@ -10,10 +10,6 @@ if os.path.isdir(_lib):                                     # tarball layout
 else:                                                       # dev tree: <repo>/speedtest/bin
     _st = os.path.normpath(os.path.join(_here, ".."))
     sys.path[:0] = [_st, os.path.normpath(os.path.join(_st, "..", "shared", "python"))]
-    try:                                                    # dev only: dnspython from the venv if not importable
-        import dns  # noqa: F401
-    except ImportError:
-        pass
 
 from exp_speedtest.cli import main  # noqa: E402
 

@@ -37,7 +37,9 @@ manager/
     issues/              rules.ts (section 14 rules), engine.ts (open / hysteresis / suppression / staleness),
                          store.ts (list, snooze), notify.ts (platform webhook), thresholds.ts
     notify/              webhook.ts (SSRF-safe outbound webhooks)
-    compile/             compile.ts (pure), wiring.ts, load.ts (rows -> World), recompile.ts (persist, serve)
+    compile/             compile.ts (pure), wiring.ts, load.ts (rows -> World), recompile.ts (persist, serve),
+                         speedtest.ts (M6: speedtest/runner/collector documents, port-collision check)
+    speedtest/           M6 settings API: settings + consent versioning, logo (artifact), QR data, provided TLS, device_key
     secrets/             AES-256-GCM, token generation, secret rows with rotation overlap
     audit/               one event per mutation, scrubbing
     install/             /install.sh substitution
@@ -46,6 +48,16 @@ manager/
     workers/             vitest-pool-workers: local D1 / R2 / rate limit bindings
     node/                pure compiler goldens validated with ajv against shared/schemas
 ```
+
+## Speedtest (M6)
+
+`speedtest` is a shape like the others (`exp-speedtest`, directory `speedtest/`); the *all-in-one* profile is ONE host with
+`probe + collector + runner + speedtest`. The Worker holds INTENT only: per-site speedtest settings (`GET/PUT sites/{site}/speedtest`,
+migration `0005_speedtest.sql`), the consent text with versions, the logo artifact, the internet-leg pause switch, the provided TLS
+pair, the per-org `device_key` secret (sealed with the master-key keyring, never returned) and the tokens `exps_` / `expr_` / `expl_`
+(sha256 at rest, rotated like the probe ingest tokens). It **never receives test results or evidence** (SR-20): no such route exists.
+UI: `/sites/{site}/speedtest` (branding preview, consent, zones, QR signage, limits, connectors), runner correlation sources under the
+runner's Configure tab. Decisions and contract additions: [CR-m6-manager](../docs/spec/changes/CR-m6-manager.md).
 
 ## Commands
 

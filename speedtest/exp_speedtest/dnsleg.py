@@ -202,22 +202,10 @@ class DnsLegServer:
     # ----------------------------------------------------------------------------------------- sockets
     def start(self) -> None:
         """Bind UDP and TCP. Raises OSError when either bind fails (the daemon degrades the DNS leg, never crashes)."""
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            udp.bind((self.listen_ip, self.port))
-            tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                tcp.bind((self.listen_ip, self.port or udp.getsockname()[1]))
-            except OSError:
-                tcp.close()
-                raise
-        except OSError:
-            udp.close()
-            raise
+        udp, tcp = self._bind_pair()
         tcp.listen(32)
-        udp.settimeout(0.5)
-        tcp.settimeout(0.5)
+        udp.settimeout(0.2)
+        tcp.settimeout(0.2)
         self._udp, self._tcp = udp, tcp
         self.udp_port, self.tcp_port = udp.getsockname()[1], tcp.getsockname()[1]
         for target, name in ((self._udp_loop, "dns-udp"), (self._tcp_loop, "dns-tcp")):
@@ -226,10 +214,31 @@ class DnsLegServer:
             self._threads.append(t)
         log.info("dns-leg authority for %s on %s:%d (udp+tcp)", self.zone_text, self.listen_ip, self.udp_port)
 
+    def _bind_pair(self) -> tuple[socket.socket, socket.socket]:
+        """UDP and TCP on the same port. Port 0 (tests only) picks a UDP port and retries until TCP can have it too."""
+        last: OSError | None = None
+        for _ in range(1 if self.port else 25):
+            udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                udp.bind((self.listen_ip, self.port))
+                tcp.bind((self.listen_ip, self.port or udp.getsockname()[1]))
+                return udp, tcp
+            except OSError as exc:
+                last = exc
+                udp.close()
+                tcp.close()
+        raise last or OSError("cannot bind the DNS-leg sockets")
+
     def stop(self) -> None:
         self._stop.set()
         for s in (self._udp, self._tcp):
             if s is not None:
+                try:
+                    s.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
                 try:
                     s.close()
                 except OSError:

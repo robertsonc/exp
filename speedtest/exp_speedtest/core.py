@@ -11,7 +11,6 @@ import dataclasses
 import hashlib
 import json
 import logging
-import os
 import re
 import secrets
 import threading
@@ -39,7 +38,6 @@ from .whereis import Where, ZoneResolver
 
 log = logging.getLogger(__name__)
 
-MAX_PER_REQUEST = 100_000_000          # openapi: bytes <= 100 MB per request
 MAX_PINGS_PER_SESSION = 5000
 MAX_SESSIONS_IN_MEMORY = 20_000
 VIEW_CACHE_S = 1.0
@@ -53,8 +51,6 @@ _COMMENT_BAD = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _LEG_KEYS = ("down_mbps", "up_mbps", "idle_ms", "jitter_ms", "loaded_down_ms", "loaded_up_ms", "rpm", "cv", "failures", "bytes")
 _INET_FLAGS = {"unavailable": "internet_unavailable", "paused": "internet_paused", "queued": "internet_queued"}
 _KINDS = frozenset({"wifi", "wired", "flows", "wan", "security", "baseline", "dns", "identity"})
-USER_CAUSES = frozenset({"wifi_signal", "wifi_congestion", "wifi_roaming", "wired_port", "device_limit", "wan_saturation",
-                         "internet_path", "policy_block", "qos_shaping", "dns", "network_wide", "none"})
 
 
 def iso(ts: float) -> str:
@@ -500,7 +496,8 @@ class Core:
             state = "running"
         zone, zname, zsrc = "unresolved", None, "unresolved"
         if remote and remote.get("zone"):
-            zone, zname, zsrc = remote["zone"], remote.get("zone_name"), remote.get("zone_source", "unresolved")
+            zone, zsrc = remote["zone"], remote.get("zone_source", "unresolved")
+            zname = self.resolver.zone_name(zone) or remote.get("zone_name")
         elif result:
             zone, zsrc = result.get("zone", "unresolved"), result.get("zone_source", "unresolved")
             zname = self.resolver.zone_name(zone)
@@ -670,10 +667,3 @@ class Core:
         if now - self._last_prune >= 600:
             self._last_prune = now
             self.store.prune_sessions(now - self.cfg.retention_days * 86400)
-
-
-def payload_ready(path: os.PathLike[str] | str) -> bool:
-    try:
-        return os.path.getsize(path) > 0
-    except OSError:
-        return False

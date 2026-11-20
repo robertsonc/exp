@@ -193,6 +193,9 @@ class Daemon:
                 "path": {"backend": backend, "hops": self.path.hop_addresses()},
                 "guard": {"iface": self.cfg.core_guard.iface, "available": core.guard.available,
                           "utilization_pct": core.guard.utilization_pct, "cap_bytes": core.guard.effective_cap()},
+                "counters": {"local_bytes_total": core.meter.total(),
+                             "connections_total": self.public.connections_total if self.public else 0,
+                             "connections_refused": self.public.connections_refused if self.public else 0},
                 "tls_fingerprint_sha256": self.tls_fingerprint, "notes": list(self.notes),
                 "dns_stats": dict(self.dns.stats) if self.dns else None}
 

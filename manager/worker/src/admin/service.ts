@@ -291,7 +291,7 @@ export async function rotateComponentTokens(
   if (row.type === "probe") {
     await rotateOne(componentId, INGEST_KIND, "expi");
   } else if (row.type === "runner") {
-    // M6: the runner holds three tokens: expi_ (ext_* ingest), expr_ (collector feed/evidence) and the localhost channel's expl_
+    // M6: the runner holds three tokens: expi_ (ext_* ingest), expr_ (collector feed and evidence) and the localhost channel's expl_
     await rotateOne(componentId, INGEST_KIND, "expi");
     await rotateOne(componentId, RUNNER_TOKEN_KIND, "expr");
     const world = await loadWorld(env);

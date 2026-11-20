@@ -26,6 +26,7 @@ from .config import CollectorCfg, Settings
 log = logging.getLogger(__name__)
 
 UPSTREAM_TIMEOUT_S = 3.0
+ACTION_TIMEOUT_S = 10.0          # purge: secure_delete on a big database is slower than a read
 MAP_REFRESH_S = 30.0
 MAX_UPSTREAM_BYTES = 8 * 1024 * 1024
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -232,6 +233,47 @@ class Federation:
                     r = UpstreamResult(c.collector_id, False, error="unreachable")
             else:
                 f.cancel()
+                r = UpstreamResult(c.collector_id, False, error="timeout")
+            self._note(r)
+            results.append(r)
+        return results
+
+    def fan_out_each(self, path: str, user: str, params_for) -> list[UpstreamResult]:
+        """Like fan_out with per-collector params; ``params_for(cid)`` returning None skips that collector."""
+        cols = []
+        for c in self.collectors.values():
+            p = params_for(c.collector_id)
+            if p is not None:
+                cols.append((c, p))
+        futs = {self._pool.submit(self._call, c, "GET", path, p, user): c for c, p in cols}
+        done, _pending = cf.wait(futs, timeout=UPSTREAM_TIMEOUT_S + 1.0)
+        results = []
+        for f, c in futs.items():
+            if f in done:
+                try:
+                    r = f.result()
+                except Exception:   # noqa: BLE001
+                    r = UpstreamResult(c.collector_id, False, error="unreachable")
+            else:
+                f.cancel()
+                r = UpstreamResult(c.collector_id, False, error="timeout")
+            self._note(r)
+            results.append(r)
+        return results
+
+    def post_all(self, path: str, user: str, body: bytes | None) -> list[UpstreamResult]:
+        """POST to EVERY collector in parallel (an action that applies wherever the data is, e.g. a purge)."""
+        futs = {self._pool.submit(self._call, c, "POST", path, None, user, body, ACTION_TIMEOUT_S): c
+                for c in self.collectors.values()}
+        done, _pending = cf.wait(futs, timeout=ACTION_TIMEOUT_S + 1.0)
+        results = []
+        for f, c in futs.items():
+            if f in done:
+                try:
+                    r = f.result()
+                except Exception:   # noqa: BLE001
+                    r = UpstreamResult(c.collector_id, False, error="unreachable")
+            else:
                 r = UpstreamResult(c.collector_id, False, error="timeout")
             self._note(r)
             results.append(r)

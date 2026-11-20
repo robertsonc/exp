@@ -3,7 +3,7 @@
 // pause, per-zone QR signage, connectors and the per-org device_key. INTENT only: the manager never receives or shows
 // a test result or evidence (SR-20). Everything typed by an admin or read from the network is rendered as text.
 import type { JSX } from 'preact';
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { ep } from '../api/endpoints';
 import type { Me, Page, Site, SpeedtestConsentHistory, SpeedtestDeviceKeyState, SpeedtestLogo, SpeedtestQr, SpeedtestSettings, SpeedtestTls } from '../api/types';
 import { mutate, mutateBytes, useResource } from '../data/hooks';
@@ -15,7 +15,7 @@ import { Link } from '../components/viz';
 import { Loadable, PageHeader } from './common';
 import { formatAbsolute } from '../lib/format';
 import { qrPath } from '../lib/qr';
-import { LIMIT_KEYS, LIMIT_META, LOGO_MAX_BYTES, draftFrom, logoProblem, problems, safeColor, toBody, type Draft } from '../lib/speedtest';
+import { LIMIT_KEYS, LIMIT_META, LOGO_MAX_BYTES, contrastRatio, draftFrom, logoProblem, problems, safeColor, toBody, type Draft } from '../lib/speedtest';
 import { MAX_CERT_PEM, MAX_KEY_PEM, tlsPemProblems } from '../lib/tls';
 import { httpsProblem } from '../lib/validate';
 import { navigate } from '../router';
@@ -63,7 +63,7 @@ function Preview({ d, logoUrl, hasLogo }: { d: Draft; logoUrl: string | null; ha
       </div>
       <div class="st-preview-body">
         <span class="st-preview-btn" style={{ background: primary, color: bg }}>Start</span>
-        <span class="st-preview-accent" style={{ borderColor: accent, color: accent }}>result</span>
+        <span class="st-preview-accent" style={{ borderColor: accent, color: fg }}>result</span>
       </div>
     </div>
   );
@@ -76,22 +76,17 @@ function LogoField({ site, allowed, hasLogo, removed, onRemoved, onPreview }: { 
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const url = useRef<string | null>(null);
-  useEffect(() => () => { if (url.current) URL.revokeObjectURL(url.current); }, []);
   const choose = async (e: Event) => {
     const f = (e.currentTarget as HTMLInputElement).files?.[0] ?? null;
     setError(null);
-    if (url.current) { URL.revokeObjectURL(url.current); url.current = null; }
     onPreview(null);
     if (!f) { setFile(null); setProblem(null); return; }
     const head = new Uint8Array(await f.slice(0, 512).arrayBuffer());
     const why = logoProblem(f.type, f.size, head);
     setProblem(why);
     setFile(why ? null : f);
-    if (!why) {
-      url.current = URL.createObjectURL(f);
-      onPreview(url.current);
-    }
+    // the preview is a data: URL (the page's CSP allows img-src 'self' data:, not blob:); an <img> never runs SVG scripts
+    if (!why) onPreview(await new Promise<string | null>((res) => { const r = new FileReader(); r.onload = () => res(typeof r.result === 'string' ? r.result : null); r.onerror = () => res(null); r.readAsDataURL(f); }));
   };
   const upload = async () => {
     if (!file || busy) return;
@@ -406,6 +401,12 @@ function SettingsForm({ site, s, me }: { site: string; s: SpeedtestSettings; me:
 
       <Panel title="Branding" id="st-brand">
         <Preview d={d} logoUrl={preview} hasLogo={!!s.branding?.logo_artifact} />
+        {(() => {
+          const text = contrastRatio(safeColor(d.text, '#f7f7f7'), safeColor(d.background, '#0b1320'));
+          const btn = contrastRatio(safeColor(d.background, '#0b1320'), safeColor(d.primary, '#01a982'));
+          const low = [text !== null && text < 4.5 ? `Text on background is ${text}:1` : '', btn !== null && btn < 3 ? `The button label on the primary colour is ${btn}:1` : ''].filter(Boolean);
+          return low.length ? <p class="banner banner-warn" role="status" data-testid="contrast-warning"><span>{low.join('. ')}. Contrast of 4.5:1 (3:1 for large text) or more is easier to read.</span></p> : null;
+        })()}
         <div class="form-grid">
           <TextField label="Page title" value={d.title} onInput={(v) => set({ title: v })} error={p['title'] ?? null} maxLength={80} disabled={!allowed} />
           <TextField label="Languages" value={d.languages} onInput={(v) => set({ languages: v })} error={p['languages'] ?? null} hint="Language tags, the first is the default (for example en, de)." disabled={!allowed} />
@@ -420,7 +421,7 @@ function SettingsForm({ site, s, me }: { site: string; s: SpeedtestSettings; me:
         <LogoField site={site} allowed={allowed} hasLogo={!!s.branding?.logo_artifact} removed={d.removeLogo} onRemoved={(v) => set({ removeLogo: v })} onPreview={setPreview} />
       </Panel>
 
-      <Panel title="Consent text" id="st-consent">
+      <Panel title="Consent" id="st-consent">
         <p class="dim">Shown before the first test: what is measured and that device and traffic metadata are recorded for diagnostics. Each test stores the version it was taken under. Editing the text publishes a new version; every version is kept.</p>
         <TextArea label="Consent text" value={d.consent} onInput={(v) => set({ consent: v })} rows={5} error={p['consent'] ?? null} disabled={!allowed} hint={`${d.consent.length} of 2000 characters.`} />
         <p data-testid="consent-version" class="dim">Current version <strong>{version}</strong>{consentChanged && !p['consent'] ? <> · saving publishes <strong>version {version + 1}</strong></> : null}</p>

@@ -11,13 +11,16 @@ from typing import Any
 from exp_common import tlspin
 
 from . import health as health_mod
+from .baseline import BaselineConnector, SseConnector
 from .channel import PausePublisher, SpeedtestChannel, WhereLoop, start_thread
 from .collector_client import CollectorClient
 from .config import CredStore, Paths, RunnerConfig
 from .connectors import Connector, IdentityProvider, SpeedtestRef, SyslogConnector, Window
 from .correlator import Correlator, StateStore
+from .ec import EcConnector, EcService, WanUtilMonitor
 from .evidence import _fmt
 from .identity import Identity, IdentityResolver
+from .mist import make_mist
 from .receiver import SyslogReceiver
 from .ring import Ring
 
@@ -30,9 +33,25 @@ PAUSE_PUBLISH_DEFAULT_S = 30.0
 
 
 def default_connectors(cfg: RunnerConfig, creds: CredStore, ring: Ring) -> tuple[list[Connector], IdentityProvider | None]:
-    """The connector registry. r1 ships the syslog connector; the Mist, EdgeConnect and baseline connectors (r2) are added here
-    (``Connector`` subclasses; Mist also returns its ``IdentityProvider``)."""
-    return [SyslogConnector(cfg)], None
+    """The connector registry: syslog (security, dns), Mist (identity provider + wifi, wired), EdgeConnect (flows, wan), the probe
+    baseline, and the SSE placeholder. Mist and EdgeConnect are registered only when configured *and* their credentials exist."""
+    connectors: list[Connector] = [SyslogConnector(cfg)]
+    provider: IdentityProvider | None = None
+    ints = creds.integrations()
+    pair = make_mist(cfg, ints.get("mist"))
+    if pair is not None:
+        connectors.append(pair[0])
+        provider = pair[1]
+    if cfg.ec is not None and ints.get("ec"):
+        try:
+            connectors.append(EcConnector(EcService(cfg.ec, ints["ec"])))
+        except ValueError as exc:
+            log.error("edgeconnect connector disabled: %s", exc)
+    connectors.append(BaselineConnector())          # wired to the correlator's collector client by RunnerApp
+    if bool((((cfg.raw.get("correlation") or {}).get("sources") or {}).get("sse") or {}).get("enabled")):
+        connectors.append(SseConnector())
+        log.warning("sse.enabled is set but %s", SseConnector.reason)
+    return connectors, provider
 
 
 def ensure_syslog_tls(cfg: RunnerConfig, creds: CredStore, paths: Paths) -> tuple[Path, Path] | None:
@@ -89,6 +108,9 @@ class RunnerApp:
         connectors, provider = self.connector_factory(self.cfg, self.creds, self.ring)
         self.resolver = IdentityResolver(self.cfg, self.ring, self.creds.device_key_secret, provider)
         self.connectors = connectors
+        for c in connectors:
+            if isinstance(c, BaselineConnector):
+                c.use_client(lambda: self.correlator.client if self.correlator is not None else None)
         self._missing = self.creds.missing_for(self.cfg)
         if self._missing:
             log.error("missing credentials: %s (running degraded; they are re-read every %ds)", ", ".join(self._missing), int(CRED_POLL_S))
@@ -132,6 +154,9 @@ class RunnerApp:
         self.where_loop = WhereLoop(self.channel, self.resolve_ip, self.now)
         self.pause = PausePublisher(self.channel, self.now)
         self._threads.append(start_thread("where", self.where_loop.poll_once, WHERE_POLL_S, self._stop))
+        for c in self.connectors:
+            if isinstance(c, EcConnector) and c.svc.wan_util_enabled:
+                self.pause.set_source(WanUtilMonitor(c.svc, clock=self.now).value)
         interval = float(((self.cfg.ec or {}).get("wan_util") or {}).get("interval_s", PAUSE_PUBLISH_DEFAULT_S))
         self._threads.append(start_thread("pause", self.pause.publish_once, interval, self._stop))
 
@@ -209,6 +234,9 @@ class RunnerApp:
         metrics["pullers"] = pullers
         if self.channel is not None:
             facts["speedtest_channel"] = "ok" if self.channel.last_ok else "unreachable"
+        for c in self.connectors:
+            if isinstance(c, SseConnector):
+                facts["sse"] = c.status()
         if self._missing:
             reasons.append("missing credentials: " + ", ".join(self._missing))
         return {"status": "degraded" if reasons else "ok", "detail": "; ".join(reasons), "metrics": metrics, "facts": facts}

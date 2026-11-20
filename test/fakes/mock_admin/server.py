@@ -1628,7 +1628,8 @@ def r_settings_patch(a: MockAdmin, r: Req) -> Resp:
 DEFAULT_CONSENT = ("We measure your connection speed and record technical details of this device and its network path "
                    "(Wi-Fi signal, access point, traffic metadata) to diagnose problems. No name or email address is collected.")
 _PNG_MAGIC, _JPEG_MAGIC = b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff"
-_SVG_BAD = re.compile(rb"<\s*(script|foreignobject|iframe|embed|object|link|animate|set|a)\b|\son[a-z]+\s*=|javascript:|@import|<!(DOCTYPE|ENTITY)", re.I)
+_SVG_BAD = re.compile(
+    rb"<\s*(script|foreignobject|iframe|embed|object|link|animate|set|a)\b|\son[a-z]+\s*=|javascript:|@import|<!(DOCTYPE|ENTITY)", re.I)
 
 
 def st_state(a: MockAdmin, site: str) -> dict[str, Any]:
@@ -1659,7 +1660,7 @@ def r_st_put(a: MockAdmin, r: Req) -> Resp:
     st = st_state(a, site)
     d = r.json("SpeedtestSettingsPut")
     serve = d.get("serve")
-    if serve and serve["listen_ip"] in ("0.0.0.0", "255.255.255.255") or serve and serve["listen_ip"].startswith("127."):
+    if serve and (serve["listen_ip"] in ("0.0.0.0", "255.255.255.255") or serve["listen_ip"].startswith("127.")):  # noqa: S104
         raise ApiError(400, "invalid_request", "serve.listen_ip must be a unicast address of the speedtest box")
     if serve and serve.get("require_real_client_ip") and not (serve.get("client_subnets") or d.get("zone_labels", {}).get("subnets")):
         raise ApiError(400, "invalid_request", "serve.require_real_client_ip needs the attendee subnets")

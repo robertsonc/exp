@@ -3,8 +3,9 @@
 With one box at the core every on-network download crosses the access and core links, so the per-test byte cap shrinks
 while the core-facing interface is busy: at or below ``util_pct`` the full ``bytes_local`` applies; above it the cap
 falls linearly to ``min_bytes`` at 100 % utilization. Utilization = max(rx, tx) rate of ``core_guard.iface`` (from
-``/proc/net/dev``) over the link speed (``/sys/class/net/<iface>/speed``; an unknown speed assumes 1 Gb/s, the
-conservative choice for a core link). The guard is advisory input to byte budgeting, never a gate on the page itself.
+``/proc/self/net/dev`` (the same table as ``/proc/net/dev``, but visible under ``ProcSubset=pid``) over the link
+speed (``/sys/class/net/<iface>/speed``; an unknown speed assumes 1 Gb/s, the conservative choice for a core link).
+The guard is advisory input to byte budgeting, never a gate on the page itself.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ ASSUMED_LINK_MBPS = 1000.0
 EWMA = 0.5
 
 
-def read_proc_net_dev(iface: str, path: str = "/proc/net/dev") -> tuple[int, int] | None:
+def read_proc_net_dev(iface: str, path: str = "/proc/self/net/dev") -> tuple[int, int] | None:
     """``(rx_bytes, tx_bytes)`` of ``iface``, or None when it is absent / unreadable."""
     try:
         with open(path, encoding="ascii", errors="replace") as fh:

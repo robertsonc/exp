@@ -27,6 +27,7 @@ from .federate import ApiProblem, Federation, valid_id
 from .health import HealthSocket
 from .health import build as build_health
 from .sessions import COOKIE_NAME, Session, SessionStore
+from .speedtests import SpeedtestApi
 from .sse import Hub, Subscription, format_event
 
 log = logging.getLogger(__name__)
@@ -54,7 +55,8 @@ CONTENT_TYPES = {
     ".txt": "text/plain; charset=utf-8", ".webmanifest": "application/manifest+json",
     ".woff2": "font/woff2", ".map": "application/json",
 }
-SPA_ROUTES = re.compile(r"^/(probe/[a-z0-9][a-z0-9-]{0,63}|incidents|drills|login)?/?$")
+SPA_ROUTES = re.compile(r"^/(probe/[a-z0-9][a-z0-9-]{0,63}|incidents|drills|login"
+                        r"|speedtests(/(breakdowns|support|test/st_[0-9A-HJKMNP-TV-Z]{26}))?)?/?$")
 _BAD_TARGET = re.compile(r"[\x00-\x20\x7f-\xff\\]")
 _HOST_OK = re.compile(r"^[A-Za-z0-9.\-]{1,253}(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:.]{2,45}\](:[0-9]{1,5})?$")
 _ERR_TEXT = {"1": "Username or password is wrong.", "429": "Too many attempts. Try again later."}
@@ -257,6 +259,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             raise ApiProblem(401, "unauthorized", "sign in required")
         if min_role == "operator" and s.role == "viewer":
             raise ApiProblem(403, "insufficient_role", "operator role required")
+        if min_role == "admin" and s.role != "admin":
+            raise ApiProblem(403, "insufficient_role", "admin role required")
         return s
 
     def _cookie(self, sid: str, max_age: float) -> str:
@@ -478,8 +482,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._allow(method, "POST")
                 self._require("operator")
                 return self._relay(*fed.post_try_all(f"drills/{segs[1]}/abort", user, None))
+            if segs == ["speedtests", "purge"]:
+                self._allow(method, "POST")
+                self._require("admin")        # SR-25: a data-subject purge is an admin (SSO) action
+                return self._relay(*self.app.speedtests.purge(self._body_params(body), user))
             raise ApiProblem(404, "not_found", "no such endpoint")
         self._allow(method, "GET", "HEAD")
+        if segs[0] == "speedtests":
+            return self._speedtests(s, segs, query)
         if len(segs) == 1 and segs[0] == "stream":
             return self._stream(s, query)
         if len(segs) == 1 and segs[0] == "collectors":
@@ -493,6 +503,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._relay(*fed.get(segs[0], query, user))
         if len(segs) == 2 and segs[0] == "drills" and segs[1] != "control":
             return self._relay(*fed.get_try_all(f"drills/{segs[1]}", user))
+        raise ApiProblem(404, "not_found", "no such endpoint")
+
+    def _speedtests(self, s: Session, segs: list[str], query: dict[str, list[str]]) -> None:
+        st, admin = self.app.speedtests, s.role == "admin"
+        if len(segs) == 1:
+            return self._relay(*st.list(query, s.username, admin))
+        if len(segs) == 2 and segs[1] == "aggregate":
+            return self._relay(*st.aggregate(query, s.username))
+        if len(segs) == 2 and segs[1] not in ("purge", "stream"):
+            return self._relay(*st.detail(segs[1], query, s.username, admin))
         raise ApiProblem(404, "not_found", "no such endpoint")
 
     def _relay(self, status: int, body: bytes, extra: dict[str, str]) -> None:
@@ -673,6 +693,7 @@ class DashboardApp:
         self.creds = CredentialStore(settings, on_change=self._creds_changed)
         self.auth = AuthService(settings, self.creds, self.sessions, clock)
         self.fed = Federation(settings, lambda: self.creds.creds.collector_tokens, clock)
+        self.speedtests = SpeedtestApi(self.fed)
         self.hub = Hub(list(settings.collectors), lambda: self.creds.creds.collector_tokens,
                        self.fed.site_of, clock)
         self.ctx = self._tls_context()

@@ -15,6 +15,7 @@ testpaths = [
   "dashboard/tests",
   "agent/tests",
   "runner/tests",
+  "speedtest/tests",
 ]
 addopts = "-m 'not internet' -ra"
 markers = [

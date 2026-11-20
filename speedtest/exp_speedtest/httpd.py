@@ -48,13 +48,22 @@ class Conn:
         self.sock = sock
         self.peer = peer
         self.buf = bytearray()
-        self.scratch = bytearray(1 << 20)          # one reusable read buffer for uploads (per connection thread)
+        self._scratch: bytearray | None = None
+
+    @property
+    def scratch(self) -> bytearray:
+        """A reusable 1 MiB read buffer for bodies, allocated on first use (idle keep-alive connections cost nothing)."""
+        if self._scratch is None:
+            self._scratch = bytearray(1 << 20)
+        return self._scratch
 
     def recv_head(self, first_timeout: float) -> bytes | None:
         """The request head (without the terminating blank line), or None on a clean idle close / timeout."""
         deadline: float | None = None
         while True:
             i = self.buf.find(b"\r\n\r\n")
+            if i > MAX_HEAD:
+                raise ApiError(431, "header_too_large", "request header too large", close=True)
             if i >= 0:
                 head = bytes(self.buf[:i])
                 del self.buf[:i + 4]
@@ -163,11 +172,13 @@ class Request:
 
 
 class Response:
-    __slots__ = ("status", "headers", "body", "stream", "length", "close")
+    __slots__ = ("status", "headers", "body", "stream", "length", "close", "cleanup")
 
     def __init__(self, status: int, headers: list[tuple[str, str]] | None = None, body: bytes = b"",
-                 stream: Callable[[socket.socket], None] | None = None, length: int | None = None, close: bool = False) -> None:
+                 stream: Callable[[socket.socket], None] | None = None, length: int | None = None, close: bool = False,
+                 cleanup: Callable[[], None] | None = None) -> None:
         self.status, self.headers, self.body, self.stream, self.close = status, headers or [], body, stream, close
+        self.cleanup = cleanup          # runs when ``stream`` never gets to run (head send failed, HEAD request)
         self.length = len(body) if length is None else length
 
 
@@ -274,7 +285,7 @@ class HttpServer:
             s.close()
             raise
         s.listen(256)
-        s.settimeout(0.5)
+        s.settimeout(0.25)
         self._listener = s
         self.port = s.getsockname()[1]
         self._thread = threading.Thread(target=self._accept_loop, name=f"{self.name}-accept", daemon=True)
@@ -284,6 +295,10 @@ class HttpServer:
     def stop(self) -> None:
         self._stop.set()
         if self._listener is not None:
+            try:
+                self._listener.shutdown(socket.SHUT_RDWR)          # wakes a blocked accept() at once
+            except OSError:
+                pass
             try:
                 self._listener.close()
             except OSError:
@@ -393,8 +408,17 @@ class HttpServer:
         sock.settimeout(SEND_TIMEOUT_S)
         head_only = req is not None and req.method == "HEAD"
         if resp.stream is not None and not head_only:
-            sock.sendall(head.encode("latin-1"))
+            try:
+                sock.sendall(head.encode("latin-1"))
+            except BaseException:
+                if resp.cleanup is not None:
+                    resp.cleanup()
+                raise
             resp.stream(sock)
+        elif resp.stream is not None:
+            sock.sendall(head.encode("latin-1"))
+            if resp.cleanup is not None:
+                resp.cleanup()
         elif resp.body and not head_only:
             sock.sendall(head.encode("latin-1") + resp.body)
         else:

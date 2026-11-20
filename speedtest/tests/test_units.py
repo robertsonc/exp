@@ -35,6 +35,11 @@ def test_leg_token_shape_and_binding():
     raw[0] ^= 1                                                      # tamper with the expiry
     forged = "expt_" + base64.urlsafe_b64encode(bytes(raw)).rstrip(b"=").decode()
     assert not t.verify(forged, SID, "10.0.0.5")
+    # the last base64 character carries only 4 significant bits: an alternative spelling of the same bytes is refused
+    last = tok[-1]
+    alt = tok[:-1] + next(c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+                          if c != last and base64.urlsafe_b64decode(tok[5:-1] + c + "=") == base64.urlsafe_b64decode(tok[5:] + "="))
+    assert alt != tok and LegTokens.parse(alt) is None and not t.verify(alt, SID, "10.0.0.5"), "tokens are not malleable"
     assert LegTokens.parse("expt_short") is None and LegTokens.parse(None) is None and LegTokens.parse("x" * 48) is None
 
 
@@ -340,3 +345,17 @@ def test_assets_are_sniffed_bounded_and_not_symlinks(tmp_path: Path):
 
 def test_ipv4_helpers_sanity():
     assert ipaddress.ip_address("127.0.0.2") != ipaddress.ip_address("127.0.0.1")
+
+
+def test_systemd_unit_is_least_privilege_and_names_the_credentials_the_code_reads():
+    from exp_speedtest import config as cfgmod
+    unit = (Path(__file__).resolve().parents[1] / "systemd" / "exp-speedtest.service").read_text()
+    assert "ExecStart=@PREFIX@/bin/exp-speedtest run --config @CONFIG@" in unit and "User=exp-speedtest" in unit
+    assert "CapabilityBoundingSet=CAP_NET_BIND_SERVICE" in unit and "AmbientCapabilities=CAP_NET_BIND_SERVICE" in unit
+    assert "NET_RAW" not in unit.replace("no CAP_NET_RAW", ""), "no raw sockets"
+    for name in (cfgmod.CRED_COLLECTOR_TOKEN, cfgmod.CRED_CHANNEL_SHA, cfgmod.CRED_TLS_CRT, cfgmod.CRED_TLS_KEY):
+        assert f"LoadCredential={name}:@CREDS@/{name}" in unit
+    for hardening in ("NoNewPrivileges=yes", "ProtectSystem=strict", "PrivateTmp=yes", "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX",
+                      "StateDirectory=exp/speedtest", "RuntimeDirectory=exp/speedtest", "MemoryDenyWriteExecute=yes"):
+        assert hardening in unit, hardening
+    assert (Path(__file__).resolve().parents[1] / "requirements.apt").read_text().split() == ["iputils-ping"]

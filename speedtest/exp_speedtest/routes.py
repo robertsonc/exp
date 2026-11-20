@@ -16,7 +16,6 @@ from collections.abc import Callable
 from typing import Any
 
 from exp_common import config as exp_config
-from exp_common import speedtest as st
 
 from .core import Core
 from .errors import ApiError, bad_request, not_found, too_many
@@ -215,6 +214,9 @@ class PublicApp:
         self._offset = (self._offset + 1_048_576 * 7 + 4096) % payload.size
         start = self._offset
 
+        def abort() -> None:                       # the head could not be sent: give the reservation back
+            core.settle(s, n, 0, down=True)
+
         def stream(sock: socket.socket) -> None:
             sent = 0
             f = payload.open()
@@ -239,7 +241,8 @@ class PublicApp:
                 f.close()
                 core.settle(s, n, sent, down=True)
 
-        return Response(200, [("Content-Type", "application/octet-stream"), *self._leg_headers()], stream=stream, length=n)
+        return Response(200, [("Content-Type", "application/octet-stream"), *self._leg_headers()], stream=stream, length=n,
+                        cleanup=abort)
 
     def _up(self, req: Request) -> Response:
         s = self.core.authorize_leg(req.header("x-exp-leg-token"), req.peer)
@@ -260,7 +263,3 @@ class PublicApp:
 def _pread(f: Any, n: int, off: int) -> bytes:
     import os
     return os.pread(f.fileno(), n, off)
-
-
-def is_session_id(v: str) -> bool:
-    return st.is_speedtest_session_id(v)

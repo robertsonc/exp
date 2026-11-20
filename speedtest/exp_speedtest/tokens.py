@@ -40,6 +40,8 @@ class LegTokens:
         if not isinstance(token, str) or not token.startswith(PREFIX) or not _BODY.match(token[len(PREFIX):]):
             return None
         raw = base64.urlsafe_b64decode(token[len(PREFIX):] + "=")
+        if base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii") != token[len(PREFIX):]:
+            return None                       # non-canonical spelling (the unused trailing bits): one token, one string
         return struct.unpack(">I", raw[:4])[0], raw[4:16], raw[16:]
 
     def verify(self, token: str, session_id: str, client_ip: str) -> bool:

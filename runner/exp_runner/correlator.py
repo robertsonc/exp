@@ -26,7 +26,7 @@ from exp_common import schema as exp_schema
 from . import evidence as ev
 from .collector_client import AuthError, CollectorClient, CollectorError
 from .config import RunnerConfig
-from .connectors import CallBudget, Connector, Context, EvidenceResult, PullerStats, SpeedtestRef, Window
+from .connectors import CallBudget, Connector, Context, EvidenceResult, PullerStats, SpeedtestRef, Window, merge_cross_kind
 from .identity import Identity, IdentityResolver
 from .ring import Ring
 
@@ -249,6 +249,7 @@ class Correlator:
             for k in c.kinds:
                 if k not in out:
                     out[k] = EvidenceResult(k, ev.DEFAULT_SOURCE[k], "unavailable")
+        merge_cross_kind(out)
         return out
 
     @staticmethod

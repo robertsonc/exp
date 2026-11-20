@@ -346,3 +346,18 @@ def test_a_missing_score_still_diagnoses(st):
     assert r.status == 201 and r.json()["diagnosis"]["cause"] == []
     assert fixture("speedtest/result.ok.json")["score"]["total"] == 78 and time.time() > 0
     assert st.get(f"/{t['id']}").json()["test"]["score"] is None
+
+
+def test_dns_uses_the_probe_dns_line_when_the_leg_was_measured_by_the_probe(st):
+    st.app.speedtests.probe_state = _degraded_probe(sev="warn", lines=[{"key": "dns", "state": "fail",
+                                                                         "detail": "10.0.0.53 silent"}])
+    t = result(down=300.0, up=200.0, i_down=12.0, i_up=4.0)
+    t["legs"]["dns"] = {"source": "probe", "cold_ms": None, "warm_ms": None, "resolver_ip": None}
+    t["flags"] = ["dns_fallback"]
+    quick = st.ingest(t).json()["diagnosis"]
+    ids_ = [c["id"] for c in quick["cause"]]
+    assert "dns" in ids_ and {"kind": "baseline", "ref": "data.lines.dns"} in next(
+        c for c in quick["cause"] if c["id"] == "dns")["cites"]
+    t2 = result(down=300.0, up=200.0, i_down=12.0, i_up=4.0)                # the browser measured it: probe line ignored
+    t2["legs"]["dns"] = {"source": "browser", "cold_ms": 20.0, "warm_ms": 2.0, "resolver_ip": "10.0.0.53"}
+    assert "dns" not in [c["id"] for c in st.ingest(t2).json()["diagnosis"]["cause"]]

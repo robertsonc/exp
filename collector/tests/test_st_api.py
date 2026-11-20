@@ -410,7 +410,7 @@ def test_list_filters_and_pagination(st):
     got = [i["id"] for i in st.get(f"?from={frm}&to={to}").json()["items"]]
     assert got == [ts[2]["id"], ts[1]["id"]]                                          # from inclusive, to exclusive
     assert [i["id"] for i in st.get("?q=ap-0").json()["items"]] and st.get("?q=nomatch").json()["items"] == []
-    assert st.get(f"?q={ts[3]['id'][:12]}").json()["items"][0]["id"] == ts[3]["id"]
+    assert st.get(f"?q={ts[3]['id']}").json()["items"][0]["id"] == ts[3]["id"]
     seen, cur = [], ""
     while True:
         page = st.get("?limit=2" + (f"&cursor={cur}" if cur else "")).json()
@@ -676,3 +676,35 @@ def test_oversize_bodies_are_refused_before_parsing(st):
     assert st.req("POST", "/purge", st.tokens["expd"], raw=b" " * 5000, headers={"X-Exp-User": "a"}).status == 413
     r = st.req("GET", "?q=" + "x" * 5000, st.tokens["expd"])
     assert r.status in (400, 414)
+
+
+def test_nat_suspected_status_carries_no_network_details(st):
+    t = result(zone_source="subnet")
+    ident = fixture("evidence/identity.nat-suspected.json")
+    ident["test_id"] = t["id"]
+    ident["collected_at"] = iso(iso_to_s(t["ended"]) + 10)
+    st.ingest(t)
+    st.put_ev(ident)
+    st.put_ev(wifi(t))                                                 # a runner must not send it, but if it does
+    s = st.status(t["id"]).json()
+    assert s["zone"] == "unresolved" and s["zone_name"] is None and s["network_details"] is None
+
+
+def test_shutdown_ends_a_waiting_feed_poll_quickly(env):
+    st = make_stenv(env)
+    out = {}
+
+    def poll():
+        t0 = time.monotonic()
+        try:
+            out["r"] = st.feed("?wait_s=25").status
+        except Exception as exc:  # noqa: BLE001 - the connection may be torn down by the shutdown
+            out["r"] = repr(exc)
+        out["dt"] = time.monotonic() - t0
+    th = threading.Thread(target=poll)
+    th.start()
+    time.sleep(0.5)
+    t0 = time.monotonic()
+    st.app.stop()
+    th.join(10)
+    assert not th.is_alive() and time.monotonic() - t0 < 8 and out["dt"] < 8

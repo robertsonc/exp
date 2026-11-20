@@ -129,6 +129,7 @@ class ClientCandidate:
     switch_port: str | None = None
     vlan: int | None = None
     ref: str | None = None
+    ap_macs: tuple[str, ...] = ()      # every AP the client was seen on in the window (roam context; r2 Mist)
 
 
 @dataclasses.dataclass
@@ -142,6 +143,24 @@ class IdentityProvider(abc.ABC):
 
     @abc.abstractmethod
     def lookup_client(self, ip: str, window: Window, budget: CallBudget) -> ClientLookup: ...
+
+
+def merge_cross_kind(out: dict[str, EvidenceResult]) -> None:
+    """Facts one connector knows that belong in another kind: the client's own EdgeConnect flows dropped by the zone firewall / routing
+    (``flows[].drop_reason`` 1 or 2) become ``security.ec_dropped_flows`` (the ``policy_block`` rule reads it). When no syslog security
+    evidence exists, an ``ec``-sourced ``security`` document carries just that figure."""
+    fl = out.get("flows")
+    if fl is None or fl.status not in ("ok", "partial"):
+        return
+    n = sum(1 for f in fl.data.get("flows", []) if f.get("drop_reason") in (1, 2) or f.get("firewall_dropped"))
+    if n <= 0:
+        return
+    sec = out.get("security")
+    if sec is not None and sec.status in ("ok", "partial"):
+        sec.data["ec_dropped_flows"] = n
+    elif sec is None or sec.status == "unavailable":
+        out["security"] = EvidenceResult("security", "ec", "partial", {"events": [], "counts": {"deny": 0, "drop": 0, "block": 0, "session_limit": 0},
+                                                                          "ec_dropped_flows": n}, list(fl.raw_refs[:5]))
 
 
 class PullerStats:

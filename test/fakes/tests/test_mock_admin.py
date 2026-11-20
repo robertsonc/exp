@@ -1156,7 +1156,7 @@ def test_speedtest_put_validates_versions_consent_and_audits(adm):
     h = A(adm, "GET", "/sites/hall-c/speedtest/consent-history", role="admin").json()
     assert [i["version"] for i in h["items"]] == [2, 1]
     assert audit_count(adm) == n0 + 3
-    for bad in ({**body, "surprise": 1}, {"zones": []}, {**body, "serve": {"hostname": "x", "listen_ip": "0.0.0.0"}},
+    for bad in ({**body, "surprise": 1}, {"zones": []}, {**body, "serve": {"hostname": "x", "listen_ip": "0.0.0.0"}},  # noqa: S104
                 {**body, "zone_labels": {"subnets": [{"cidr": "10.1.0.0/16", "zone": "nope"}]}},
                 {**body, "branding": {"logo_artifact": "art_01M7R3X9G0JPFS2FAGQ8ACHEYD"}}):
         assert A(adm, "PUT", "/sites/hall-c/speedtest", bad, role="admin").status == 400

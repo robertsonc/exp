@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-import os
 import re
 import select
 import shutil
@@ -258,6 +257,7 @@ class PathTimer:
         self._devices: dict[str, dict[str, Any]] = {}          # session id -> {ip, rtts, watching}
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._wake = threading.Event()
         self._thread: threading.Thread | None = None
         self.probes_sent = 0
 
@@ -283,6 +283,7 @@ class PathTimer:
             self._devices[session_id] = {"ip": ip, "rtts": [], "tries": 0}
             if len(self._devices) > 256:
                 self._devices.pop(next(iter(self._devices)))
+        self._wake.set()                                    # sample the new client now, not at the next idle tick
 
     def unwatch_device(self, session_id: str) -> None:
         with self._lock:
@@ -375,6 +376,7 @@ class PathTimer:
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread:
             self._thread.join(timeout=3)
 
@@ -386,13 +388,10 @@ class PathTimer:
             except Exception:
                 log.exception("path timer cycle failed")
             interval = LOADED_INTERVAL_S if self.loaded() or self._devices_pending() else IDLE_INTERVAL_S
-            self._stop.wait(max(0.1, interval - (time.monotonic() - t0)))
+            self._wake.wait(max(0.1, interval - (time.monotonic() - t0)))
+            self._wake.clear()
 
     def _devices_pending(self) -> bool:
         with self._lock:
             return any(not d.get("done") and len(d["rtts"]) < MAX_DEVICE_SAMPLES and d["tries"] < MAX_DEVICE_SAMPLES * 2
                        for d in self._devices.values())
-
-
-def backend_ok(pinger: IcmpPinger) -> bool:
-    return pinger.backend != "none" and (pinger.backend != "dgram" or os.path.exists("/proc/sys/net/ipv4/ping_group_range"))

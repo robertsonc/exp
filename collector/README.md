@@ -35,6 +35,8 @@ exp-collector replay FILE [--at TS ...] [--alerts] [--from TS --to TS] [--tz ZON
                                                     ticks) over an NDJSON(.gz) recording; prints States / messages
                                                     (EXM outage: the README's nine pages are --from 02:55:00; a
                                                     110 s DNS failure at 02:45 outlasts hold_down_s and pages)
+exp-collector speedtest purge (--device-key HEX | --mac MAC | --ip IP | --test st_ID) [--dry-run] [--user NAME]
+                                                    data-subject purge of speedtest rows (audited; see below)
 exp-collector vm-args | vm-exec | iperf3-exec | reflector
 ```
 
@@ -46,7 +48,8 @@ An invalid config exits 78 and prints every problem; the collector never starts 
 ## Configuration
 
 `exp.collector.config/1` (validated with `exp_common.config` against `shared/schemas/collector.config.schema.json`).
-Credentials (`ingest_tokens.json`, `dashboard_tokens.json`, `webhooks.json`) come from `$CREDENTIALS_DIRECTORY`
+Credentials (`ingest_tokens.json`, `dashboard_tokens.json`, `webhooks.json`; M6 adds `speedtest_tokens.json`,
+`runner_tokens.json` and the optional `device_key_secret`, each may be empty) come from `$CREDENTIALS_DIRECTORY`
 and are re-read within 5 s of a change (bad file: previous good set stays, error logged without content). See
 `docs/spec/changes/CR-wp2-cred-rotation-loadcredential.md` for how the agent must deliver rotated files.
 
@@ -173,6 +176,35 @@ disconnected, never waited for, and resumes with `Last-Event-ID` from the 5-minu
 a collector restart replays nothing: re-read `states`). Filters `probes=` (<= 64 ids) or `site=`, exactly one;
 at most 256 clients (`429`). Dead peers are noticed within about a second. Clients are counted in `sse_clients`
 (health + `exp_collector_sse_clients`).
+
+## Speedtest analytics (`speedtest/`, M6, WP-11)
+
+Contracts: `docs/spec/12-speedtest-analytics.md`, `01-contracts.md` section 14, `shared/openapi/collector.yaml` (tag
+`speedtests`), decisions in `docs/spec/changes/CR-m6-collector.md`. Enabled by `speedtests.enabled` in the config
+(otherwise every speedtest route answers 404 to an authenticated caller). Three callers, three token families, three
+credential tables (a token of another family is simply unknown on a route):
+
+| caller | token (cred file) | routes under `/api/v1/speedtests` |
+|---|---|---|
+| speedtest box | `exps_` (`speedtest_tokens.json`) | `POST` (result ingest, identity-bound, idempotent on `id`, returns the quick diagnosis), `GET {id}/status` (user-safe), `POST {id}/comment` |
+| runner | `expr_` (`runner_tokens.json`) | `GET feed` (pending tests, long poll <= 25 s), `POST {id}/evidence` (one `exp.evidence/1` per kind, <= `max_evidence_kib` per test), `POST {id}/evidence/complete`, `GET baseline` |
+| dashboard | `expd_` | `GET` (filters `site zone ap ssid cause from to min_score max_score q`, cursor), `GET {id}`, `GET aggregate`, `GET stream` (SSE), `POST purge` |
+
+* **Storage**: tables `speedtests` (one row per test + raw identifiers + `device_key`), `evidence`, `diagnoses` (quick and
+  final), `speedtest_audit`, created by migration 2; indexes for every filter.
+* **Diagnosis** (`diagnosis.py`, pure and deterministic): every cause of 12 section 5.3, thresholds in
+  `speedtests.diagnosis`; runs on the quick result (legs + the nearest probe's state) and when the evidence is final
+  (`evidence/complete`, or `finalize_after_s` after the test ends). Texts are blame-free (`user_text`) and name the
+  evidence (`noc_text`, e.g. `hallb-ap-12 ch 44/80 MHz, util 81 %, 74 clients; RSSI -61 dBm`).
+* **Privacy**: raw IP/MAC/hostname/username only with `identifiers=true` (the dashboard sends it for admin sessions;
+  `X-Exp-User` is required and every use is audited). `retention_days` (30) deletes tests, device metadata and evidence;
+  `scrub_after_diagnosis` (off) drops the raw identifiers after the final diagnosis and keeps `device_key`.
+  `exp-collector speedtest purge` and `POST speedtests/purge` delete the matching tests with their evidence and
+  diagnoses; the audit keeps who/what/how many, never the identifier. `device_key_secret` (optional cred) lets a purge by
+  MAC reach scrubbed rows.
+* **VictoriaMetrics** (no per-user labels; labels bounded, overflow `other`): histograms `exp_st_down_mbps`,
+  `exp_st_up_mbps`, `exp_st_loaded_latency_ms`, `exp_st_score` (`_bucket{vmrange}`, `_sum`, `_count`; labels `site zone
+  leg ssid band ap os_family`) and `exp_st_tests_total{site,zone,cause}`, written when a test's evidence is final.
 
 ## The daemon (`app.py`)
 

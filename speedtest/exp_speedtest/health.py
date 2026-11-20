@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from typing import Any
 
 from exp_common.config import ConfigError
@@ -98,7 +97,3 @@ def render(doc: dict[str, Any]) -> str:
 
 def exit_code(doc: dict[str, Any]) -> int:
     return 0 if doc.get("status") in ("ok", "degraded") else 1
-
-
-def paths_exist(p: Path) -> bool:
-    return p.exists()

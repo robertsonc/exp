@@ -52,12 +52,32 @@ class FakeClock:
         self.offset += s
 
 
+_TLS: tuple[Path, Path, str] | None = None
+_PAYLOAD: Path | None = None
+
+
+def shared_tls() -> tuple[Path, Path, str]:
+    """One throwaway certificate per test process (openssl is the slow part of a fixture)."""
+    global _TLS
+    if _TLS is None:
+        import tempfile
+        _TLS = fc.prepare_tls(Path(tempfile.mkdtemp(prefix="st-tls-")))
+    return _TLS
+
+
+_PORTS: set[int] = set()
+
+
 def free_port(udp_too: bool = False) -> int:
-    for _ in range(50):
+    """A currently free loopback port, never handed out twice in this process (the kernel likes to reuse them)."""
+    for _ in range(200):
         s = socket.socket()
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
         s.close()
+        if port in _PORTS:
+            continue
+        _PORTS.add(port)
         if udp_too:
             u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             try:
@@ -143,7 +163,7 @@ class Box:
         self.clock = clock or FakeClock()
         self.pinger = pinger or FakePinger()
         self.fake: Any = None
-        cert, key, fp = fc.prepare_tls(tmp / "fake")
+        cert, key, fp = shared_tls()
         self.fake_args = fake_kwargs or {}
         self.collector_enabled = collector
         self.fp = fp
@@ -177,12 +197,26 @@ class Box:
         return SpeedtestConfig(doc)
 
     def start(self) -> None:
+        self._seed_payload()
         if self.collector_enabled and self.fake is None:
             self.start_fake()
         self.write_creds()
         self.paths.assets_dir.mkdir(parents=True, exist_ok=True)
         self.daemon = Daemon(self.config(), self.paths, pinger=self.pinger, clock=self.clock)
         self.daemon.start()
+
+    def _seed_payload(self) -> None:
+        """Reuse one 32 MiB payload file across tests (generating random bytes is the slow part of a fixture)."""
+        import shutil
+        import tempfile
+
+        from exp_speedtest.static import PAYLOAD_SIZE
+        global _PAYLOAD
+        if _PAYLOAD is None or not _PAYLOAD.is_file():
+            _PAYLOAD = Path(tempfile.mkdtemp(prefix="st-payload-")) / "payload.bin"
+            _PAYLOAD.write_bytes(__import__("os").urandom(PAYLOAD_SIZE))
+        self.paths.state_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(_PAYLOAD, self.paths.payload)
 
     def stop(self) -> None:
         if self.daemon:

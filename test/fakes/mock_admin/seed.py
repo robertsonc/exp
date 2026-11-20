@@ -590,7 +590,8 @@ def _seed_rest(world: dict[str, Any], now: float) -> None:
                                       "logo": None, "updated_at": iso(now - 3 * day)}}
     world["speedtest_history"] = {"hall-b": [
         {"version": 1, "text": "We measure your speed. No name or email is collected.", "changed_by": OWNER_EMAIL, "created_at": iso(now - 9 * day)},
-        {"version": 2, "text": "We measure your speed and look at this device's Wi-Fi metadata to diagnose it.", "changed_by": "admin@example.com", "created_at": iso(now - 6 * day)},
+        {"version": 2, "text": "We measure your speed and look at this device's Wi-Fi metadata to diagnose it.",
+         "changed_by": "admin@example.com", "created_at": iso(now - 6 * day)},
         {"version": 3, "text": st["consent"]["text"], "changed_by": "admin@example.com", "created_at": iso(now - 3 * day)}]}
     world["speedtest_tls"] = {}
     world["device_key"] = {"set": True, "updated_at": iso(now - 5 * day), "version": 1}

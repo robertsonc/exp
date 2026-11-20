@@ -8,7 +8,8 @@ the client IP (identity, with a fail-closed NAT guard), pulls evidence from ever
 Specs: [12 §5](../docs/spec/12-speedtest-analytics.md), [01 §8.1 and §14](../docs/spec/01-contracts.md),
 [SR-24/25](../docs/spec/07-security.md), CRs `CR-m6-*` in [../docs/spec/changes](../docs/spec/changes). Work package WP-9 (M6 part).
 **M5 drills are not built** in this release: `drills_enabled` stays `false`; drill/puller fields in a config are ignored with one
-warning. The Mist, EdgeConnect and probe-baseline connectors plug in at r2 (see "Extending").
+warning. Connectors: Mist (identity + `wifi`/`wired`), EdgeConnect Orchestrator (`flows`/`wan` + auto-pause feed), the probe baseline,
+the syslog connector (`security`/`dns`) and an SSE placeholder (see "Connectors").
 
 ```
 exp-runner run|health|version|selftest   [--config /etc/exp/runner/config.json] [--state-dir D] [--run-dir D] [--creds-dir D] [--syslog-db F]
@@ -39,7 +40,7 @@ Ports below 1024 are refused. An **empty `syslog.allow` receives nothing** (and 
 | `collector_token` | `expr_` — runner → collector (feed, evidence, complete, baseline); identity-bound | yes |
 | `device_key_secret` | `expk_` — `device_key = HMAC-SHA256(secret, MAC)` (`exp_common.speedtest.device_key`) | yes (without it no `device_key`) |
 | `speedtest_channel_token` | `expl_` — localhost channel to `exp-speedtest` | when `speedtest_channel` is set |
-| `integrations.json` | `{mist: {api_base, token}, ec: {url, api_key}}` — never an `sse` entry | r2 connectors |
+| `integrations.json` | `{mist: {api_base, token}, ec: {url, api_key}}` — never an `sse` entry | Mist / EdgeConnect connectors |
 | `syslog_tls.crt` / `syslog_tls.key` | TLS 6514 when `tls.mode = provided` (`self_signed`: generated under `<state>/tls/`) | optional |
 | `ingest_token` | `expi_` — the M5 `ext_*` measurement poster (unused in M6) | no |
 
@@ -91,14 +92,40 @@ Limitation: DHCP bindings older than the ring (a lease renewed less often than h
 
 `http://127.0.0.1:8480/local/v1` with the `expl_` token: the runner polls `where/wanted` (every 2 s), resolves each IP through the
 same identity step and `PUT`s `where` (zone, source, AP, SSID, band, `nat_suspected`, never a MAC or username); `PUT pause` carries
-EdgeConnect WAN utilization once the EC source is registered (`PausePublisher.set_source`, r2) — no source, no value = nothing is
-published and the speedtest fails open.
+EdgeConnect WAN utilization (`sources.ec.wan_util.enabled`; `WanUtilMonitor` is the `PausePublisher` source) — no source, no value =
+nothing is published and the speedtest fails open. The runner publishes the *held peak* of the last two minute buckets (the
+hysteresis on the way down); the speedtest owns the threshold (`internet_leg.auto_pause_wan_util_pct`).
 
-## Extending (r2)
+## Connectors (r2; `CR-m6-runner-connectors`)
 
-Add a `Connector` subclass (`name`, `kinds`, `collect(ctx) -> [EvidenceResult]`, own network timeouts) and register it in
-`app.default_connectors`; Mist also returns an `IdentityProvider` there (`lookup_client(ip, window, budget) -> ClientLookup`; one
-candidate binds, 0 or > 1 fails the guard closed). The pipeline, budgets (`ctx.budget("mist")`), validation and health need nothing else.
+Vendor field names come **only** from local, verified, MIT-licensed references, cited in each module's docstring and in the evidence
+schema descriptions: the Mist OpenAPI 3.1 document of the `mistapi` 0.64.1 SDK and HPE's `pyedgeconnect` 0.16.0a1. They are dev-time
+references and are never imported. All upstream calls go through `upstream.py`: https only (plain http for loopback test fakes),
+timeouts, response-size cap, per-test **call budget** (retries count), retries with backoff for idempotent reads only, `429` pauses the
+connector (`Retry-After` honoured) instead of hammering a shared token, a failure that makes the rest pointless (credential refused,
+host down) skips the rest of the chain. Credentials are sent only as headers and never logged.
+
+| Connector | Kinds | Calls |
+|---|---|---|
+| `mist` (`mist.py`) | identity provider, `wifi`, `wired` | client search by IP over the window (wireless + wired), client stats, AP stats (30 s cache), client events per AP, switch port stats; **<= 6 per test** (`max_calls_per_test`), event-type constants refreshed hourly outside the budget |
+| `ec` (`ec.py`) | `flows`, `wan` (+ `security.ec_dropped_flows`) | per appliance: flows for the client IP (top-50 by bytes), appliance, interface state, interface time series, 4 health summaries, alarms; budget 32 per test; state/health/alarms cached 30 s |
+| `baseline` (`baseline.py`) | `baseline` | `GET speedtests/baseline` with the runner's own collector client (nearest probe at test time) |
+| `syslog` | `security`, `dns` | the local ring (denies/drops/URL/IPS/NAT/session-limit lines citing `syslog:<id>`; resolver query lines) |
+| `sse` | none | HPE Aruba SSE (Axis) has no local vendor documentation: reported `unavailable` with the reason (health fact `sse`); SSE logs still arrive by syslog |
+
+**Identity by IP (Mist)**: each site in `sources.mist.sites` is searched for the IP in the window (wireless and wired); the first site
+with any hit decides. Exactly one MAC binds the test; zero or more than one fails closed (`no_match` / `ambiguous`); a budget or
+upstream failure before the answer is *not* ambiguity (`mist_status: error`, the DHCP/subnet fallbacks apply). Zone = `zone_map`
+(AP MAC / name prefix / site), then the subnet table. Mist "map zones" are not exp zones.
+
+**Honest limits** (details in the CR): Mist client events have no MAC filter, so events are AP-level context for the APs the client was
+seen on, kept only when classified (from the runtime event constants) as a roam or an authentication failure, and roams only count
+when the client changed AP in the window; Mist client stats are the *current* state (a client that left makes `wifi` `partial`);
+EdgeConnect time-series column names are not documented, so the interface/time/rx/tx columns are found in `COLUMN_DEF` at runtime
+(unidentifiable = raw series kept, no utilization, `partial`); EdgeConnect log text has no vendor documentation.
+
+**Adding a connector**: subclass `Connector` (`name`, `kinds`, `collect(ctx) -> [EvidenceResult]`, own timeouts), take calls from
+`ctx.budget("<source>", n)` and register it in `app.default_connectors`; an identity source implements `IdentityProvider`.
 
 ## Troubleshooting
 
@@ -111,6 +138,9 @@ candidate binds, 0 or > 1 fails the guard closed). The pipeline, budgets (`ctx.b
 | `syslog_dropped_per_min` > 0 | per-source rate limit (`rate_limit_lines_per_s`) or oversize lines (`max_line_bytes`) |
 | every test `nat_suspected` | the box sees NAT'd addresses: place it where attendee traffic arrives un-translated (D15), or fix `client_subnets` / `translated_addresses` |
 | identity `unresolved` but Mist knows the client | `zone_map` has no entry for the AP, and no `zone_subnets` match |
+| `wifi` `partial`, no `ap` | the Mist call budget (6) ran out, a call failed, or the client left (stats 404): see the `mist` puller errors |
+| `wan` `partial`, no `wan_util_pct` | the Orchestrator time-series columns were not recognised (raw series is kept) or `maxWanBandwidth` is absent |
+| Mist/EC `errors_1h` rising, evidence `error` | `429` (token quota: the connector pauses itself), refused credential (rotate in the manager) or an unreachable API |
 | TLS 6514 not listening | `tls.mode = provided` without `syslog_tls.crt/.key`, or `openssl` missing for the self-signed certificate |
 
 Tests: `/home/user/exp/.venv/bin/python -m pytest runner -q` (uses the fakes in `test/fakes`; no network). Lint: `ruff check runner`.
