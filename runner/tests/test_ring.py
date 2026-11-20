@@ -126,3 +126,39 @@ def test_sql_is_parameterized(ring):
 def test_use_before_open_raises(tmp_path):
     with pytest.raises(RingError):
         Ring(tmp_path / "z.db").count()
+
+
+def _left(ring):
+    return sorted(r[0] for r in ring._conn().execute("SELECT raw FROM lines"))
+
+
+def test_scrub_hostname_precision_keeps_other_devices(ring):
+    """Regression (A6.6/A6.5): a generic hostname must not delete other devices' DHCP lines."""
+    a, b = "f0:18:98:aa:bb:01", "f0:18:98:cc:dd:02"
+    put(ring, f"DHCPACK on 10.1.2.4 to {b} (iPhone)", NOW)
+    put(ring, "DHCPACK on 10.1.2.5 to aa:bb:cc:00:00:09 (Johns-iPhone)", NOW)
+    put(ring, "johns-iphone.local announced", NOW)
+    put(ring, "hostname iPhone renewed", NOW)
+    for mac in (a, a.replace(":", "-"), "f018.98aa.bb01", a.replace(":", "").upper()):
+        put(ring, f"DHCPDISCOVER from {mac} (iPhone)", NOW)
+    toks = [a, a.replace(":", "-"), a.replace(":", ""), "f018.98aa.bb01", "iPhone"]
+    assert ring.delete_mentions(toks, ip="10.1.2.3") == 5
+    assert _left(ring) == sorted([f"DHCPACK on 10.1.2.4 to {b} (iPhone)", "DHCPACK on 10.1.2.5 to aa:bb:cc:00:00:09 (Johns-iPhone)",
+                                  "johns-iphone.local announced"])
+
+
+def test_hostname_boundaries_and_ip_guard(ring):
+    put(ring, "johns-iphone.local seen", NOW)
+    put(ring, "lease 10.1.2.9 (iphone) acked", NOW)         # names another indexed IP: kept
+    put(ring, "lease 10.1.2.3 (iphone) acked", NOW)         # this device's IP: deleted
+    assert ring.delete_mentions(["johns-iphone"], ip="10.1.2.3") == 1
+    assert ring.delete_mentions(["iphone"], ip="10.1.2.3") == 1
+    assert _left(ring) == ["lease 10.1.2.9 (iphone) acked"]
+
+
+def test_bare_mac_inside_longer_hex_is_kept(ring):
+    put(ring, "session f018 98aabb01 ok", NOW)
+    put(ring, "session id deadf01898aabb01beef", NOW)
+    put(ring, "mac f01898aabb01 here", NOW)
+    assert ring.delete_mentions(["f01898aabb01"]) == 1
+    assert len(_left(ring)) == 2

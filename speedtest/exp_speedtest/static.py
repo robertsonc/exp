@@ -25,9 +25,11 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+ENGINE_ASSET = "cf-engine.js"
+JS_TYPE = "text/javascript; charset=utf-8"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 PAYLOAD_SIZE = 32 * 1024 * 1024
-MAX_ASSET_BYTES = 1024 * 1024
+MAX_ASSET_BYTES = 1024 * 1024        # the engine file is ~63 KB
 _ASSET_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 _HASH = re.compile(r"sha256-[A-Za-z0-9+/]{43}=\Z")
 _SCRIPT = re.compile(r"<script(?P<attrs>[^>]*)>(?P<body>.*?)</script>", re.I | re.S)
@@ -70,18 +72,28 @@ class StaticSite:
         self._csp = ""
 
     # ------------------------------------------------------------------------------------------------- CSP
-    def build_csp(self, script: list[str], style: list[str]) -> str:
-        def quote(hs: list[str]) -> str:
-            return " ".join(f"'{h}'" for h in hs)
+    def connect_src(self) -> str:
         connect = ["'self'", "https://speed.cloudflare.com"]
         if self.dns_zone:
             connect.insert(1, f"http://*.{self.dns_zone}")
             if self.tls_mode == "provided":
                 connect.insert(2, f"https://*.{self.dns_zone}")
+        return "connect-src " + " ".join(connect)
+
+    def build_csp(self, script: list[str], style: list[str]) -> str:
+        """The page's policy. ``script-src 'self'`` + ``worker-src 'self'`` exist for the engine worker (and its main-thread
+        fallback script) at ``/st/assets/cf-engine.js``: same-origin file only, never blob:/data:."""
+        def quote(hs: list[str]) -> str:
+            return " ".join(f"'{h}'" for h in hs)
         return "; ".join([
-            "default-src 'self'", f"script-src {quote(script) or chr(39) + 'none' + chr(39)}",
-            ("style-src 'self' " + quote(style)).strip(), f"connect-src {' '.join(connect)}", "img-src 'self' data:",
+            "default-src 'self'", f"script-src {quote(script)} 'self'".strip(), "worker-src 'self'",
+            ("style-src 'self' " + quote(style)).strip(), self.connect_src(), "img-src 'self' data:",
             "font-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"])
+
+    def worker_csp(self) -> str:
+        """A dedicated worker takes its policy from its OWN script response (CSP3), so the engine file carries one whose
+        connect-src equals the page's: the worker may fetch the box, the DNS-leg names and Cloudflare, nothing else."""
+        return f"default-src 'none'; {self.connect_src()}; frame-ancestors 'none'"
 
     def _load(self) -> None:
         idx = self.static_dir / "index.html"
@@ -121,26 +133,36 @@ class StaticSite:
     def asset(self, name: str) -> tuple[bytes, str] | None:
         if not _ASSET_NAME.match(name) or name.startswith("."):
             return None
+        if name == ENGINE_ASSET:                      # built with the page; never taken from the operator's assets_dir
+            return self._read(self.static_dir / "assets", name, JS_TYPE)
         for base in (self.assets_dir, self.static_dir / "assets"):
-            fd = None
-            try:
-                fd = os.open(os.path.join(base, name), os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
-                st = os.fstat(fd)
-                if not stat.S_ISREG(st.st_mode) or st.st_size > MAX_ASSET_BYTES:
-                    continue
-                data = os.read(fd, MAX_ASSET_BYTES + 1)
-            except OSError:
-                continue
-            finally:
-                if fd is not None:
-                    os.close(fd)
-            ctype = _TYPES.get(os.path.splitext(name)[1]) if "." in name else None
-            if name == "logo" or ctype is None or ctype.startswith("image/"):
-                ctype = sniff_type(data[:512]) or (ctype if ctype and ctype.startswith("font/") else None)
-            if ctype is None:
-                return None
-            return data, ctype
+            hit = self._read(base, name, None)
+            if hit is not None:
+                return hit
         return None
+
+    @staticmethod
+    def _read(base: Path, name: str, fixed_type: str | None) -> tuple[bytes, str] | None:
+        fd = None
+        try:
+            fd = os.open(os.path.join(base, name), os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_size > MAX_ASSET_BYTES:
+                return None
+            data = os.read(fd, MAX_ASSET_BYTES + 1)
+        except OSError:
+            return None
+        finally:
+            if fd is not None:
+                os.close(fd)
+        if fixed_type is not None:
+            return data, fixed_type
+        ctype = _TYPES.get(os.path.splitext(name)[1]) if "." in name else None
+        if name == "logo" or ctype is None or ctype.startswith("image/"):
+            ctype = sniff_type(data[:512]) or (ctype if ctype and ctype.startswith("font/") else None)
+        if ctype is None:
+            return None
+        return data, ctype
 
 
 class Payload:

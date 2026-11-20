@@ -79,3 +79,27 @@ dns_slow_count, dns_cold_ms, policy_min_events, network_wide_age_s}`. All option
   `device_key_secret` (the unit already loads them; empty files are fine).
 * `zone_name` in the user-safe status is the zone id (the collector does not hold zone display names; the box maps it).
 * The dashboard needs the `X-Exp-User` pass-through for `identifiers=true` and for purge.
+
+## Diagnosis: a test whose internet leg was not measured never reads "healthy" by default (p2)
+
+Defect: the healthy short-circuit (score >= `none_score` -> cause `none`) was skipped only for `legs.internet.status`
+"unavailable". "paused" (admin or EC-WAN auto-pause), "queued" and "skipped" also mean the score rests on the on-network leg
+alone, so e.g. WAN util 90 % -> auto-pause -> local-only score 99 -> `none`, and `wan_saturation` was never evaluated.
+
+Fix (`speedtest/diagnosis.py`, thresholds unchanged):
+
+* `internet_measured` is False iff `legs.internet` exists and its status is not `ok` (absent leg: behaviour unchanged).
+  When not measured there is no short-circuit; every rule runs as for a low score (unavailable + no WAN fault keeps
+  `internet_path` / the internet-down text).
+* If no rule fires, the local leg is known and not slow and score >= `none_score`: cause `none`, confidence 0.6, cites
+  `legs score.total` and `legs internet.status`, with a status-specific blame-free user text (paused: venue network fine,
+  internet check paused because the event's internet link is busy, try again in a few minutes; queued / skipped: result
+  covers the venue network only) and NOC text "internet leg <status>: local-only score N; ...". Score < `none_score` and no
+  rule fired stays USER_UNKNOWN / USER_PENDING_UNKNOWN.
+* Spec rule kept: `none` only at score >= 80, and then the only cause. No new cause id and no new label value (consumers in
+  service.py / VM histograms use the existing bounded `CAUSES`).
+* Known interaction: auto-pause fires at 80 % WAN util while `wan_saturation` needs > 85 % (spec 6 table); at 82 % the user
+  now gets the status text above instead of the false "below target" text.
+
+Tests: `test_st_diagnosis.py::test_unmeasured_internet_*` (4 statuses x WAN 90 / 82) and
+`test_internet_ok_high_score_still_short_circuits`.

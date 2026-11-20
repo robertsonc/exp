@@ -377,3 +377,68 @@ def test_dns_uses_the_probe_dns_line_when_the_leg_was_measured_by_the_probe(st):
     t2 = result(down=300.0, up=200.0, i_down=12.0, i_up=4.0)                # the browser measured it: probe line ignored
     t2["legs"]["dns"] = {"source": "browser", "cold_ms": 20.0, "warm_ms": 2.0, "resolver_ip": "10.0.0.53"}
     assert "dns" not in [c["id"] for c in st.ingest(t2).json()["diagnosis"]["cause"]]
+
+
+# ----------------------------------------------------------------- unmeasured internet leg (M6 p2)
+_UNMEASURED_TEXT = {
+    "paused": "internet check was paused",
+    "queued": "still waiting for its turn",
+    "skipped": "stopped before it finished",
+    "unavailable": "internet could not be reached",
+}
+
+
+def _unmeasured(status):
+    t = result(down=800.0, up=700.0, loaded=15.0, cv=0.0)
+    t["legs"]["internet"] = {"status": status}
+    t["flags"] = []
+    t["score"] = {"total": 99, "speed": 100, "responsiveness": 100, "stability": 100}
+    return t
+
+
+def _wan(t, util):
+    w = evidence("wan", t)
+    w["data"]["wan_util_pct"] = float(util)
+    for a in w["data"].get("appliances", []):
+        for i in a.get("interfaces", []):
+            i["util_pct"] = float(util)
+        for m in ("loss", "latency", "jitter"):
+            for h in (a.get("health") or {}).get(m, []):
+                h["health_status"] = "NORMAL"
+    return w
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("status", ["paused", "queued", "skipped", "unavailable"])
+def test_unmeasured_internet_wan_hot_is_wan_saturation(status):
+    t = _unmeasured(status)
+    d = dx.diagnose(t, {"wan": _wan(t, 90)}, None, {"down_mbps": 25.0, "up_mbps": 10.0}, Thresholds(), "final",
+                    "2026-01-01T00:00:00Z")
+    assert d["cause"][0]["id"] == "wan_saturation", d
+    check_text(d)
+
+
+@pytest.mark.parametrize("status", ["paused", "queued", "skipped", "unavailable"])
+def test_unmeasured_internet_wan_below_threshold_is_none_with_status_text(status):
+    t = _unmeasured(status)
+    d = dx.diagnose(t, {"wan": _wan(t, 82)}, None, {"down_mbps": 25.0, "up_mbps": 10.0}, Thresholds(), "final",
+                    "2026-01-01T00:00:00Z")
+    if status == "unavailable":
+        assert d["cause"][0]["id"] == "internet_path" and _UNMEASURED_TEXT[status] in d["user_text"], d
+    else:
+        assert [c["id"] for c in d["cause"]] == ["none"] and d["cause"][0]["confidence"] == 0.6, d
+        assert _UNMEASURED_TEXT[status] in d["user_text"], d
+        assert f"internet leg {status}: local-only score 99" in d["noc_text"]
+        assert {"kind": "legs", "ref": "internet.status"} in d["cause"][0]["cites"]
+    assert "below target" not in d["user_text"]
+    check_text(d)
+
+
+def test_internet_ok_high_score_still_short_circuits():
+    t = _unmeasured("ok")
+    t["legs"]["internet"] = {"status": "ok", "down_mbps": 300.0, "up_mbps": 200.0}
+    d = dx.diagnose(t, {"wan": _wan(t, 90)}, None, {"down_mbps": 25.0, "up_mbps": 10.0}, Thresholds(), "final",
+                    "2026-01-01T00:00:00Z")
+    assert [c["id"] for c in d["cause"]] == ["none"] and d["user_text"] == dx.USER_TEXT["none"]

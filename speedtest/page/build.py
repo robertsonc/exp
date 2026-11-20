@@ -8,9 +8,10 @@ stdlib only and deterministic: the same sources always give the same bytes (no t
 that are not sorted). Inputs (all under ``speedtest/page/``): ``src/index.html`` (template), ``src/style.css``, ``src/app.js``
 and ``vendor/speedtest.js`` (the unmodified ``@cloudflare/speedtest`` 1.16.0 dist, MIT; see ``vendor/`` and
 ``packaging/vendor.lock``). The vendored ES module is wrapped into a classic script (its single ``export default`` becomes
-``return``), preceded by its MIT licence header, so the page needs no module loading and no third-party host.
+``return``), preceded by its MIT licence header. It is NOT inlined in the page: it goes into ``assets/cf-engine.js`` (prelude +
+library + bridge, ``src/engine-*.js``) which the page runs in a dedicated worker (main-thread fallback: same file as a script).
 
-CSP: the page has exactly two inline ``<script>`` blocks and one ``<style>`` block; their sha256 hashes are written to
+CSP: the page has exactly one inline ``<script>`` block and one ``<style>`` block; their sha256 hashes are written to
 ``csp-hashes.json`` (``exp.speedtest.csp/1``), which ``exp_speedtest/static.py`` reads to build ``script-src``/``style-src``.
 Fonts are not inlined: they are the subset woff2 files in ``exp_speedtest/static/assets/`` served as ``/st/assets/<name>``
 (``font-src 'self'``).
@@ -29,6 +30,7 @@ HERE = Path(__file__).resolve().parent
 OUT_DIR = HERE.parent / "exp_speedtest" / "static"
 LIB_EXPORT = "export { SpeedTestEngine as default };"
 HASH_SCHEMA = "exp.speedtest.csp/1"
+ENGINE_REL = "assets/cf-engine.js"
 
 
 def csp_hash(text: str) -> str:
@@ -66,25 +68,33 @@ def wrap_library(lib: str, license_text: str) -> str:
     return head + "\nvar CFSpeedTest = (function () {\n" + body.strip() + "\n})();"
 
 
+def engine_file(lib: str) -> str:
+    """``/st/assets/cf-engine.js``: prelude + the verbatim library wrapper + bridge. Loaded as a dedicated worker (normal) or as
+    a classic script on the main thread (fallback); see the prelude for the two modes. The library text exists once."""
+    parts = [tidy_js(_read(HERE / "src" / "engine-prelude.js")), lib, tidy_js(_read(HERE / "src" / "engine-bridge.js"))]
+    return "\n".join(parts) + "\n"
+
+
 def build() -> dict[str, str]:
     tpl = _read(HERE / "src" / "index.html")
     css = minify_css(_read(HERE / "src" / "style.css"))
     app = tidy_js(_read(HERE / "src" / "app.js"))
     lib = wrap_library(_read(HERE / "vendor" / "speedtest.js"), _read(HERE / "vendor" / "LICENSE-cloudflare-speedtest.txt"))
-    for name, text in (("style.css", css), ("app.js", app), ("speedtest.js", lib)):
+    engine = engine_file(lib)
+    for name, text in (("style.css", css), ("app.js", app)):
         if "</script" in text.lower() or "</style" in text.lower() or "<!--" in text:
             raise SystemExit(f"{name}: contains a sequence that would end or confuse an inline block")
-    for marker in ("@@CSS@@", "@@LIB@@", "@@APP@@"):
+    for marker in ("@@CSS@@", "@@APP@@"):
         if tpl.count(marker) != 1:
             raise SystemExit(f"src/index.html: marker {marker} must appear exactly once")
-    html = tpl.replace("@@CSS@@", css).replace("@@LIB@@", lib).replace("@@APP@@", app)
+    html = tpl.replace("@@CSS@@", css).replace("@@APP@@", app)
     # the CSP hashes cover exactly the text between the tags, so compute them from the final document
     scripts = [m.group(1) for m in re.finditer(r"<script>(.*?)</script>", html, flags=re.S)]
     styles = [m.group(1) for m in re.finditer(r"<style>(.*?)</style>", html, flags=re.S)]
-    if len(scripts) != 2 or len(styles) != 1 or re.search(r"<script[^>]*\ssrc=", html, flags=re.I):
+    if len(scripts) != 1 or len(styles) != 1 or re.search(r"<script[^>]*\ssrc=", html, flags=re.I):
         raise SystemExit("unexpected inline block layout")
     hashes = {"schema": HASH_SCHEMA, "script": [csp_hash(s) for s in scripts], "style": [csp_hash(s) for s in styles]}
-    return {"index.html": html, "csp-hashes.json": json.dumps(hashes, indent=1, sort_keys=True) + "\n"}
+    return {"index.html": html, "csp-hashes.json": json.dumps(hashes, indent=1, sort_keys=True) + "\n", ENGINE_REL: engine}
 
 
 def asset_files() -> dict[str, bytes]:
@@ -98,6 +108,7 @@ def write(out_dir: Path = OUT_DIR) -> dict[str, str]:
     files = build()
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
+        (out_dir / name).parent.mkdir(parents=True, exist_ok=True)
         (out_dir / name).write_bytes(text.encode("utf-8"))
     if out_dir.resolve() != OUT_DIR.resolve():
         for rel, data in asset_files().items():

@@ -16,6 +16,7 @@ spec = importlib.util.spec_from_file_location("exp_page_build", PAGE / "build.py
 build_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build_mod)
 HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+ENGINE = (STATIC_DIR / "assets" / "cf-engine.js").read_text(encoding="utf-8")
 FONTS = sorted((STATIC_DIR / "assets").glob("*.woff2"))
 
 
@@ -29,7 +30,8 @@ def test_build_is_deterministic_and_the_committed_output_is_fresh(tmp_path):
     assert a["csp-hashes.json"].encode() == (STATIC_DIR / "csp-hashes.json").read_bytes()
     build_mod.write(tmp_path / "x")
     build_mod.write(tmp_path / "y")
-    for rel in ("index.html", "csp-hashes.json", "assets/archivo.woff2", "assets/OFL-inter.txt"):
+    assert a["assets/cf-engine.js"].encode() == (STATIC_DIR / "assets" / "cf-engine.js").read_bytes()
+    for rel in ("index.html", "csp-hashes.json", "assets/cf-engine.js", "assets/archivo.woff2", "assets/OFL-inter.txt"):
         assert (tmp_path / "x" / rel).read_bytes() == (tmp_path / "y" / rel).read_bytes()
 
 
@@ -37,7 +39,7 @@ def test_csp_hashes_match_the_built_inline_blocks():
     doc = json.loads((STATIC_DIR / "csp-hashes.json").read_text())
     scripts, styles = inline_hashes(HTML)
     assert doc == {"schema": "exp.speedtest.csp/1", "script": scripts, "style": styles}
-    assert len(scripts) == 2 and len(styles) == 1
+    assert len(scripts) == 1 and len(styles) == 1
     csp = StaticSite(None, "none", STATIC_DIR / "assets").build_csp(scripts, styles)
     assert "unsafe-inline" not in csp and "unsafe-eval" not in csp
 
@@ -48,6 +50,8 @@ def test_no_inline_handlers_style_attributes_or_third_party_hosts():
     assert not re.search(r"<[a-z][^>]*\sstyle=", markup, re.I), "style attribute in markup (blocked by CSP)"
     hosts = set(re.findall(r"https?://([a-zA-Z0-9.-]+)", HTML))
     assert hosts <= {"speed.cloudflare.com"}, hosts
+    assert "var CFSpeedTest = " not in HTML and "class SpeedTestEngine" not in HTML and "var SpeedTestEngine" not in HTML, \
+        "the engine library is in the worker file only, never inlined twice"
     assert "w3.org" not in HTML and "github.com" not in HTML, "no foreign URL, split or not"
     app = build_mod.tidy_js((PAGE / "src" / "app.js").read_text())
     for bad in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
@@ -60,7 +64,7 @@ def test_no_inline_handlers_style_attributes_or_third_party_hosts():
 
 
 def test_page_weight_budget():
-    gz = len(gzip.compress(HTML.encode(), 9))
+    gz = len(gzip.compress(HTML.encode(), 9)) + len(gzip.compress(ENGINE.encode(), 9))     # the worker file counts
     fonts = sum(p.stat().st_size for p in FONTS)
     assert fonts <= 120 * 1024, fonts
     assert gz + fonts <= 200 * 1024, (gz, fonts)
@@ -78,7 +82,11 @@ def test_vendored_files_match_vendor_lock():
         assert (ROOT / it["license_file"]).is_file() and len(it["archive_sha256"]) == 64
     cf = items["@cloudflare/speedtest"]
     assert cf["version"] == "1.16.0" and cf["archive_sha256"] == "08e3c0b4e69a2533dc0f4bca3e88e063c4fbc3c3b4e5c301557c1dcf767e866e"
-    assert "Copyright (c) 2023 Cloudflare" in HTML
+    assert "Copyright (c) 2023 Cloudflare" in ENGINE
+    lib = (ROOT / cf["file"]).read_text(encoding="utf-8").replace("\r\n", "\n")
+    body = lib.replace(build_mod.LIB_EXPORT, "return SpeedTestEngine;")
+    body = re.sub(r"\n//# sourceMappingURL=\S+\s*\Z", "\n", body).strip()
+    assert ENGINE.count(body) == 1, "the vendored library is embedded verbatim, exactly once, in the engine file"
 
 
 def _lum(h: str) -> float:
@@ -112,6 +120,14 @@ def test_served_page_and_fonts(box):
     scripts, styles = inline_hashes(HTML)
     for h in scripts + styles:
         assert f"'{h}'" in r.h("content-security-policy")
+    csp = r.h("content-security-policy")
+    assert "worker-src 'self'" in csp and "script-src 'sha256-" in csp and "' 'self';" in csp and "blob:" not in csp and "data:" not in csp.replace("img-src 'self' data:", "")
+    e = box.get("/st/assets/cf-engine.js")
+    assert e.status == 200 and e.body == ENGINE.encode() and e.h("content-type") == "text/javascript; charset=utf-8"
+    assert e.h("x-content-type-options") == "nosniff" and e.h("cache-control") == "public, max-age=300"
+    ecsp = e.h("content-security-policy")
+    page_connect = next(d for d in csp.split("; ") if d.startswith("connect-src "))
+    assert page_connect in ecsp.split("; ") and ecsp.startswith("default-src 'none'; ") and "script-src" not in ecsp, ecsp
     for p in FONTS:
         a = box.get(f"/st/assets/{p.name}")
         assert a.status == 200 and a.h("content-type") == "font/woff2" and a.body == p.read_bytes()
@@ -131,13 +147,18 @@ def test_page_contacts_only_the_box_and_cloudflare():
     app = (root / "page" / "src" / "app.js").read_text(encoding="utf-8")
     lib = (root / "page" / "vendor" / "speedtest.js").read_text(encoding="utf-8")
     html = (root / "exp_speedtest" / "static" / "index.html").read_text(encoding="utf-8")
+    engine = (root / "exp_speedtest" / "static" / "assets" / "cf-engine.js").read_text(encoding="utf-8")
+    brg = (root / "page" / "src" / "engine-bridge.js").read_text(encoding="utf-8")
 
     # 1. concrete hosts
     hosts = {u.split("//", 1)[1] for u in re.findall(r"https?://[A-Za-z0-9][A-Za-z0-9.-]*", html)}
     assert hosts <= {"speed.cloudflare.com"}, sorted(hosts)
     ours = {u.split("//", 1)[1] for u in re.findall(r"https?://[A-Za-z0-9][A-Za-z0-9.-]*", app)}
     assert ours <= {"speed.cloudflare.com"}, sorted(ours)
-    templates = set(re.findall(r"`https?://\$\{[^}]+\}`", html))
+    wh = {u.split("//", 1)[1] for u in re.findall(r"https?://[A-Za-z0-9][A-Za-z0-9.-]*", engine)}
+    assert wh <= {"speed.cloudflare.com"}, sorted(wh)          # the worker asset: same host check (its own code names none)
+    assert not re.findall(r"https?://[A-Za-z0-9]", brg), "the bridge names no host"
+    templates = set(re.findall(r"`https?://\$\{[^}]+\}`", engine))
     assert templates and templates <= set(re.findall(r"`https?://\$\{[^}]+\}`", lib)), \
         "absolute-URL templates may only come from the verbatim vendored library"
 
@@ -146,10 +167,16 @@ def test_page_contacts_only_the_box_and_cloudflare():
     plan_types |= set(re.findall(r"fill\('([A-Za-z]+)'", app))
     assert plan_types <= {"latency", "download", "upload"}, plan_types
     assert "logAimApiUrl: null" in app and "logMeasurementApiUrl: null" in app
+    assert not re.search(r"measurements\s*[:=]", brg), "the plan is set by the page only"
 
     # 3. the CSP the box actually serves: connect-src is exactly the box, its DNS-leg names and Cloudflare
     from exp_speedtest.static import StaticSite  # noqa: PLC0415
     zone = "t.speed.summit.example"
+    # the worker asset's policy: connect-src identical to the page's, default-src none, nothing else opened
+    for tls_mode in ("none", "provided"):
+        site = StaticSite(zone, tls_mode, root / "exp_speedtest" / "static" / "assets")
+        page_connect = next(d for d in site.build_csp([], []).split("; ") if d.startswith("connect-src "))
+        assert site.worker_csp() == f"default-src 'none'; {page_connect}; frame-ancestors 'none'"
     for tls_mode, expected in (
         ("none", {"'self'", f"http://*.{zone}", "https://speed.cloudflare.com"}),
         ("provided", {"'self'", f"http://*.{zone}", f"https://*.{zone}", "https://speed.cloudflare.com"}),

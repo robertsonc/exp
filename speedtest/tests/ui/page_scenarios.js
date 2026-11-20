@@ -46,6 +46,9 @@ async function open(browser, o) {
   page.on("response", async (r) => {
     if (/\/result$/.test(r.url()) && r.request().method() === "POST") { try { seen.submissions[seen.submissions.length - 1].res = await r.json(); seen.submissions[seen.submissions.length - 1].status = r.status(); } catch (e) { /* ignore */ } }
   });
+  seen.workers = [];
+  page.on("worker", (w) => seen.workers.push(w.url()));
+  if (o.noWorker) await page.addInitScript(() => { delete window.Worker; });      // the fallback path: no dedicated workers at all
   await page.addInitScript(() => {
     window.__csp = [];
     document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + e.blockedURI));
@@ -133,7 +136,7 @@ async function full(browser, o) {
     if (o.shotFinal) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotFinal, true); }
   }
   const final = flipped || first;
-  const res = { cspHeader, pre, first, flipped, phases, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), requests: seen.requests, csp: seen.csp, cspEvents: final.csp,
+  const res = { cspHeader, pre, first, flipped, phases, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), workers: seen.workers, requests: seen.requests, csp: seen.csp, cspEvents: final.csp,
     errors: seen.errors, dialogs: seen.dialogs, submissions: seen.submissions, failed: seen.failed, midAnimsMax: Math.max(0, ...midAnims), midAnimsMin: midAnims.length ? Math.min(...midAnims) : null };
   step('flipped'); if (o.report) {
     await page.click("#reportBtn"); await page.fill("#rText", o.report); await page.click("#report button[type=submit]");

@@ -322,7 +322,7 @@ class Correlator:
         if self.cfg.scrub_after_diagnosis:
             self.ring.delete_ip(test.client_ip)
             # lines that name the device without an IP (DHCPDISCOVER, ...) by its MAC in every spelling and its hostname (A6.6)
-            self.ring.delete_mentions(device_tokens(ident.mac, ident.hostname))
+            self.ring.delete_mentions(device_tokens(ident.mac, ident.hostname), ip=test.client_ip)
         log.info("test %s correlated (%s, zone %s)", test.id, status, ident.zone)
 
     # ----------------------------------------------------------------------------------- metrics

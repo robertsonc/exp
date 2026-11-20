@@ -194,6 +194,9 @@ def test_full_test_390(world: World):
                                      "keyboard": True, "contrast": True, "report": "video calls freeze at my booth", "zoneFix": "Hall B, row 9", "copy": True,
                                      "timeout": 150000})
     first = check_run(r, world)
+    # --- the internet engine ran in the dedicated worker (off the main thread), served by the box, with its own CSP
+    assert r["workers"] == [f"http://{HOST}/st/assets/cf-engine.js"], r["workers"]
+    assert any(u.endswith("/st/assets/cf-engine.js") for u in r["requests"])
     # --- the engine really measured: server-recomputed score shown, every leg present
     sub = r["submissions"][-1]
     assert sub["status"] == 202 and sub["req"]["schema"] == "exp.speedtest.submission/1"
@@ -385,3 +388,21 @@ def test_dns_leg_without_delegation_is_labelled_the_hall_sensor(tmp_path: Path):
         assert "dns_fallback" in str(r["submissions"][-1]["res"]["flags"]) and "hall sensor" in r["first"]["flags"]
     finally:
         w.stop()
+
+
+def test_full_test_without_workers_falls_back_to_the_main_thread(world: World):
+    """No Worker available (init script deletes it): the same asset file runs as a classic script, the page still produces a
+    complete result with comparable internet figures (the fake Cloudflare is the same 400/100 Mb/s link, 15 ms)."""
+    r = run_scenario(world, "full", {"noWorker": True, "timeout": 150000})
+    check_run(r, world)
+    assert r["workers"] == []
+    assert sum(1 for u in r["requests"] if u.endswith("/st/assets/cf-engine.js")) == 1
+    sub = r["submissions"][-1]
+    assert sub["status"] == 202
+    net = sub["req"]["legs"]["internet"]
+    assert net["status"] == "ok" and net["colo"] == "FRA" and net["down_mbps"] > 0 and net["up_mbps"] > 0
+    assert net["cv"] is not None and net["cv"] < 0.3, net
+    assert sub["res"]["score"]["stability"] >= 40, sub["res"]["score"]
+    assert net["idle_ms"] is not None and net["loaded_down_ms"] is not None
+    # comparable to the worker path: same order of magnitude as the fake's configured link
+    assert 10 < net["down_mbps"] < 1000 and 5 < net["up_mbps"] < 1000, net

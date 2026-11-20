@@ -319,7 +319,7 @@ def test_csp_hash_file_overrides_and_invalid_file_is_ignored(tmp_path: Path):
     s3 = StaticSite(None, "provided", tmp_path / "a", tmp_path / "nonexistent")
     assert s3.page() == (b"", "")
     assert "https://*." not in site2.build_csp([], [])
-    assert "script-src 'none'" in site2.build_csp([], [])
+    assert "script-src 'self';" in site2.build_csp([], []) and "worker-src 'self'" in site2.build_csp([], [])   # no hash: only the same-origin engine file
 
 
 def test_csp_tls_provided_allows_https_nonce_hosts(tmp_path: Path):

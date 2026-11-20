@@ -605,14 +605,74 @@
       if (S.slot) { S.slot = false; slotCall('release').catch(function () {}); }
     }
   }
+  // The vendored engine runs in a dedicated worker (/st/assets/cf-engine.js, CR-m6-speedtest-server item 9): its string upload
+  // bodies are encoded synchronously by fetch(), which on the main thread froze the animation. This object has the engine's
+  // callback/play/pause/results surface; if the worker cannot start (no Worker, error, silence for START_MS) the same file
+  // runs on the main thread as a classic script and the page produces the same result.
+  var ENGINE_URL = '/st/assets/cf-engine.js', START_MS = 6000;
+  function EngineHost(cfg) {
+    var me = this, w = null, snap = null, started = false, timer = null, main = null, dead = false;
+    me.isFinished = false; me.mode = 'worker';
+    var noop = function () {};
+    me.onPhaseChange = noop; me.onResultsChange = noop; me.onError = noop; me.onFinish = noop; me.onRunningChange = noop;
+    function pick(k) { return function () { return snap ? snap[k] : null; }; }
+    function arr(k) { return function () { return snap ? snap[k] : []; }; }
+    var wr = { getDownloadBandwidth: pick('down'), getUploadBandwidth: pick('up'), getUnloadedLatency: pick('idle'), getUnloadedJitter: pick('jitter'),
+      getDownLoadedLatency: pick('ldown'), getUpLoadedLatency: pick('lup'), getDownloadBandwidthPoints: arr('dp'), getUploadBandwidthPoints: arr('upp'),
+      getUnloadedLatencyPoints: arr('lp') };
+    Object.defineProperty(me, 'results', { get: function () { return main ? main.results : wr; } });
+    function toMain() {
+      if (dead || main) return;
+      if (w) { try { w.terminate(); } catch (e) { /* ignore */ } w = null; }
+      clearTimeout(timer); me.mode = 'main';
+      var sc = document.createElement('script');
+      sc.src = ENGINE_URL;
+      sc.onload = function () {
+        if (dead) return;
+        try { main = new window.CFSpeedTest(cfg); } catch (e) { me.onError('engine'); me.isFinished = true; me.onFinish(); return; }
+        main.onPhaseChange = function (p) { me.onPhaseChange(p); }; main.onResultsChange = function (p) { me.onResultsChange(p); };
+        main.onError = function (m) { me.onError(m); }; main.onFinish = function () { me.isFinished = true; me.onFinish(); };
+        main.onRunningChange = function (r) { me.onRunningChange(r); };
+        main.play();
+      };
+      sc.onerror = function () { me.onError('engine script'); me.isFinished = true; me.onFinish(); };
+      document.head.appendChild(sc);
+    }
+    function onMsg(ev) {
+      var m = ev.data;
+      if (!m || typeof m !== 'object' || dead) return;
+      if (m.t === 'started') { started = true; clearTimeout(timer); return; }
+      if (m.t === 'fatal') { if (!started || !snap) toMain(); else me.onError(m.msg); return; }
+      if (m.snap && typeof m.snap === 'object') snap = m.snap;
+      if (m.t === 'phase') me.onPhaseChange({ measurement: { type: m.type } });
+      else if (m.t === 'results') me.onResultsChange({ type: m.type });
+      else if (m.t === 'error') me.onError(m.msg);
+      else if (m.t === 'running') me.onRunningChange(!!m.running);
+      else if (m.t === 'finish') { me.isFinished = true; me.onFinish(); }
+    }
+    me.play = function () {
+      try {
+        w = new Worker(ENGINE_URL);
+        w.onmessage = onMsg;
+        w.onerror = function () { if (!started) toMain(); else { me.onError('worker'); me.isFinished = true; me.onFinish(); } };
+        w.postMessage({ cmd: 'start', config: cfg });
+        timer = setTimeout(function () { if (!started) toMain(); }, START_MS);
+      } catch (e) { toMain(); }
+    };
+    me.pause = function () {
+      if (main) { main.pause(); return; }
+      if (w) { try { w.postMessage({ cmd: 'pause' }); } catch (e) { /* ignore */ } }
+      dead = true; clearTimeout(timer); if (w) { try { w.terminate(); } catch (e) { /* ignore */ } w = null; }
+    };
+  }
   function runCloudflare(colo) {
     return new Promise(function (resolve) {
-      var Engine = window.CFSpeedTest, sess = S.sess, errors = 0, firstErr = null, finished = false, curType = null, engine;
+      var sess = S.sess, errors = 0, firstErr = null, finished = false, curType = null, engine;
       var cfg = {
         autoStart: false, logAimApiUrl: null, logMeasurementApiUrl: null, includeCredentials: false,       // results stay on-prem
         measurements: internetPlan(sess.limits.bytes_internet || 200000000), abortTestDuration: 30000, bandwidthFinishRequestDuration: 1000
       };
-      try { engine = new Engine(cfg); } catch (e) { legSet('cf', 'n/a', 'could not start', 'crit'); resolve({ status: 'unavailable', note: 'The internet test could not start.' }); return; }
+      try { engine = new EngineHost(cfg); } catch (e) { legSet('cf', 'n/a', 'could not start', 'crit'); resolve({ status: 'unavailable', note: 'The internet test could not start.' }); return; }
       S.cf = engine;
       function finish() {
         if (finished) return; finished = true; S.cf = null;

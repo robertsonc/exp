@@ -64,3 +64,16 @@ step that wrote it. No `shared/` change: everything fits `evidence.schema.json` 
 * HPE Aruba SSE API connector (no local documentation) and Mist `fast_roam` (`listSiteRoamingEvents`): the c1 Mist fake does not
   implement it and roam counts come from the client's own events (decision 4); switch-port events (`searchSiteDeviceEvents`) are requested best
   effort (a 404 is tolerated, the fake has no such route).
+
+## Privacy-scrub precision (p3)
+`Ring.delete_mentions(tokens, ip=None)` no longer deletes on a bare case-insensitive substring (it over-deleted other devices' DHCP
+lines, breaking the DHCP-fallback identity of concurrent tests, A6.5). The parameterized, escaped LIKE stays as a prefilter; every
+candidate is verified in Python:
+* MAC spellings (colon, dash, Cisco dotted, bare) must not be adjacent to a hex digit or to the spelling's own separator, so a bare MAC
+  inside a longer hex string (session id, hash) is kept.
+* A hostname token matches the whole name, case-insensitively, not adjacent to `[0-9A-Za-z_-]` ("johns-iphone.local" matches
+  "johns-iphone"; "johns-iphone" does not match "iphone").
+* A line matched only by the hostname is deleted only if it names no other device: no MAC in any spelling other than this device's, and
+  no indexed IP (ring `ips` table) other than the device's client IP (the correlator passes `test.client_ip`).
+Still one bounded pass per call under the same Ring lock. Residual: a MAC directly after a separator of its own spelling (e.g.
+"mac:f0:18:...") is not matched by the colon spelling (conservative boundary per the fix brief).

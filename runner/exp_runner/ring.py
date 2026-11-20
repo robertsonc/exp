@@ -11,6 +11,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from collections.abc import Iterable, Sequence
@@ -37,6 +38,24 @@ CREATE INDEX IF NOT EXISTS ips_line ON ips(line_id);
 CREATE INDEX IF NOT EXISTS lines_recv ON lines(recv);
 CREATE INDEX IF NOT EXISTS lines_keep ON lines(keep, kept_at);
 """
+
+
+_H = "[0-9A-Fa-f]"
+_MAC_SHAPES = (re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$"), re.compile(r"^[0-9a-f]{2}(-[0-9a-f]{2}){5}$"),
+               re.compile(r"^[0-9a-f]{4}(\.[0-9a-f]{4}){2}$"), re.compile(r"^[0-9a-f]{12}$"))
+# any MAC spelling inside a line (to recognise lines that name another device)
+_ANY_MAC_RE = re.compile(
+    r"(?<![0-9A-Fa-f:])" + _H + r"{2}(?::" + _H + r"{2}){5}(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f-])" + _H + r"{2}(?:-" + _H + r"{2}){5}(?![0-9A-Fa-f-])"
+    r"|(?<![0-9A-Fa-f.])" + _H + r"{4}(?:\." + _H + r"{4}){2}(?![0-9A-Fa-f.])|(?<![0-9A-Fa-f])" + _H + r"{12}(?![0-9A-Fa-f])")
+
+
+def _is_mac_spelling(t: str) -> bool:
+    return any(r.match(t) for r in _MAC_SHAPES)
+
+
+def _mac_regex(t: str) -> re.Pattern[str]:
+    cls = "0-9A-Fa-f" + (":" if ":" in t else "-" if "-" in t else "." if "." in t else "")
+    return re.compile("(?<![" + cls + "])" + re.escape(t) + "(?![" + cls + "])", re.IGNORECASE)
 
 
 class RingError(Exception):
@@ -159,19 +178,46 @@ class Ring:
             ids = [r[0] for r in self._conn().execute("SELECT DISTINCT line_id FROM ips WHERE ip=?", (ip,))]
             return self._delete_ids(ids)
 
-    def delete_mentions(self, tokens: Sequence[str]) -> int:
-        """Delete every line (ring or attached) whose raw text contains any of `tokens` (case-insensitive substring): the privacy scrub
-        of a device's MAC (every spelling) and hostname, which also appear in lines that carry no IP (DHCPDISCOVER, ...). Tokens shorter
-        than 3 characters are ignored. Bounded: one scan of the ring (<= max_rows lines) per call."""
-        toks = [t.lower() for t in tokens if isinstance(t, str) and len(t) >= 3]
+    def delete_mentions(self, tokens: Sequence[str], ip: str | None = None) -> int:
+        """Delete the lines (ring or attached) that name a device by MAC spelling or hostname (the privacy scrub, A6.6): lines such as
+        DHCPDISCOVER carry no IP, so ``delete_ip`` never reaches them. Matching is boundary-checked, not a bare substring:
+
+        * a MAC token (colon, dash, dotted, bare) must not touch a longer run of hex/separator characters of its own spelling;
+        * any other token is a hostname: the whole name, case-insensitively, not preceded/followed by ``[0-9A-Za-z_-]``;
+        * a line matched ONLY by the hostname is kept when it names another device (a MAC other than this device's, or an indexed IP
+          other than ``ip``): generic names ("iPhone") are shared by many devices.
+
+        Tokens shorter than 3 characters are ignored. Bounded: one pass over the ring (<= max_rows lines) per call; the SQL LIKE
+        prefilter is parameterized and escaped, candidates are verified in Python."""
+        toks = list(dict.fromkeys(t.strip().lower() for t in tokens if isinstance(t, str) and len(t.strip()) >= 3))
         if not toks:
             return 0
+        mac_toks = [t for t in toks if _is_mac_spelling(t)]
+        names = [t for t in toks if t not in mac_toks]
+        own_macs = {re.sub(r"[^0-9a-f]", "", t) for t in mac_toks}
+        mac_res = [_mac_regex(t) for t in mac_toks]
+        name_res = [re.compile(r"(?<![0-9A-Za-z_-])" + re.escape(t) + r"(?![0-9A-Za-z_-])", re.IGNORECASE) for t in names]
         with self._lock:
-            ids: set[int] = set()
+            db = self._conn()
+            cand: dict[int, str] = {}
             for t in toks:
                 like = "%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-                ids.update(r[0] for r in self._conn().execute("SELECT id FROM lines WHERE lower(raw) LIKE ? ESCAPE '\\'", (like,)))
+                for lid, raw in db.execute("SELECT id, raw FROM lines WHERE lower(raw) LIKE ? ESCAPE '\\'", (like,)):
+                    cand[lid] = raw
+            ids: list[int] = []
+            for lid, raw in cand.items():
+                if any(r.search(raw) for r in mac_res):
+                    ids.append(lid)
+                elif any(r.search(raw) for r in name_res) and not self._names_other_device(db, lid, raw, own_macs, ip):
+                    ids.append(lid)
             return self._delete_ids(sorted(ids))
+
+    @staticmethod
+    def _names_other_device(db: sqlite3.Connection, lid: int, raw: str, own_macs: set[str], ip: str | None) -> bool:
+        for m in _ANY_MAC_RE.finditer(raw):
+            if re.sub(r"[^0-9a-f]", "", m.group(0).lower()) not in own_macs:
+                return True
+        return any(r[0] != ip for r in db.execute("SELECT DISTINCT ip FROM ips WHERE line_id=?", (lid,)))
 
     # ------------------------------------------------------------------------------------- reads
     def query(self, ip: str, t0: float, t1: float, kinds: Sequence[str] | None = None, limit: int = 1000) -> list[dict[str, Any]]:

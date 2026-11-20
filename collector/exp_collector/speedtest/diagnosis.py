@@ -8,7 +8,8 @@ Output is the ``exp.speedtest/1`` ``diagnosis`` object: ``cause[]`` ordered by c
 section 5.3 table), each with the evidence it cites; ``user_text`` is one plain, blame-free sentence;
 ``noc_text`` names the evidence ("hallb-ap-12 ch 44/80 MHz, util 81 %, 74 clients; RSSI -61 dBm").
 
-* ``none`` only when the score is at or above ``none_score`` (default 80); then it is the only cause.
+* ``none`` only when the score is at or above ``none_score`` (default 80); then it is the only cause. If the internet
+  leg was not measured (status other than ok) every rule runs first; ``none`` (0.6, status-specific text) only if none fires.
 * A degraded test where no rule fires gets an empty cause list ("could not pinpoint"); ``cause`` is never invented.
 * Evidence with status ``unavailable`` / ``error`` is ignored. Evidence texts (AP names, SSIDs) are untrusted:
   control characters are removed and every text is clipped before it enters ``noc_text``.
@@ -47,6 +48,13 @@ USER_TEXT = {
     "network_wide": "It is not just you: nearby network checks show the same slowdown right now.",
 }
 USER_INTERNET_DOWN = "The venue network is working, but the internet could not be reached right now."
+USER_INTERNET_UNMEASURED = {
+    "paused": "The venue network is working well. The internet check was paused because the event's internet link "
+              "is busy; try again in a few minutes.",
+    "queued": "The internet check was still waiting for its turn, so this result covers the venue network only.",
+    "skipped": "The internet check was stopped before it finished, so this result covers the venue network only.",
+    "unavailable": USER_INTERNET_DOWN,
+}
 USER_UNKNOWN = "Your speed is below target. We could not pinpoint a cause on the network."
 USER_PENDING_UNKNOWN = "Your speed is below target. We are checking the network to find out why."
 
@@ -611,10 +619,13 @@ def diagnose(test: Mapping[str, Any], evidence: Mapping[str, Mapping[str, Any]],
     if baseline is None and "baseline" in ctx.ev:
         ctx.baseline = ctx.ev["baseline"]
     score = ctx.score
-    # an internet leg that could not run (internet down, A6.7) is a fault of its own: the score then rests on the
-    # on-network leg alone and must not read "healthy" (regression: test_internet_down_is_not_healthy)
-    internet_down = bool(ctx.internet and ctx.internet.get("status") == "unavailable")
-    if score is not None and score >= th.none_score and not internet_down:
+    # internet_measured is False iff the internet leg exists and its status is not "ok" (unavailable / paused /
+    # queued / skipped): the score then rests on the on-network leg alone and must not short-circuit to "healthy"
+    # (regressions: test_internet_down_is_not_healthy, test_unmeasured_internet_*)
+    istatus = str(ctx.internet.get("status", "ok")) if ctx.internet else "ok"
+    internet_measured = not (ctx.internet and istatus != "ok")
+    internet_down = bool(ctx.internet) and istatus == "unavailable"
+    if score is not None and score >= th.none_score and internet_measured:
         conf = 0.9 if score >= 90 else 0.8
         return {"stage": stage, "updated": now_iso,
                 "cause": [{"id": "none", "confidence": conf, "cites": [_cite("legs", "score.total")]}],
@@ -632,6 +643,15 @@ def diagnose(test: Mapping[str, Any], evidence: Mapping[str, Mapping[str, Any]],
     hits.sort(key=lambda h: (-h.conf, _PRIORITY[h.cause]))
     hits = hits[:8]
     cause = [{"id": h.cause, "confidence": h.conf, "cites": h.cites[:16]} for h in hits]
+    if not hits and not internet_measured and score is not None and score >= th.none_score \
+            and ctx.local_known() and not ctx.local_slow():
+        user = USER_INTERNET_UNMEASURED.get(istatus, USER_INTERNET_UNMEASURED["skipped"])
+        return {"stage": stage, "updated": now_iso,
+                "cause": [{"id": "none", "confidence": 0.6,
+                           "cites": [_cite("legs", "score.total"), _cite("legs", "internet.status")]}],
+                "user_text": user[:USER_MAX],
+                "noc_text": (f"internet leg {istatus}: local-only score {score}; on-network leg fine, "
+                             f"no rule fired on the {'legs' if stage == 'quick' else 'evidence'}")[:NOC_MAX]}
     if not hits:
         user = USER_PENDING_UNKNOWN if stage == "quick" else USER_UNKNOWN
         sc = "no score" if score is None else f"score {score}"
