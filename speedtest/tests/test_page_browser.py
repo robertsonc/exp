@@ -77,7 +77,10 @@ class World:
         self.tmp = tmp
         self.box = Box(tmp, cfg_over=over)
         cert, key, _ = shared_tls()
-        self.cf = cfs.start(tls=(cert, key), **{"latency_ms": 15, "loaded_latency_ms": 40, "down_bps": 400_000_000, "up_bps": 100_000_000, **(cf or {})})
+        # 50 / 25 Mb/s (the A6.10 reference link): the fake's pacer, not the host CPU, must set the rate, or the "steady link"
+        # the stability assertions rely on is whatever a shared runner delivers. At 400 / 100 the download was CPU-bound on loopback
+        # TLS (116-119 Mb/s here and on GitHub) with no pacing slack, and a CI run read internet cv 0.40; paced, cv is 0.01 here.
+        self.cf = cfs.start(tls=(cert, key), **{"latency_ms": 15, "loaded_latency_ms": 40, "down_bps": 50_000_000, "up_bps": 25_000_000, **(cf or {})})
         self.box.start()
         self.stop_flag = threading.Event()
         self.threads: list[threading.Thread] = []
@@ -502,7 +505,7 @@ def test_dns_leg_without_delegation_is_labelled_the_hall_sensor(tmp_path: Path):
 
 def test_full_test_without_workers_falls_back_to_the_main_thread(world: World):
     """No Worker available (init script deletes it): both worker files run as classic scripts, the page still produces a
-    complete result with comparable figures (the fake Cloudflare is the same 400/100 Mb/s link, 15 ms; the on-network leg the
+    complete result with comparable figures (the fake Cloudflare is the same 50/25 Mb/s link, 15 ms; the on-network leg the
     same loopback box) and shows the numbers it submitted."""
     r = run_scenario(world, "full", {"noWorker": True, "timeout": 150000})
     first = check_run(r, world)
