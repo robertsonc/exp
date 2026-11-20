@@ -29,6 +29,35 @@ async function launch() {
   return chromium.launch({ args: [`--host-resolver-rules=${rules.join(",")}`, "--no-proxy-server"] });
 }
 
+// A stand-in for the engine worker that misbehaves on cue (test_page_browser.py::test_engine_worker_misbehaving_*), installed by an
+// init script: no product hook. Messages and the error event go to the handlers the page set when it started the worker, captured
+// at that moment, so they still arrive after the page terminated it (events already queued at that point); the page must ignore
+// every one of them once the leg ended or fell back to the main thread.
+function fakeWorker(mode) {
+  const F = window.__fakeWorker = { mode, made: 0, terminated: 0, sentAfterTerminate: 0 };
+  const pts = (bps) => [0, 1, 2, 3].map(() => ({ bps, bytes: 1e6, duration: 1600, transferSize: 1e6, ping: null }));
+  const snap = { down: 50e6, up: 20e6, idle: 12, jitter: 1, ldown: 30, lup: 35, dp: pts(50e6), upp: pts(20e6), lp: [12, 13, 12] };
+  window.Worker = function () {
+    const w = this;
+    let dead = false;
+    F.made++;
+    w.terminate = () => { if (!dead) F.terminated++; dead = true; };
+    w.postMessage = (m) => {
+      if (!m || m.cmd !== "start") return;
+      const onmsg = w.onmessage, onerr = w.onerror;
+      const send = (data) => { if (dead) F.sentAfterTerminate++; onmsg({ data }); };
+      setTimeout(() => send({ t: "started" }), 50);
+      if (mode === "fatal_before_snapshot") {        // the page falls back once, whatever else still arrives
+        setTimeout(() => { send({ t: "fatal", msg: "no engine" }); send({ t: "fatal", msg: "again" }); onerr(new Event("error")); send({ t: "phase", type: "upload" }); }, 80);
+        return;
+      }
+      setTimeout(() => { send({ t: "phase", type: "download" }); send({ t: "results", type: "download", snap }); }, 80);
+      setTimeout(() => { if (mode === "error_after_start") onerr(new Event("error")); else send({ t: "fatal", msg: "engine broke" }); }, 300);
+      setTimeout(() => { send({ t: "phase", type: "upload" }); send({ t: "finish", snap: Object.assign({}, snap, { down: 1e6 }) }); }, 350);
+    };
+  };
+}
+
 async function open(browser, o) {
   o = o || {};
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: o.viewport || { width: 390, height: 844 }, deviceScaleFactor: o.dpr || 2,
@@ -49,13 +78,15 @@ async function open(browser, o) {
   seen.workers = [];
   page.on("worker", (w) => seen.workers.push(w.url()));
   if (o.noWorker) await page.addInitScript(() => { delete window.Worker; });      // the fallback path: no dedicated workers at all
+  if (o.fakeWorker) await page.addInitScript(fakeWorker, o.fakeWorker);           // a worker that errors / says fatal on cue
   await page.addInitScript(() => {
     window.__csp = [];
     document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + e.blockedURI));
     window.__phases = [];
+    window.__phaseAt = [];                 // [performance.now(), text] per phase change (timing of the engine start, see test_full_test_390)
     document.addEventListener("DOMContentLoaded", () => {
       const t = document.getElementById("phaseText");
-      new MutationObserver(() => { const v = t.textContent; if (window.__phases[window.__phases.length - 1] !== v) window.__phases.push(v); }).observe(t, { childList: true, characterData: true, subtree: true });
+      new MutationObserver(() => { const v = t.textContent; if (window.__phases[window.__phases.length - 1] !== v) { window.__phases.push(v); window.__phaseAt.push([performance.now(), v]); } }).observe(t, { childList: true, characterData: true, subtree: true });
     });
   });
   return { ctx, page, seen };
@@ -91,7 +122,7 @@ async function snapshot(page) {
       phase: t("phaseText"), legs, resultsHidden: document.getElementById("results").hidden, anims: document.getAnimations().length,
       csp: window.__csp.slice(), secure: window.isSecureContext, subtle: typeof (window.crypto && window.crypto.subtle), wakeLock: typeof navigator.wakeLock,
       clipboard: typeof (navigator.clipboard), fontsLoaded: [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family),
-      scriptCount: document.querySelectorAll("script").length, imgs: [...document.querySelectorAll("img")].map((i) => i.getAttribute("src")),
+      scriptCount: document.querySelectorAll("script").length, scriptSrcs: [...document.querySelectorAll("script[src]")].map((e) => e.getAttribute("src")), imgs: [...document.querySelectorAll("img")].map((i) => i.getAttribute("src")),
     };
   });
 }
@@ -124,8 +155,10 @@ async function full(browser, o) {
   doneAt = Date.now() - t0; step('results after', doneAt);
   clearInterval(poll);
   phases.length = 0; (await page.evaluate(() => window.__phases)).forEach((p) => phases.push(p));
+  const phaseTimes = await page.evaluate(() => window.__phaseAt);
   await sleep(1800);                                   // let the sweep-in finish
   const first = await snapshot(page); step('first snapshot');
+  const fakeWorkerStats = o.fakeWorker ? await page.evaluate(() => window.__fakeWorker) : null;
   if (o.shotResults) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotResults); await shot(page, o.shotResults + "-full", true); }
   let flipped = null;
   if (o.correlate) {
@@ -136,7 +169,7 @@ async function full(browser, o) {
     if (o.shotFinal) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotFinal, true); }
   }
   const final = flipped || first;
-  const res = { cspHeader, pre, first, flipped, phases, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), workers: seen.workers, requests: seen.requests, csp: seen.csp, cspEvents: final.csp,
+  const res = { cspHeader, pre, first, flipped, phases, phaseTimes, fakeWorker: fakeWorkerStats, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), workers: seen.workers, requests: seen.requests, csp: seen.csp, cspEvents: final.csp,
     errors: seen.errors, dialogs: seen.dialogs, submissions: seen.submissions, failed: seen.failed, midAnimsMax: Math.max(0, ...midAnims), midAnimsMin: midAnims.length ? Math.min(...midAnims) : null };
   step('flipped'); if (o.report) {
     await page.click("#reportBtn"); await page.fill("#rText", o.report); await page.click("#report button[type=submit]");

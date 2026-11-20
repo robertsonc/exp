@@ -417,9 +417,14 @@ def test_internet_leg_disabled_in_config(tmp_path):
         r = b.post(f"/st/api/v1/sessions/{s.sid}/internet-slot", {"action": "acquire"}, headers=s.view)
         assert r.json()["state"] == "unavailable" and r.json()["reason"] == "disabled"
         # a modified client submitting internet numbers anyway does not get them stored
-        assert b.post(f"/st/api/v1/sessions/{s.sid}/result", submission(), headers=s.view).status == 202
+        r = b.post(f"/st/api/v1/sessions/{s.sid}/result", submission(), headers=s.view)
+        assert r.status == 202, r.body
+        oas.check("/st/api/v1/sessions/{id}/result", "post", 202, r.json())
+        assert "internet_off" in r.json()["flags"]
         doc = b.fake.app.tests[s.sid].doc
-        assert doc["legs"]["internet"] == {"status": "unavailable"} and "internet_unavailable" in doc["flags"]
+        oas.check_schema("speedtest.schema.json", doc)
+        assert doc["legs"]["internet"] == {"status": "unavailable"} and "internet_off" in doc["flags"]
+        assert "internet_unavailable" not in doc["flags"], "switched off by the operator is not an outage"
     finally:
         b.stop()
 

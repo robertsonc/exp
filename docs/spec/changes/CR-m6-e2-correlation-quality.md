@@ -33,9 +33,13 @@
 3. **`no_match` is a fail-closed result, not a fallback trigger.** With Mist configured and healthy a lookup that returns zero MACs fails
    closed (`nat_suspected`, `no_match`); the DHCP-syslog and subnet fallbacks run only when Mist is absent or ERRORS (outage, 429, budget). The
    suite asserts both (A6.5 / A6.12). The spec's "no connector -> unresolved" is exercised by removing `sources.mist` from the runner config.
-4. **A paused internet leg gives "looks healthy"** (score 80 on the on-network leg alone, `none`) although the WAN evidence shows 92.5 % utilization.
-   Not changed: nothing in the spec says a paused leg is a fault of the user's test, and the NOC sees the saturation in the `wan` evidence and the
-   pause itself (`internet_leg_paused`, flag `internet_paused`). Open question for the owner if "paused" should also read as `wan_saturation`.
+4. **A paused internet leg during EC WAN saturation.** At e2 the test read "looks healthy" (score 80 on the on-network leg alone, `none`) although
+   the WAN evidence showed 92.5 % utilization. *(Corrected 2026-11-20: this item used to say "Not changed" and left "should paused read as
+   `wan_saturation`" open. It was changed after e2, see `CR-m6-collector.md` "p2" and its 2026-11-20 follow-up.)* Current behaviour: a test whose
+   internet leg was not measured (status paused / queued / skipped / unavailable, or flag `internet_off`) never takes the healthy short-circuit; at a
+   local-only score >= `none_score` only the rules for the path beyond the venue network run (`wan_saturation`, `network_wide`, `internet_path`),
+   so WAN > 85 % reads `wan_saturation` (asserted in `test_a64_wan_saturation_and_auto_pause`) and anything quieter reads `none` 0.6 with
+   "this result covers the venue network only". The NOC also still sees the pause itself (`internet_leg_paused`, flag `internet_paused`).
 5. **A6.10 fps, measured (4x CPU throttle, link emulated at 50 / 25 Mb/s, 4-core sandbox shared with the box and the fakes). Gate tightened: median
    second >= 55 fps, EVERY phase (>= 2 s) >= 50 fps, ZERO seconds under 10 fps.** Root cause of the earlier 35.6 fps internet-upload phase (three
    0-fps seconds): the vendored Cloudflare engine posts each upload body as a JS string and `fetch()` encodes it on the main thread
@@ -79,6 +83,10 @@
    "lead should review" deviation is closed: the gate is the spec's 60 fps target with a 55/50 fps floor, not a relaxed one. The page weight in item 7
    below (earlier numbering) now counts the worker file: HTML + `cf-engine.js` gzip -9 + fonts, still <= 200 KB.
 8. **Flake fixed (test side).** In the full suite the two A6.4 cases after the saturated-WAN case could start while the runner's held WAN peak re-paused the internet leg,
-   giving score 99 and the (correct) "healthy" short-circuit although the evidence held the deny lines / failing probe. The cases now wait for the leg to stay open
-   for 25 s (`internet_leg_open`), the firewall lines go over TCP syslog, and a failed diagnosis case dumps its whole record to the artifacts. No guard was changed.
+   giving score 99 on the on-network leg alone and, at the time, the "healthy" short-circuit although the evidence held the deny lines / failing probe. The cases now wait
+   for the leg to stay open for 25 s (`internet_leg_open`), the firewall lines go over TCP syslog, and a failed diagnosis case dumps its whole record to the artifacts. No
+   guard was changed. *(Corrected 2026-11-20: this item called that short-circuit "the (correct) healthy short-circuit"; it was not correct for a paused leg and no
+   longer happens, see item 4. With a paused leg and a local-only score >= `none_score` only the internet-side rules run, so the deny lines still do not become
+   `policy_block` (they are local-side evidence, as with an ok leg and a high score) while a failing probe can give `network_wide`; the wait for an open, measured
+   (slow) leg therefore stays necessary for the `policy_block` case.)*
 

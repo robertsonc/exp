@@ -115,6 +115,7 @@
           "internet_unavailable",
           "internet_paused",
           "internet_queued",
+          "internet_off",
           "dns_fallback",
           "bytes_capped",
           "partial",
@@ -123,7 +124,7 @@
       },
       "maxItems": 16,
       "uniqueItems": true,
-      "description": "Bounded flag set: nat_suspected (identity failed closed), counters_disagree (> 20 % client/server byte mismatch), internet_unavailable / internet_paused / internet_queued (why the internet leg is not ok), dns_fallback (probe DNS used), bytes_capped (per-test byte cap reached), partial (a leg aborted), zone_hint_conflict."
+      "description": "Bounded flag set: nat_suspected (identity failed closed), counters_disagree (> 20 % client/server byte mismatch), internet_unavailable / internet_paused / internet_queued (why the internet leg is not ok), internet_off (the operator switched the internet leg off: speedtest config internet_leg.enabled=false; legs.internet is {status: unavailable} and set instead of internet_unavailable: not an outage), dns_fallback (probe DNS used), bytes_capped (per-test byte cap reached), partial (a leg aborted), zone_hint_conflict."
     },
     "comment": {
       "type": "string",

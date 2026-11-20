@@ -390,7 +390,8 @@ class Core:
         # ---- internet leg: what the page measured, with the box's own knowledge applied
         inet_in = legs_in.get("internet")
         leg_state, reason = self.internet.state()
-        if not cfg.internet_enabled:
+        internet_off = not cfg.internet_enabled            # the operator switched the leg off: not an outage
+        if internet_off:
             legs["internet"] = {"status": "unavailable"}
         elif inet_in is not None:
             colo = (inet_in.get("colo") or "").upper()
@@ -401,7 +402,7 @@ class Core:
             legs["internet"] = {"status": "queued"}
         inet = legs.get("internet")
         if inet is not None:
-            flag = _INET_FLAGS.get(inet["status"])
+            flag = "internet_off" if internet_off else _INET_FLAGS.get(inet["status"])
             if flag:
                 flags.add(flag)
             if inet["status"] == "skipped":

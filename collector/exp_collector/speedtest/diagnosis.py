@@ -9,8 +9,12 @@ section 5.3 table), each with the evidence it cites; ``user_text`` is one plain,
 ``noc_text`` names the evidence ("hallb-ap-12 ch 44/80 MHz, util 81 %, 74 clients; RSSI -61 dBm").
 
 * ``none`` only when the score is at or above ``none_score`` (default 80); then it is the only cause. If the internet
-  leg was not measured (status other than ok) every rule runs first; ``none`` (0.6, status-specific text) only if
-  none fires.
+  leg was not measured (status unavailable / paused / queued / skipped; flag ``internet_off`` comes with unavailable)
+  the score rests on the on-network leg alone: at or above ``none_score`` the venue network is known good, so only
+  the rules for the path beyond it run (``wan_saturation``, ``network_wide``, ``internet_path``); ``none`` (0.6,
+  status-specific text) if none fires. Below ``none_score`` every rule runs.
+* ``internet_off`` (the operator switched the internet leg off) is not an outage: the leg is "not measured", never
+  "the internet could not be reached".
 * A degraded test where no rule fires gets an empty cause list ("could not pinpoint"); ``cause`` is never invented.
 * Evidence with status ``unavailable`` / ``error`` is ignored. Evidence texts (AP names, SSIDs) are untrusted:
   control characters are removed and every text is clipped before it enters ``noc_text``.
@@ -49,11 +53,15 @@ USER_TEXT = {
     "network_wide": "It is not just you: nearby network checks show the same slowdown right now.",
 }
 USER_INTERNET_DOWN = "The venue network is working, but the internet could not be reached right now."
+USER_NETWORK_WIDE_DOWN = "It is not just you: the internet cannot be reached from the venue network right now."
+# "paused" covers both the automatic pause (busy WAN) and an admin pause: no reason travels in the result
 USER_INTERNET_UNMEASURED = {
-    "paused": "The venue network is working well. The internet check was paused because the event's internet link "
-              "is busy; try again in a few minutes.",
+    "paused": "The venue network is working well. The internet check is paused right now, so this result covers the "
+              "venue network only.",
     "queued": "The internet check was still waiting for its turn, so this result covers the venue network only.",
     "skipped": "The internet check was stopped before it finished, so this result covers the venue network only.",
+    "off": "The venue network is working well. The internet part is not tested at this event, so this result covers "
+           "the venue network only.",
     "unavailable": USER_INTERNET_DOWN,
 }
 USER_UNKNOWN = "Your speed is below target. We could not pinpoint a cause on the network."
@@ -105,6 +113,7 @@ class Ctx:
     targets: Mapping[str, float]
     th: Thresholds
     stage: str
+    local_good: bool = False                 # the (local-only) score says the on-network leg is fine
 
     # ---- legs ---------------------------------------------------------------------------------------------------
     @property
@@ -118,6 +127,12 @@ class Ctx:
     @property
     def internet(self) -> Mapping[str, Any]:
         return self.legs.get("internet") or {}
+
+    @property
+    def internet_off(self) -> bool:
+        """Flag ``internet_off``: the operator switched the internet leg off (not an outage)."""
+        flags = self.test.get("flags")
+        return isinstance(flags, (list, tuple, set, frozenset)) and "internet_off" in flags
 
     @property
     def score(self) -> int | None:
@@ -190,9 +205,12 @@ class Ctx:
         return None
 
     def local_known(self) -> bool:
-        return _num(self.local.get("down_mbps")) is not None or _num(self.local.get("up_mbps")) is not None
+        return self.local_good or _num(self.local.get("down_mbps")) is not None or \
+            _num(self.local.get("up_mbps")) is not None
 
     def local_slow(self) -> bool:
+        if self.local_good:
+            return False
         down, up = _num(self.local.get("down_mbps")), _num(self.local.get("up_mbps"))
         exp = self.expectation()
         frac = self.th.local_slow_pct / 100.0
@@ -460,7 +478,7 @@ def rule_internet_path(c: Ctx, wan_hit: Hit | None) -> Hit | None:
                f"is fine; WAN not saturated")
         return Hit("internet_path", _clamp(conf, hi=0.85), noc,
                    [_cite("legs", "internet.down_mbps"), _cite("legs", "local.down_mbps")])
-    if c.internet and c.internet.get("status") == "unavailable":
+    if c.internet and c.internet.get("status") == "unavailable" and not c.internet_off:
         return Hit("internet_path", 0.55, "internet leg could not run (unavailable) while the on-network leg is fine",
                    [_cite("legs", "internet.status")])
     return None
@@ -599,6 +617,16 @@ def rule_network_wide(c: Ctx) -> Hit | None:
 RULES: tuple[Callable[[Ctx], Hit | None], ...] = (
     rule_wifi_signal, rule_wifi_congestion, rule_wifi_roaming, rule_wired_port, rule_device_limit,
     rule_wan_saturation, rule_policy_block, rule_qos_shaping, rule_dns, rule_network_wide)
+# the rules for the path beyond the venue network (rule_internet_path runs after either set: it needs the WAN hit)
+INTERNET_RULES: tuple[Callable[[Ctx], Hit | None], ...] = (rule_wan_saturation, rule_network_wide)
+
+
+def _user_text(cause: str, internet_down: bool) -> str:
+    if internet_down and cause == "internet_path":
+        return USER_INTERNET_DOWN
+    if internet_down and cause == "network_wide":
+        return USER_NETWORK_WIDE_DOWN
+    return USER_TEXT[cause]
 
 
 def usable_evidence(evidence: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -622,18 +650,26 @@ def diagnose(test: Mapping[str, Any], evidence: Mapping[str, Mapping[str, Any]],
     score = ctx.score
     # internet_measured is False iff the internet leg exists and its status is not "ok" (unavailable / paused /
     # queued / skipped): the score then rests on the on-network leg alone and must not short-circuit to "healthy"
-    # (regressions: test_internet_down_is_not_healthy, test_unmeasured_internet_*)
+    # (regressions: test_internet_down_is_not_healthy, test_unmeasured_internet_*). internet_off (operator switch)
+    # is stored as status unavailable but is not an outage.
     istatus = str(ctx.internet.get("status", "ok")) if ctx.internet else "ok"
     internet_measured = not (ctx.internet and istatus != "ok")
-    internet_down = bool(ctx.internet) and istatus == "unavailable"
-    if score is not None and score >= th.none_score and internet_measured:
+    internet_off = ctx.internet_off and not internet_measured
+    internet_down = bool(ctx.internet) and istatus == "unavailable" and not internet_off
+    high = score is not None and score >= th.none_score
+    if high and internet_measured:
         conf = 0.9 if score >= 90 else 0.8
         return {"stage": stage, "updated": now_iso,
                 "cause": [{"id": "none", "confidence": conf, "cites": [_cite("legs", "score.total")]}],
                 "user_text": USER_TEXT["none"][:USER_MAX],
                 "noc_text": f"score {score}: no fault indicated"[:NOC_MAX]}
+    # internet leg not measured but a high (local-only) score: the venue network is known good, so only the rules for
+    # the path beyond it run; the local-side rules would judge a healthy test against band / port expectations
+    # (regressions: test_unmeasured_high_score_*)
+    local_only = high and not internet_measured
+    ctx.local_good = local_only
     hits: list[Hit] = []
-    for rule in RULES:
+    for rule in (INTERNET_RULES if local_only else RULES):
         h = rule(ctx)
         if h is not None:
             hits.append(h)
@@ -644,23 +680,29 @@ def diagnose(test: Mapping[str, Any], evidence: Mapping[str, Mapping[str, Any]],
     hits.sort(key=lambda h: (-h.conf, _PRIORITY[h.cause]))
     hits = hits[:8]
     cause = [{"id": h.cause, "confidence": h.conf, "cites": h.cites[:16]} for h in hits]
-    if not hits and not internet_measured and score is not None and score >= th.none_score \
-            and ctx.local_known() and not ctx.local_slow():
-        user = USER_INTERNET_UNMEASURED.get(istatus, USER_INTERNET_UNMEASURED["skipped"])
+    if not hits and local_only:
+        key = "off" if internet_off else istatus
+        user = USER_INTERNET_UNMEASURED.get(key, USER_INTERNET_UNMEASURED["skipped"])
+        label = "switched off (internet_off)" if internet_off else istatus
+        cites = [_cite("legs", "score.total"), _cite("legs", "internet.status")]
+        if internet_off:
+            cites.append(_cite("legs", "flags.internet_off"))
         return {"stage": stage, "updated": now_iso,
-                "cause": [{"id": "none", "confidence": 0.6,
-                           "cites": [_cite("legs", "score.total"), _cite("legs", "internet.status")]}],
+                "cause": [{"id": "none", "confidence": 0.6, "cites": cites}],
                 "user_text": user[:USER_MAX],
-                "noc_text": (f"internet leg {istatus}: local-only score {score}; on-network leg fine, "
-                             f"no rule fired on the {'legs' if stage == 'quick' else 'evidence'}")[:NOC_MAX]}
+                "noc_text": (f"internet leg {label}: local-only score {score}; on-network leg fine, no internet-side "
+                             f"rule fired on the {'legs' if stage == 'quick' else 'evidence'}")[:NOC_MAX]}
     if not hits:
         user = USER_PENDING_UNKNOWN if stage == "quick" else USER_UNKNOWN
         sc = "no score" if score is None else f"score {score}"
         return {"stage": stage, "updated": now_iso, "cause": [], "user_text": user,
                 "noc_text": f"{sc}: no rule fired on the {'legs' if stage == 'quick' else 'evidence'}"[:NOC_MAX]}
-    user = USER_INTERNET_DOWN if (hits[0].cause == "internet_path" and internet_down) else USER_TEXT[hits[0].cause]
-    if len(hits) > 1 and hits[1].conf >= 0.6 and len(user) + 1 + len(USER_TEXT[hits[1].cause]) <= USER_MAX:
-        user += " " + USER_TEXT[hits[1].cause]
+    user = _user_text(hits[0].cause, internet_down)
+    second = _user_text(hits[1].cause, internet_down) if len(hits) > 1 else ""
+    # never two sentences that both say the internet is unreachable (internet_path + network_wide while it is down)
+    dup = internet_down and {hits[0].cause, hits[1].cause if len(hits) > 1 else ""} == {"internet_path", "network_wide"}
+    if second and not dup and hits[1].conf >= 0.6 and len(user) + 1 + len(second) <= USER_MAX:
+        user += " " + second
     noc = " | ".join(f"{h.cause} ({h.conf:.2f}): {h.noc}" for h in hits[:3])
     return {"stage": stage, "updated": now_iso, "cause": cause, "user_text": clean(user, USER_MAX),
             "noc_text": clean(noc, NOC_MAX)}

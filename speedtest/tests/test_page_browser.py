@@ -189,6 +189,19 @@ def check_run(r: dict[str, Any], w: World) -> dict[str, Any]:
     return first
 
 
+ENGINE_PATH = "/st/assets/cf-engine.js"
+START_MS = 6000          # app.js EngineHost: a worker silent this long after start is replaced by the main-thread fallback
+
+
+def engine_start_ms(r: dict[str, Any]) -> float:
+    """ms from "Timing Cloudflare" (set just before the trace request and the engine start) to the engine's first phase
+    ("Timing Cloudflare <colo>", from the engine's own latency phase), from the page's phase-change timestamps."""
+    at = r["phaseTimes"]
+    t0 = next(t for t, v in at if v == "Timing Cloudflare")
+    t1 = next(t for t, v in at if v.startswith("Timing Cloudflare ") and t >= t0)
+    return t1 - t0
+
+
 def test_full_test_390(world: World):
     r = run_scenario(world, "full", {"correlate": True, "shotPre": "01-start-390-light", "midShot": "02-running-390-light",
                                      "shotResults": "03-results-390-light", "shotFinal": "04-final-390-light", "share": True, "shotShared": "05-shared-390-light",
@@ -196,8 +209,14 @@ def test_full_test_390(world: World):
                                      "timeout": 150000})
     first = check_run(r, world)
     # --- the internet engine ran in the dedicated worker (off the main thread), served by the box, with its own CSP
-    assert r["workers"] == [f"http://{HOST}/st/assets/cf-engine.js"], r["workers"]
-    assert any(u.endswith("/st/assets/cf-engine.js") for u in r["requests"])
+    assert r["workers"] == [f"http://{HOST}{ENGINE_PATH}"], r["workers"]
+    assert any(u.endswith(ENGINE_PATH) for u in r["requests"])
+    # ... and it never fell back to the main thread (a silent fallback would pass everything else here): every fallback path
+    # (no Worker, a worker error or 'fatal' before the first snapshot, START_MS of silence) inserts the same file as a classic
+    # <script src>, which stays in the DOM; and the engine's first phase came well before the silent-worker fallback could fire
+    assert first["scriptSrcs"] == [] and r["final"]["scriptSrcs"] == [], (first["scriptSrcs"], r["final"]["scriptSrcs"])
+    started_ms = engine_start_ms(r)
+    assert started_ms < START_MS * 2 / 3, f"the engine's first phase came {started_ms:.0f} ms after the internet leg started"
     # --- the engine really measured: server-recomputed score shown, every leg present
     sub = r["submissions"][-1]
     assert sub["status"] == 202 and sub["req"]["schema"] == "exp.speedtest.submission/1"
@@ -328,10 +347,22 @@ def test_internet_paused_by_the_network_team(tmp_path: Path):
 def test_internet_disabled_in_config(tmp_path: Path):
     w = World(tmp_path, cfg_over={"internet_leg": {"enabled": False}})
     try:
-        r = run_scenario(w, "full", {"timeout": 120000})
+        r = run_scenario(w, "full", {"timeout": 120000, "share": True, "shotResults": "42-internet-off"})
+        first = r["first"]
         assert "internet" not in r["submissions"][-1]["req"]["legs"]
-        assert r["first"]["legs"]["Cloudflare"]["small"] == "not enabled here"
+        assert first["legs"]["Cloudflare"]["small"] == "not enabled here"
         assert w.cf.app.snapshot()["stats"]["requests"] == 0
+        assert r["errors"] == [] and r["csp"] == [] and first["score"] not in ("0", "—")
+        assert "not available at this event" in (first["notice"] or ""), first["notice"]
+        # switched off by the operator is not an outage: the live result and the share link (stored result, flag internet_off)
+        # say so ("not tested at this event" in the note, "covers the venue network only" in the verdict), never "until the
+        # internet is back", and promise nothing that needs the internet
+        for snap in (first, r["shared"]):
+            v = snap["verdict"]
+            assert "venue network itself" in v and "covers the venue network only" in v and "internet is back" not in v, v
+            assert len(snap["goodFor"]) == 4 and all(x.endswith("(not checked)") for x in snap["goodFor"]), snap["goodFor"]
+            assert "not tested at this event" in snap["flags"] and "not available" not in snap["flags"], snap["flags"]
+        assert r["shared"]["score"] == first["score"]
     finally:
         w.stop()
 
@@ -360,8 +391,9 @@ def test_cloudflare_unreachable_is_unavailable_not_a_failure(tmp_path: Path):
         assert not any("/__results" in u for u in r["requests"])
         # the score rests on the venue network alone: no promise of calls/streaming, which need the internet
         assert "venue network itself" in first["verdict"] and "video calls" not in first["verdict"].lower(), first["verdict"]
-        assert "internet is back" in first["verdict"], first["verdict"]
+        assert "internet is back" in first["verdict"] and "not tested" not in first["verdict"], first["verdict"]
         assert len(first["goodFor"]) == 4 and all(x.endswith("(not checked)") for x in first["goodFor"]), first["goodFor"]
+        assert first["flags"].count("not available") == 1 and "not tested" not in first["flags"], first["flags"]
     finally:
         w.stop()
 
@@ -400,9 +432,11 @@ def test_full_test_without_workers_falls_back_to_the_main_thread(world: World):
     """No Worker available (init script deletes it): the same asset file runs as a classic script, the page still produces a
     complete result with comparable internet figures (the fake Cloudflare is the same 400/100 Mb/s link, 15 ms)."""
     r = run_scenario(world, "full", {"noWorker": True, "timeout": 150000})
-    check_run(r, world)
+    first = check_run(r, world)
     assert r["workers"] == []
-    assert sum(1 for u in r["requests"] if u.endswith("/st/assets/cf-engine.js")) == 1
+    assert sum(1 for u in r["requests"] if u.endswith(ENGINE_PATH)) == 1
+    # the opposite of test_full_test_390's worker-path proof: the fallback's classic script element is in the DOM, once
+    assert first["scriptSrcs"] == [ENGINE_PATH], first["scriptSrcs"]
     sub = r["submissions"][-1]
     assert sub["status"] == 202
     net = sub["req"]["legs"]["internet"]
@@ -412,3 +446,30 @@ def test_full_test_without_workers_falls_back_to_the_main_thread(world: World):
     assert net["idle_ms"] is not None and net["loaded_down_ms"] is not None
     # comparable to the worker path: same order of magnitude as the fake's configured link
     assert 10 < net["down_mbps"] < 1000 and 5 < net["up_mbps"] < 1000, net
+
+
+@pytest.mark.parametrize("mode", ["error_after_start", "fatal_after_snapshot", "fatal_before_snapshot"])
+def test_engine_worker_misbehaving_ends_the_leg_or_falls_back_once(world: World, mode: str):
+    """EngineHost robustness (CR-m6-speedtest-server item 26, follow-up 2026-11-20), with a scripted stand-in worker (init script,
+    ui/page_scenarios.js fakeWorker; its late events reach the handlers the page set, as events queued before terminate() would):
+    an error or a 'fatal' after the first snapshot ends the leg at once with that snapshot (one failure), the worker is terminated
+    and what it still sends never reaches the UI; a 'fatal' before any snapshot falls back to the main thread exactly once,
+    although a second 'fatal' and an error event follow it."""
+    r = run_scenario(world, "full", {"fakeWorker": mode, "timeout": 150000})
+    assert r["errors"] == [] and r["csp"] == [] and r["dialogs"] == []
+    fw, first = r["fakeWorker"], r["first"]
+    assert fw["made"] == 1 and fw["terminated"] == 1, fw
+    sub = r["submissions"][-1]
+    assert sub["status"] == 202
+    net = sub["req"]["legs"]["internet"]
+    if mode == "fatal_before_snapshot":
+        assert first["scriptSrcs"] == [ENGINE_PATH], first["scriptSrcs"]
+        assert sum(1 for u in r["requests"] if u.endswith(ENGINE_PATH)) == 1
+        assert net["status"] == "ok" and net["colo"] == "FRA" and net["down_mbps"] > 0 and net["up_mbps"] > 0, net
+        assert world.cf.app.snapshot()["stats"]["down"] > 0
+        return
+    assert first["scriptSrcs"] == [], first["scriptSrcs"]                  # ended, not fallen back
+    assert net["status"] == "ok" and net["down_mbps"] == 50 and net["up_mbps"] == 20 and net["failures"] == 1, net
+    assert fw["sentAfterTerminate"] >= 2, fw                               # the late phase + finish really arrived ...
+    assert not any("Internet upload" in p for p in r["phases"]) and first["phase"] == "Done", (r["phases"], first["phase"])
+    assert first["speeds"][2]["v"].startswith("50.0") and first["speeds"][3]["v"].startswith("20.0"), first["speeds"]

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-from .syslog_parse import ParsedLine
+from .syslog_parse import ParsedLine, envelope_host
 
 log = logging.getLogger(__name__)
 
@@ -50,20 +51,40 @@ _ANY_MAC_RE = re.compile(
     r"|(?<![0-9A-Fa-f.])" + _H + r"{4}(?:\." + _H + r"{4}){2}(?![0-9A-Fa-f.])|(?<![0-9A-Fa-f])" + _H + r"{12}(?![0-9A-Fa-f])")
 
 
+# the tail of a reverse-DNS name after one of its dotted-quad-looking label runs ("3.2.1.10.in-addr.arpa", ip6.arpa nibbles)
+_ARPA_TAIL = r"(?:\.[0-9A-Za-z]{1,3})*\.(?:in-addr|ip6)\.arpa\b"
+
+
 def _is_mac_spelling(t: str) -> bool:
     return any(r.match(t) for r in _MAC_SHAPES)
 
 
 def _mac_regex(t: str) -> re.Pattern[str]:
-    sep = ":" if ":" in t else "-" if "-" in t else "." if "." in t else ""
-    if not sep:
-        return re.compile("(?<![0-9A-Fa-f])" + re.escape(t) + "(?![0-9A-Fa-f])", re.IGNORECASE)
-    # a separator only joins a longer MAC when a hex digit sits beyond it ("addr:f0:18:.." is the device's own line); an octet-like
-    # pair glued to a word ("mac:", "addr:" ends in "r", "mac" ends in the hex pair "ac") is a word, not a 7th octet
-    s = re.escape(sep)
-    before = "(?<![0-9A-Fa-f])(?<!(?<![0-9A-Za-z])" + _H + "{2}" + s + ")"
-    after = "(?![0-9A-Fa-f])(?!" + s + "[0-9A-Fa-f])"
-    return re.compile(before + re.escape(t) + after, re.IGNORECASE)
+    """This device's MAC in one spelling. A 6-octet MAC embedded in a longer octet run is still this device's identifier (DHCPv6
+    DUID-LL/LLT, option-61 client-id ``01:<mac>``, netfilter ``MAC=<dst>:<src>:<type>``, ``<mac>:deauth``): a separator spelling only
+    must not be glued to another hex DIGIT on either side; the bare 12-hex spelling is a plain substring (bare DUIDs, client-ids)."""
+    if not any(c in t for c in ":-."):
+        return re.compile(re.escape(t), re.IGNORECASE)
+    return re.compile("(?<![0-9A-Fa-f])" + re.escape(t) + "(?![0-9A-Fa-f])", re.IGNORECASE)
+
+
+def _plain_ip(text: str | None) -> str | None:
+    if not text:
+        return None
+    try:
+        return str(ipaddress.ip_address(text.strip()))
+    except ValueError:
+        return None
+
+
+def _reversed_v4(ip: str | None) -> str | None:
+    p = _plain_ip(ip)
+    return ".".join(reversed(p.split("."))) if p and ipaddress.ip_address(p).version == 4 else None
+
+
+def _py_lower(text: object) -> object:
+    """SQL ``exp_lower(x)``: Python's Unicode lower-casing (SQLite's own lower() folds ASCII only, so 'BÜRO-PC' stayed 'bÜro-pc')."""
+    return text.lower() if isinstance(text, str) else text
 
 
 class RingError(Exception):
@@ -90,6 +111,7 @@ class Ring:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=NORMAL")
         db.execute("PRAGMA foreign_keys=OFF")
+        db.create_function("exp_lower", 1, _py_lower, deterministic=True)  # connection-local; never used in the schema
         db.executescript(_DDL)
         ver = db.execute("PRAGMA user_version").fetchone()[0]
         if ver == 0:
@@ -188,15 +210,17 @@ class Ring:
 
     def delete_mentions(self, tokens: Sequence[str], ip: str | None = None) -> int:
         """Delete the lines (ring or attached) that name a device by MAC spelling or hostname (the privacy scrub, A6.6): lines such as
-        DHCPDISCOVER carry no IP, so ``delete_ip`` never reaches them. Matching is boundary-checked, not a bare substring:
+        DHCPDISCOVER carry no IP, so ``delete_ip`` never reaches them. Matching is checked, not a bare substring, except where noted:
 
-        * a MAC token (colon, dash, dotted, bare) must not touch a longer run of hex/separator characters of its own spelling;
-        * any other token is a hostname: the whole name, case-insensitively, not preceded/followed by ``[0-9A-Za-z_-]``;
+        * a MAC token: the bare 12-hex spelling anywhere (plain substring); a colon/dash/dotted spelling wherever it is not glued to
+          another hex digit, also inside a longer octet run (DUID, client-id, netfilter ``MAC=``: still this device's identifier);
+        * any other token is a hostname: the whole name, case-insensitively (Unicode), not preceded/followed by ``[\\w-]``;
         * a line matched ONLY by the hostname is kept when it names another device (a MAC other than this device's, or an indexed IP
-          other than ``ip``): generic names ("iPhone") are shared by many devices.
+          other than ``ip``): generic names ("iPhone") are shared by many devices. An indexed IP that is the line's syslog header
+          HOSTNAME (the sender), the reversed form of ``ip`` or a label of an in-addr.arpa/ip6.arpa name names no device.
 
-        Tokens shorter than 3 characters are ignored. Bounded: one pass over the ring (<= max_rows lines) per call; the SQL LIKE
-        prefilter is parameterized and escaped, candidates are verified in Python."""
+        Tokens shorter than 3 characters are ignored. Bounded: one scan of the ring (<= max_rows lines) per token; the SQL LIKE
+        prefilter is parameterized and escaped, candidates are verified in Python and deleted in chunks in one transaction."""
         toks = list(dict.fromkeys(t.strip().lower() for t in tokens if isinstance(t, str) and len(t.strip()) >= 3))
         if not toks:
             return 0
@@ -204,20 +228,23 @@ class Ring:
         names = [t for t in toks if t not in mac_toks]
         own_macs = {re.sub(r"[^0-9a-f]", "", t) for t in mac_toks}
         mac_res = [_mac_regex(t) for t in mac_toks]
-        name_res = [re.compile(r"(?<![0-9A-Za-z_-])" + re.escape(t) + r"(?![0-9A-Za-z_-])", re.IGNORECASE) for t in names]
+        name_res = [re.compile(r"(?<![\w-])" + re.escape(t) + r"(?![\w-])", re.IGNORECASE) for t in names]
         with self._lock:
             db = self._conn()
             cand: dict[int, str] = {}
             for t in toks:
                 like = "%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-                for lid, raw in db.execute("SELECT id, raw FROM lines WHERE lower(raw) LIKE ? ESCAPE '\\'", (like,)):
+                # SQLite lower() folds ASCII only: a token with other letters ("büro-pc") is matched against the Python-lowered line
+                for lid, raw in db.execute("SELECT id, raw FROM lines WHERE lower(raw) LIKE ? ESCAPE '\\'" if t.isascii() else
+                                           "SELECT id, raw FROM lines WHERE exp_lower(raw) LIKE ? ESCAPE '\\'", (like,)):
                     cand[lid] = raw
             ids: list[int] = []
             for lid, raw in cand.items():
                 if any(r.search(raw) for r in mac_res):
                     ids.append(lid)
-                elif any(r.search(raw) for r in name_res) and not self._names_other_device(db, lid, raw, own_macs, ip):
+                elif any(r.search(raw.lower()) for r in name_res) and not self._names_other_device(db, lid, raw, own_macs, ip):
                     ids.append(lid)
+            log.debug("ring scrub: %d token(s), %d candidate line(s), %d deleted", len(toks), len(cand), len(ids))  # counts only
             return self._delete_ids(sorted(ids))
 
     @staticmethod
@@ -225,21 +252,26 @@ class Ring:
         for m in _ANY_MAC_RE.finditer(raw):
             if re.sub(r"[^0-9a-f]", "", m.group(0).lower()) not in own_macs:
                 return True
-        return any(r[0] != ip for r in db.execute("SELECT DISTINCT ip FROM ips WHERE line_id=?", (lid,)))
+        # parse_line's raw-format fallback indexes every dotted quad of the text: the header HOSTNAME (the sending router) and the
+        # labels of a reverse-DNS name ("3.2.1.10.in-addr.arpa" = this device's IP reversed) are not another device
+        no_device = {x for x in (_plain_ip(ip), _reversed_v4(ip), _plain_ip(envelope_host(raw))) if x}
+        for (x,) in db.execute("SELECT DISTINCT ip FROM ips WHERE line_id=?", (lid,)):
+            if x in no_device or re.search(r"(?<![0-9])" + re.escape(x) + _ARPA_TAIL, raw, re.IGNORECASE):
+                continue
+            return True
+        return False
 
     # ------------------------------------------------------------------------------------- reads
     def query(self, ip: str, t0: float, t1: float, kinds: Sequence[str] | None = None, limit: int = 1000) -> list[dict[str, Any]]:
-        """Lines mentioning `ip` with event time in [t0, t1], oldest first."""
+        """Lines mentioning `ip` with event time in [t0, t1], oldest first; `kinds` (optional) narrows to those kinds."""
+        if isinstance(kinds, str):
+            kinds = (kinds,)
+        kinds_arg = json.dumps([str(k) for k in kinds]) if kinds else None  # one bound JSON array: the SQL text stays constant
         sql = ("SELECT DISTINCT l.id,l.ts,l.src,l.fmt,l.kind,l.fields,l.raw FROM ips i JOIN lines l ON l.id=i.line_id "
-               "WHERE i.ip=? AND i.ts>=? AND i.ts<=?")
-        args: list[Any] = [ip, t0, t1]
-        if kinds:
-            sql += " AND l.kind IN (" + ",".join("?" * len(kinds)) + ")"
-            args += list(kinds)
-        sql += " ORDER BY l.ts, l.id LIMIT ?"
-        args.append(int(limit))
+               "WHERE i.ip=? AND i.ts>=? AND i.ts<=? AND (? IS NULL OR l.kind IN (SELECT value FROM json_each(?))) "
+               "ORDER BY l.ts, l.id LIMIT ?")
         with self._lock:
-            rows = self._conn().execute(sql, args).fetchall()
+            rows = self._conn().execute(sql, (ip, t0, t1, kinds_arg, kinds_arg, int(limit))).fetchall()
         return [{"id": r[0], "ts": r[1], "src": r[2], "fmt": r[3], "kind": r[4], "fields": json.loads(r[5]), "raw": r[6]} for r in rows]
 
     def dhcp_events(self, ip: str, t0: float, t1: float) -> list[dict[str, Any]]:

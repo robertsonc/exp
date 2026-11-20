@@ -425,6 +425,12 @@ def _split_envelope(line: str, now: float) -> tuple[str, dict[str, str], float |
     return s, {}, None, None, False
 
 
+def envelope_host(line: str) -> str | None:
+    """The HOSTNAME of a line's syslog header (RFC 5424, RFC 3164 or ISO-timestamp form) exactly as :func:`parse_line` reads it; None
+    without a header. The ring scrub needs it: the raw-format fallback of parse_line indexes this sender address like any dotted quad."""
+    return _split_envelope(clean(line, 16384).strip(), time.time())[3]
+
+
 def parse_line(line: str, now: float | None = None) -> ParsedLine:
     """Parse one syslog message (already decoded; any length - only the first MAX_RAW chars are kept raw)."""
     now = time.time() if now is None else now

@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from colhelpers import check_schema_file
+from exp_common import speedtest as st_helpers
 from sthelpers import evidence, fixture, healthy_result, iso_to_s, result, wifi
 
 from exp_collector.speedtest import diagnosis as dx
@@ -381,17 +382,26 @@ def test_dns_uses_the_probe_dns_line_when_the_leg_was_measured_by_the_probe(st):
 
 # ----------------------------------------------------------------- unmeasured internet leg (M6 p2)
 _UNMEASURED_TEXT = {
-    "paused": "internet check was paused",
+    "paused": "internet check is paused",
     "queued": "still waiting for its turn",
     "skipped": "stopped before it finished",
+    "off": "not tested at this event",
     "unavailable": "internet could not be reached",
 }
+# "off" = the box's shape for internet_leg.enabled=false: status unavailable + flag internet_off (not an outage)
+NOT_OK = ["paused", "queued", "skipped", "off", "unavailable"]
+TARGETS = {"down_mbps": 25.0, "up_mbps": 10.0}
+
+
+def _set_leg(t, status):
+    t["legs"]["internet"] = {"status": "unavailable" if status == "off" else status}
+    t["flags"] = ["internet_off"] if status == "off" else []
+    return t
 
 
 def _unmeasured(status):
     t = result(down=800.0, up=700.0, loaded=15.0, cv=0.0)
-    t["legs"]["internet"] = {"status": status}
-    t["flags"] = []
+    _set_leg(t, status)
     t["score"] = {"total": 99, "speed": 100, "responsiveness": 100, "stability": 100}
     return t
 
@@ -411,7 +421,7 @@ def _wan(t, util):
 import pytest  # noqa: E402
 
 
-@pytest.mark.parametrize("status", ["paused", "queued", "skipped", "unavailable"])
+@pytest.mark.parametrize("status", NOT_OK)
 def test_unmeasured_internet_wan_hot_is_wan_saturation(status):
     t = _unmeasured(status)
     d = dx.diagnose(t, {"wan": _wan(t, 90)}, None, {"down_mbps": 25.0, "up_mbps": 10.0}, Thresholds(), "final",
@@ -420,7 +430,7 @@ def test_unmeasured_internet_wan_hot_is_wan_saturation(status):
     check_text(d)
 
 
-@pytest.mark.parametrize("status", ["paused", "queued", "skipped", "unavailable"])
+@pytest.mark.parametrize("status", NOT_OK)
 def test_unmeasured_internet_wan_below_threshold_is_none_with_status_text(status):
     t = _unmeasured(status)
     d = dx.diagnose(t, {"wan": _wan(t, 82)}, None, {"down_mbps": 25.0, "up_mbps": 10.0}, Thresholds(), "final",
@@ -430,7 +440,8 @@ def test_unmeasured_internet_wan_below_threshold_is_none_with_status_text(status
     else:
         assert [c["id"] for c in d["cause"]] == ["none"] and d["cause"][0]["confidence"] == 0.6, d
         assert _UNMEASURED_TEXT[status] in d["user_text"], d
-        assert f"internet leg {status}: local-only score 99" in d["noc_text"]
+        label = "switched off (internet_off)" if status == "off" else status
+        assert f"internet leg {label}: local-only score 99" in d["noc_text"]
         assert {"kind": "legs", "ref": "internet.status"} in d["cause"][0]["cites"]
     assert "below target" not in d["user_text"]
     check_text(d)
@@ -442,3 +453,165 @@ def test_internet_ok_high_score_still_short_circuits():
     d = dx.diagnose(t, {"wan": _wan(t, 90)}, None, {"down_mbps": 25.0, "up_mbps": 10.0}, Thresholds(), "final",
                     "2026-01-01T00:00:00Z")
     assert [c["id"] for c in d["cause"]] == ["none"] and d["user_text"] == dx.USER_TEXT["none"]
+
+
+# ------------------------------------------- unmeasured internet leg with a high local-only score (M6 e2 follow-up)
+# A paused / queued / skipped / switched-off / unavailable internet leg with a local-only score of 100: the venue
+# network is known good, so the local-side rules (band / port expectations, policy, DNS) must not fire on it; only
+# the rules for the path beyond the venue network do (wan_saturation, network_wide, internet_path).
+def _wired_ok(t):
+    port = {"port_id": "ge-0/0/12", "up": True, "speed_mbps": 1000, "full_duplex": True, "rx_errors": 0, "tx_errors": 0}
+    return [evidence("wired", t, port=port), evidence("identity", t, wired=True)]
+
+
+def _wifi_no_signal(t):
+    w = wifi(t, rssi=-55, snr=40, util=30, clients=10)
+    w["data"]["client"].pop("rssi", None)
+    w["data"]["client"].pop("snr", None)
+    return [w]
+
+
+LOCAL_CASES = {
+    "a_wifi_5ghz_good": lambda t: [wifi(t, rssi=-55, snr=40, util=30, clients=10)],
+    "b_wired_1g_healthy": _wired_ok,
+    "c_policy_block_evidence": lambda t: [evidence("security", t)],
+    "d_wifi_without_rssi_snr": _wifi_no_signal,
+}
+LOCAL_SIDE = {"wifi_signal", "wifi_congestion", "wifi_roaming", "wired_port", "device_limit", "policy_block",
+              "qos_shaping", "dns"}
+
+
+def _local_only(status):
+    """Local 200/150 Mb/s, 15 ms loaded, cv 0 and the internet leg not measured: a local-only score of 100."""
+    t = _set_leg(result(down=200.0, up=150.0, loaded=15.0, cv=0.0), status)
+    t["score"] = st_helpers.compute_score(t["legs"])
+    assert t["score"]["total"] == 100, t["score"]
+    return t
+
+
+def _dx(t, evs, stage="final", baseline=None):
+    return dx.diagnose(t, {e["kind"]: e for e in evs}, baseline, TARGETS, Thresholds(), stage, "2026-01-01T00:00:00Z")
+
+
+def _ids(d):
+    return [c["id"] for c in d["cause"]]
+
+
+def _expect_unmeasured_none(d, status):
+    if status == "unavailable":                                          # a real outage: internet_path, not "none"
+        assert _ids(d) == ["internet_path"] and d["user_text"] == dx.USER_INTERNET_DOWN, d
+    else:
+        assert _ids(d) == ["none"] and d["cause"][0]["confidence"] == 0.6, d
+        assert d["user_text"] == dx.USER_INTERNET_UNMEASURED[status], d
+        assert _UNMEASURED_TEXT[status] in d["user_text"]
+    assert d["user_text"] not in (dx.USER_UNKNOWN, dx.USER_PENDING_UNKNOWN)
+    check_text(d)
+
+
+@pytest.mark.parametrize("case", sorted(LOCAL_CASES))
+def test_internet_ok_high_score_local_evidence_is_healthy(case):
+    """Control for the cases below: with a measured internet leg the same evidence reads healthy."""
+    t = result(down=200.0, up=150.0, loaded=15.0, i_down=400.0, i_up=200.0, i_loaded=15.0, cv=0.0)
+    assert t["score"]["total"] == 100
+    d = _dx(t, LOCAL_CASES[case](t))
+    assert _ids(d) == ["none"] and d["cause"][0]["confidence"] == 0.9, d
+
+
+@pytest.mark.parametrize("stage", ["quick", "final"])
+@pytest.mark.parametrize("status", NOT_OK)
+@pytest.mark.parametrize("case", sorted(LOCAL_CASES))
+def test_unmeasured_high_score_local_side_rules_do_not_fire(case, status, stage):
+    """Regression (a)-(d): paused gave device_limit 0.55 on good 5 GHz Wi-Fi, device_limit 0.5 (Wi-Fi text) on a
+    healthy 1 Gb/s port, policy_block 0.85 from the c0 deny evidence, and cause [] + "below target" at score 100."""
+    t = _local_only(status)
+    d = _dx(t, LOCAL_CASES[case](t), stage)
+    assert not LOCAL_SIDE & set(_ids(d)), d
+    _expect_unmeasured_none(d, status)
+
+
+@pytest.mark.parametrize("status", NOT_OK)
+@pytest.mark.parametrize("case", sorted(LOCAL_CASES))
+def test_unmeasured_high_score_wan_hot_is_wan_saturation_whatever_the_local_evidence(case, status):
+    t = _local_only(status)
+    d = _dx(t, LOCAL_CASES[case](t) + [_wan(t, 90)])
+    assert _ids(d)[0] == "wan_saturation" and "internet_path" not in _ids(d), d
+    assert not LOCAL_SIDE & set(_ids(d)), d
+    assert "internet link is very busy" in d["user_text"] and "WAN util 90 %" in d["noc_text"], d
+    check_text(d)
+
+
+@pytest.mark.parametrize("status", NOT_OK)
+@pytest.mark.parametrize("case", sorted(LOCAL_CASES))
+def test_unmeasured_high_score_wan_below_threshold_is_none(case, status):
+    t = _local_only(status)
+    d = _dx(t, LOCAL_CASES[case](t) + [_wan(t, 82)])
+    _expect_unmeasured_none(d, status)
+
+
+@pytest.mark.parametrize("status", NOT_OK)
+def test_unmeasured_low_score_still_runs_every_rule(status):
+    """Below none_score nothing changed: the local-side rules run (here device_limit on good Wi-Fi, slow local)."""
+    t = _set_leg(result(down=60.0, up=20.0), status)
+    t["score"] = st_helpers.compute_score(t["legs"])
+    assert t["score"]["total"] < 80, t["score"]
+    d = _dx(t, [wifi(t, rssi=-52, snr=40, util=30, clients=10, proto="n", power_saving=True, tx_rate=72.0)])
+    assert _ids(d)[0] == "device_limit", d
+
+
+# --------------------------------------------------------------------------- internet_off (operator switch)
+def test_internet_off_is_not_an_outage(st):
+    """internet_leg.enabled=false is stored as status unavailable + flag internet_off: the result covers the venue
+    network only; never "the internet could not be reached" (that is for flag internet_unavailable)."""
+    t = result(down=800.0, up=700.0, loaded=15.0, i_down=None, cv=0.0, flags=["internet_off"])
+    assert t["legs"]["internet"] == {"status": "unavailable"} and t["score"]["total"] >= 80
+    quick = st.ingest(t).json()["diagnosis"]                            # the schema accepts the flag
+    assert [c["id"] for c in quick["cause"]] == ["none"] and quick["cause"][0]["confidence"] == 0.6, quick
+    assert "not tested at this event" in quick["user_text"] and "could not be reached" not in quick["user_text"]
+    out = st.run(result(down=800.0, up=700.0, loaded=15.0, i_down=None, cv=0.0, flags=["internet_off"]), [])
+    d = out["diagnosis"]
+    assert d["stage"] == "final" and causes(out) == ["none"], d
+    assert "internet_off" in d["noc_text"] and {"kind": "legs", "ref": "flags.internet_off"} in d["cause"][0]["cites"]
+    check_text(d)
+
+
+def test_internet_off_low_score_does_not_blame_the_internet(st):
+    t = result(down=400.0, up=300.0, i_down=None, flags=["internet_off"])
+    assert t["score"]["total"] < 80, t["score"]
+    quick = st.ingest(t).json()["diagnosis"]
+    assert "internet_path" not in [c["id"] for c in quick["cause"]], quick
+    assert "could not be reached" not in quick["user_text"]
+    down = result(down=400.0, up=300.0, i_down=None, flags=["internet_unavailable"])  # control: a real outage
+    assert st.ingest(down).json()["diagnosis"]["cause"][0]["id"] == "internet_path"
+
+
+def test_paused_text_holds_for_an_admin_pause_too():
+    """status paused covers the automatic (busy WAN) and the admin pause; no reason travels in the result."""
+    txt = dx.USER_INTERNET_UNMEASURED["paused"]
+    assert "busy" not in txt and "try again" not in txt and "paused right now" in txt and "venue network only" in txt
+
+
+# ------------------------------------------------------------------- internet down + network_wide (A6.7 text)
+_FAILING_PROBE = {"probe": "core-tp0", "distance": "same_site", "severity": "fail",
+                  "lines": [{"key": "network", "state": "ok"}, {"key": "internet", "state": "fail"}]}
+
+
+@pytest.mark.parametrize("high", [True, False])
+def test_internet_down_with_network_wide_says_the_internet_cannot_be_reached(high):
+    if high:
+        t = result(down=800.0, up=700.0, loaded=15.0, i_down=None, cv=0.0, flags=["internet_unavailable"])
+    else:
+        t = result(down=400.0, up=300.0, i_down=None, flags=["internet_unavailable"])
+    assert (t["score"]["total"] >= 80) is high, t["score"]
+    d = _dx(t, [], baseline=_FAILING_PROBE)
+    assert _ids(d)[0] == "network_wide" and "internet_path" in _ids(d), d
+    assert d["user_text"].startswith(dx.USER_NETWORK_WIDE_DOWN) and "slowdown" not in d["user_text"], d
+    assert dx.USER_INTERNET_DOWN not in d["user_text"], d          # one "unreachable" sentence, not two
+    assert "internet" in (d["user_text"] + d["noc_text"]).lower()
+    check_text(d)
+
+
+@pytest.mark.parametrize("flags", [["internet_off"], []])
+def test_network_wide_text_unchanged_when_the_internet_is_not_down(flags):
+    t = result(down=400.0, up=300.0, i_down=None if flags else 8.0, flags=flags)
+    d = _dx(t, [], baseline=_FAILING_PROBE)
+    assert _ids(d)[0] == "network_wide" and d["user_text"].startswith(dx.USER_TEXT["network_wide"]), d

@@ -64,3 +64,27 @@ without the new blocks are unchanged. Existing OpenAPI operations are untouched.
 * `speedtest.yaml` covers `GET /st/assets/{name}` for fonts only by naming; the font files themselves are a WP-10 build item.
 * Diagnosis rule thresholds are the §5.3 defaults; their tuning knobs are not in `collector.config` yet (add by CR if needed).
 * The manager Worker/UI (`manager/`) does not yet implement the new admin routes or compile the new configs/creds (WP-11/WP-5).
+
+## Follow-up (2026-11-20): result flag `internet_off`
+
+* **Flag:** `internet_off`, added to the `exp.speedtest/1` `flags` enum (`shared/schemas/speedtest.schema.json`, enum and
+  description). Additive.
+* **Meaning:** the operator switched the internet leg off (speedtest config `internet_leg.enabled=false`; the slot API
+  answers `state unavailable`, `reason disabled`, unchanged). The result carries `legs.internet {status: "unavailable"}` and
+  `internet_off` **instead of** `internet_unavailable`, so "not tested at this event" is no longer indistinguishable from
+  an outage. `internet_unavailable` now means only that the leg could not run (outage). No new leg status.
+* **Who sets it:** the box (`speedtest/exp_speedtest/core.py`, result build: `not cfg.internet_enabled`). The page cannot set
+  flags (the submission schema is closed).
+* **Consumers:** collector diagnosis (`internet_off` -> the leg is "not measured", never `internet_path` from the leg
+  status; text "The internet part is not tested at this event, so this result covers the venue network only.", see
+  `CR-m6-collector.md` follow-up 2026-11-20); collector storage / query (flags stored and returned as given, no
+  enumeration); `shared/openapi/speedtest.yaml` `ResultAccepted.flags` (refers to the schema enum, no edit needed); dashboard
+  detail (`static/speedtest/detail.js` renders every flag generically as a chip, "internet off", no label map, no edit);
+  manager and `exp_common` (no enumeration of result flags, no edit); fixtures (no regeneration: the existing documents stay
+  valid); the page (`speedtest/page/src/app.js`: `internet_off` or the public config `internet_leg.enabled=false` -> a
+  venue-only verdict and the note "The internet part is not tested at this event.", never the outage sentence); the
+  flags list in `01-contracts.md` section 14 (added).
+* **Compatibility:** a box that sends `internet_off` needs a collector with this schema (ingest validates the closed enum
+  and would answer 400); both ship in the same release / all-in-one box. Stored results that carry `internet_unavailable`
+  for a switched-off leg (before this change) keep reading as an outage in the collector diagnosis and the dashboard; the
+  page reads them as switched off while the box's config says so (it checks the live config too).

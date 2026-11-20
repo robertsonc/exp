@@ -82,6 +82,11 @@ dns_slow_count, dns_cold_ms, policy_min_events, network_wide_age_s}`. All option
 
 ## Diagnosis: a test whose internet leg was not measured never reads "healthy" by default (p2)
 
+*(Corrected 2026-11-20: two statements below are no longer true and are superseded by the follow-up at the end of this
+file: "every rule runs" now holds only below `none_score` (at or above it only the internet-side rules run), and the
+paused text no longer names a busy link. The `unavailable` status now also has the operator-switched-off variant
+`internet_off`, which is not an outage.)*
+
 Defect: the healthy short-circuit (score >= `none_score` -> cause `none`) was skipped only for `legs.internet.status`
 "unavailable". "paused" (admin or EC-WAN auto-pause), "queued" and "skipped" also mean the score rests on the on-network leg
 alone, so e.g. WAN util 90 % -> auto-pause -> local-only score 99 -> `none`, and `wan_saturation` was never evaluated.
@@ -103,3 +108,57 @@ Fix (`speedtest/diagnosis.py`, thresholds unchanged):
 
 Tests: `test_st_diagnosis.py::test_unmeasured_internet_*` (4 statuses x WAN 90 / 82) and
 `test_internet_ok_high_score_still_short_circuits`.
+
+## Diagnosis follow-up (2026-11-20): a high local-only score runs only the internet-side rules; `internet_off`; texts
+
+Defects (reproduced on the p2 code, local 200/150 Mb/s, 15 ms loaded, cv 0 = local-only score 100):
+
+1. With the internet leg paused / queued / skipped every rule ran, so the local-side rules judged a healthy test against
+   the band / port expectations (200 Mb/s < 50 % of the 5/80 table value): good 5 GHz/80 MHz Wi-Fi (RSSI -55, SNR 40,
+   util 30 %, 10 clients) gave `device_limit` 0.55 (ok leg: `none` 0.9); a healthy 1 Gb/s full-duplex port with 0 errors
+   gave `device_limit` 0.5 with the Wi-Fi text to a wired user; the c0 `security.policy-block` evidence gave `policy_block`
+   0.85 (with an ok leg the healthy short-circuit hides it); Wi-Fi evidence without rssi/snr gave cause [] and "Your speed
+   is below target..." at score 100. The p2 fallback also required "local leg not slow", which the expectation table
+   vetoed.
+2. `internet_leg.enabled=false` (operator switched the leg off; slot reason `disabled`) was stored as
+   `legs.internet {status: unavailable}` + flag `internet_unavailable`, identical to an outage, so every test at a site that
+   does not test the internet read "the internet could not be reached right now".
+3. The paused text said the check was paused "because the event's internet link is busy"; status paused also covers the
+   admin pause (`pause_reason admin_pause`), and no reason travels in the result.
+4. Internet down with `network_wide` first read "nearby network checks show the same slowdown" for an outage.
+
+Fix (`speedtest/diagnosis.py`; no new cause id, no threshold change, the bounded `CAUSES` label set is unchanged):
+
+* **Not measured** = `legs.internet` present with status unavailable / paused / queued / skipped (`internet_off` is
+  stored as unavailable). **Internet down** = status unavailable AND flag `internet_off` absent.
+* Not measured and score >= `none_score`: the score says the venue network is good, so only the rules for the path
+  beyond it run: `wan_saturation`, `network_wide`, then `internet_path`, with the on-network leg taken as fine
+  (`Ctx.local_good`: known and not slow, so the band / port expectation cannot veto them). One fires -> those causes,
+  as before. None fires -> `none` 0.6 (cites `legs score.total`, `legs internet.status`, plus `legs flags.internet_off`
+  when switched off) with the status-specific text; this path never returns USER_UNKNOWN / USER_PENDING_UNKNOWN.
+  Local-side evidence (Wi-Fi, port, policy, QoS, DNS) is not turned into causes there, exactly as with a measured leg and a
+  high score; it stays in the record.
+* Score < `none_score` (or no score): every rule runs, unchanged.
+* `internet_path`'s "leg could not run" branch fires only when the internet is down (not for `internet_off`). Internet down
+  with no WAN fault keeps `internet_path` 0.55 + "The venue network is working, but the internet could not be reached right
+  now." (A6.7).
+* Texts: paused -> "The venue network is working well. The internet check is paused right now, so this result covers the
+  venue network only." (true for the WAN auto-pause and the admin pause); `internet_off` -> "The venue network is working
+  well. The internet part is not tested at this event, so this result covers the venue network only." (NOC: "internet leg
+  switched off (internet_off): local-only score N; ..."); internet down with `network_wide` as the first (or appended
+  second) cause -> "It is not just you: the internet cannot be reached from the venue network right now." Queued / skipped
+  texts unchanged.
+* e2e expectations kept, no e2e file changed: A6.4 paused leg during EC WAN 92.5 % -> `wan_saturation`, not
+  `internet_path`; A6.7 'internet' in user_text + noc_text. The A6.4 `policy_block` case still needs an open (measured) leg,
+  which `internet_leg_open` already waits for.
+
+Box side: `speedtest/exp_speedtest/core.py` sets `internet_off` instead of `internet_unavailable` when the leg is switched
+off (contract: `CR-m6-contracts.md` follow-up 2026-11-20).
+
+Tests (`collector/tests/test_st_diagnosis.py`): `test_unmeasured_high_score_local_side_rules_do_not_fire` (cases a-d x
+5 statuses incl. `off` x quick/final), `test_unmeasured_high_score_wan_hot_is_wan_saturation_whatever_the_local_evidence`
+(WAN 90), `test_unmeasured_high_score_wan_below_threshold_is_none` (WAN 82),
+`test_internet_ok_high_score_local_evidence_is_healthy` (control), `test_unmeasured_low_score_still_runs_every_rule`,
+`test_internet_off_is_not_an_outage`, `test_internet_off_low_score_does_not_blame_the_internet`,
+`test_paused_text_holds_for_an_admin_pause_too`, `test_internet_down_with_network_wide_says_the_internet_cannot_be_reached`,
+`test_network_wide_text_unchanged_when_the_internet_is_not_down`; the p2 `test_unmeasured_internet_*` now also cover `off`.

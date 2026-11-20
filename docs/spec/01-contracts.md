@@ -685,7 +685,8 @@ the *user-safe* view to the help desk.
   `legs.internet`, `legs.dns {cold_ms, warm_ms, resolver_ip, source browser|probe}`, `legs.path {gateway_ms, edge_ms,
   edge1_ms {idle, loaded, samples}, edge1_addr, device_icmp_ms}`, `client {ip, ua {os_family, os_version, browser,
   device_class}, connection_hint}`, `consent.text_version`, `zone` (+ `zone_source qr|subnet|mist|dhcp|unresolved`),
-  `flags[]` (`nat_suspected, counters_disagree, internet_unavailable, internet_paused, internet_queued, dns_fallback,
+  `flags[]` (`nat_suspected, counters_disagree, internet_unavailable, internet_paused, internet_queued, internet_off
+  (the operator switched the internet leg off; replaces internet_unavailable, CR-m6-contracts), dns_fallback,
   bytes_capped, partial, zone_hint_conflict`), `score {total, speed, responsiveness, stability}`, `comment` (≤ 500,
   control characters refused) and `observed {received_at, server_id, local_bytes_down, local_bytes_up, session_ms}`.
   Numbers: ≤ 100 Gb/s, durations ≤ 60 s. `client.ip` is optional in the schema (the privacy scrub and non-admin views remove it) but required at ingest.

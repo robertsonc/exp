@@ -104,7 +104,7 @@
     "source_file": "package/dist/speedtest.js",
     "license": "MIT",
     "license_file": "speedtest/page/vendor/LICENSE-cloudflare-speedtest.txt",
-    "note": "The unmodified built dist (ES module). speedtest/page/build.py wraps it in a function inside the single self-contained page; the page configures logAimApiUrl = null so nothing is posted to Cloudflare."
+    "note": "The unmodified built dist (ES module). speedtest/page/build.py wraps it in a function (verbatim, once) inside the separate engine file speedtest/exp_speedtest/static/assets/cf-engine.js (served as /st/assets/cf-engine.js; the page runs it in a dedicated worker, main-thread fallback: the same file as a classic script; CR-m6-speedtest-server item 26), not in index.html; the page configures logAimApiUrl = null so nothing is posted to Cloudflare."
    },
    {
     "name": "archivo-subset",

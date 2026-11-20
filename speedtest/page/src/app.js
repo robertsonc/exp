@@ -605,13 +605,14 @@
       if (S.slot) { S.slot = false; slotCall('release').catch(function () {}); }
     }
   }
-  // The vendored engine runs in a dedicated worker (/st/assets/cf-engine.js, CR-m6-speedtest-server item 9): its string upload
+  // The vendored engine runs in a dedicated worker (/st/assets/cf-engine.js, CR-m6-speedtest-server item 26): its string upload
   // bodies are encoded synchronously by fetch(), which on the main thread froze the animation. This object has the engine's
-  // callback/play/pause/results surface; if the worker cannot start (no Worker, error, silence for START_MS) the same file
-  // runs on the main thread as a classic script and the page produces the same result.
+  // callback/play/pause/results surface; if the worker cannot start (no Worker, error or 'fatal' before the first snapshot,
+  // silence for START_MS) the same file runs on the main thread as a classic script and the page produces the same result.
+  // Every end is terminal: the worker is terminated and nothing it still sends reaches the page.
   var ENGINE_URL = '/st/assets/cf-engine.js', START_MS = 6000;
   function EngineHost(cfg) {
-    var me = this, w = null, snap = null, started = false, timer = null, main = null, dead = false;
+    var me = this, w = null, snap = null, started = false, timer = null, main = null, dead = false, fell = false;
     me.isFinished = false; me.mode = 'worker';
     var noop = function () {};
     me.onPhaseChange = noop; me.onResultsChange = noop; me.onError = noop; me.onFinish = noop; me.onRunningChange = noop;
@@ -621,40 +622,51 @@
       getDownLoadedLatency: pick('ldown'), getUpLoadedLatency: pick('lup'), getDownloadBandwidthPoints: arr('dp'), getUploadBandwidthPoints: arr('upp'),
       getUnloadedLatencyPoints: arr('lp') };
     Object.defineProperty(me, 'results', { get: function () { return main ? main.results : wr; } });
+    function stopWorker() {
+      clearTimeout(timer);
+      if (w) { w.onmessage = null; w.onerror = null; try { w.terminate(); } catch (e) { /* ignore */ } w = null; }
+    }
+    // the leg ends now (onError when msg, then onFinish), once; later worker messages and engine callbacks are ignored
+    function end(msg) {
+      if (dead) return;
+      dead = true; stopWorker();
+      if (msg) me.onError(msg);
+      me.isFinished = true; me.onFinish();
+    }
     function toMain() {
-      if (dead || main) return;
-      if (w) { try { w.terminate(); } catch (e) { /* ignore */ } w = null; }
-      clearTimeout(timer); me.mode = 'main';
+      if (dead || fell) return;
+      fell = true;                        // set before anything else: a second trigger can never start a second engine
+      stopWorker(); me.mode = 'main';
       var sc = document.createElement('script');
       sc.src = ENGINE_URL;
       sc.onload = function () {
         if (dead) return;
-        try { main = new window.CFSpeedTest(cfg); } catch (e) { me.onError('engine'); me.isFinished = true; me.onFinish(); return; }
-        main.onPhaseChange = function (p) { me.onPhaseChange(p); }; main.onResultsChange = function (p) { me.onResultsChange(p); };
-        main.onError = function (m) { me.onError(m); }; main.onFinish = function () { me.isFinished = true; me.onFinish(); };
-        main.onRunningChange = function (r) { me.onRunningChange(r); };
-        main.play();
+        try { main = new window.CFSpeedTest(cfg); } catch (e) { end('engine'); return; }
+        main.onPhaseChange = function (p) { if (!dead) me.onPhaseChange(p); }; main.onResultsChange = function (p) { if (!dead) me.onResultsChange(p); };
+        main.onError = function (m) { if (!dead) me.onError(m); }; main.onFinish = function () { if (!dead) { me.isFinished = true; me.onFinish(); } };
+        main.onRunningChange = function (r) { if (!dead) me.onRunningChange(r); };
+        try { main.play(); } catch (e) { if (main.isRunning) me.onError('engine'); else end('engine'); }
       };
-      sc.onerror = function () { me.onError('engine script'); me.isFinished = true; me.onFinish(); };
+      sc.onerror = function () { end('engine script'); };
       document.head.appendChild(sc);
     }
     function onMsg(ev) {
       var m = ev.data;
-      if (!m || typeof m !== 'object' || dead) return;
+      if (!m || typeof m !== 'object' || dead || fell) return;
       if (m.t === 'started') { started = true; clearTimeout(timer); return; }
-      if (m.t === 'fatal') { if (!started || !snap) toMain(); else me.onError(m.msg); return; }
+      if (m.t === 'fatal') { if (!started || !snap) toMain(); else end(m.msg); return; }
       if (m.snap && typeof m.snap === 'object') snap = m.snap;
       if (m.t === 'phase') me.onPhaseChange({ measurement: { type: m.type } });
       else if (m.t === 'results') me.onResultsChange({ type: m.type });
       else if (m.t === 'error') me.onError(m.msg);
       else if (m.t === 'running') me.onRunningChange(!!m.running);
-      else if (m.t === 'finish') { me.isFinished = true; me.onFinish(); }
+      else if (m.t === 'finish') end(null);
     }
     me.play = function () {
       try {
         w = new Worker(ENGINE_URL);
         w.onmessage = onMsg;
-        w.onerror = function () { if (!started) toMain(); else { me.onError('worker'); me.isFinished = true; me.onFinish(); } };
+        w.onerror = function () { if (dead || fell) return; if (!started) toMain(); else end('worker'); };
         w.postMessage({ cmd: 'start', config: cfg });
         timer = setTimeout(function () { if (!started) toMain(); }, START_MS);
       } catch (e) { toMain(); }
@@ -662,7 +674,7 @@
     me.pause = function () {
       if (main) { main.pause(); return; }
       if (w) { try { w.postMessage({ cmd: 'pause' }); } catch (e) { /* ignore */ } }
-      dead = true; clearTimeout(timer); if (w) { try { w.terminate(); } catch (e) { /* ignore */ } w = null; }
+      dead = true; stopWorker();
     };
   }
   function runCloudflare(colo) {
@@ -815,25 +827,42 @@
     var i = legs && legs.internet, l = legs && legs.local;
     return (i && i.status === 'ok' && (i.down_mbps != null || i.up_mbps != null)) ? i : l;
   }
-  // the internet leg did not measure (unavailable / paused / queued / skipped): the score and the leg shown rest on the venue network
-  // alone, so the verdict and "good for" must not promise video calls or streaming, which need the internet
-  function inetUnmeasured(legs) { var i = legs && legs.internet; return !!(i && i.status && i.status !== 'ok'); }
-  function verdictFor(score, leg, tg, legs) {
+  // The operator switched the internet leg off (speedtest config internet_leg.enabled=false): not an outage. The box marks the
+  // stored result with the flag internet_off (instead of internet_unavailable); the public config says the same for a result
+  // built before the box's flags exist and for results stored before that flag (CR-m6-speedtest-server item 26, 2026-11-20).
+  function inetOff(flags) {
+    if (Array.isArray(flags) && flags.indexOf('internet_off') >= 0) return true;
+    return !!(S.cfg && S.cfg.internet_leg && S.cfg.internet_leg.enabled === false);
+  }
+  // 'ok' (measured), 'off' (switched off), 'unavailable' (could not run: an outage), 'unmeasured' (paused / queued / skipped),
+  // or 'absent' (no internet leg in an older stored result: judged on the leg shown, as before)
+  function inetState(r) {
+    var i = r && r.legs && r.legs.internet;
+    if (i && i.status === 'ok') return 'ok';
+    if (inetOff(r && r.flags)) return 'off';
+    if (!i || !i.status) return 'absent';
+    return i.status === 'unavailable' ? 'unavailable' : 'unmeasured';
+  }
+  // the internet leg did not measure: the score and the leg shown rest on the venue network alone, so the verdict and
+  // "good for" must not promise video calls or streaming, which need the internet
+  function inetUnmeasured(st) { return st === 'off' || st === 'unavailable' || st === 'unmeasured'; }
+  function verdictFor(score, leg, tg, st) {
     if (score == null) return 'We could not measure a speed this time.';
     var t = score.total, base;
-    if (inetUnmeasured(legs)) {
+    if (inetUnmeasured(st)) {
       base = t >= 80 ? 'The venue network itself is fast.' : t >= 60 ? 'The venue network itself is good; some things may feel slow.'
         : t >= 40 ? 'The venue network itself is usable, but slow.' : 'The venue network itself is struggling right now.';
-      return base + (legs.internet.status === 'unavailable' ? ' Online apps and calls will not work until the internet is back.'
-        : ' The internet part was not measured this time.');
+      return base + (st === 'off' ? ' This result covers the venue network only.'   // the flag note says why (not tested here)
+        : st === 'unavailable' ? ' Online apps and calls will not work until the internet is back.'
+          : ' The internet part was not measured this time.');
     }
     base = t >= 80 ? 'Great for video calls and streaming.' : t >= 60 ? 'Good for everyday use; some things may feel slow.' : t >= 40 ? 'Usable, but video calls may struggle.' : 'Your connection is struggling right now.';
     if (t >= 60 && leg && leg.up_mbps != null && leg.up_mbps < tg.up_mbps) base += ' Big uploads are slower right now.';
     return base;
   }
-  function goodFor(leg, tg, legs) {
+  function goodFor(leg, tg, st) {
     if (!leg) return [];
-    if (inetUnmeasured(legs)) return [['Video calls', 'na'], ['HD streaming', 'na'], ['Web and email', 'na'], ['Large uploads', 'na']];
+    if (inetUnmeasured(st)) return [['Video calls', 'na'], ['HD streaming', 'na'], ['Web and email', 'na'], ['Large uploads', 'na']];
     var d = leg.down_mbps, u = leg.up_mbps, lat = Math.max(leg.loaded_down_ms || 0, leg.loaded_up_ms || 0) || leg.idle_ms || 0;
     function lvl(good, mid) { return good ? 'ok' : (mid ? 'mid' : 'bad'); }
     return [['Video calls', lvl(d >= 5 && u >= 3 && lat <= 150, d >= 2 && u >= 1 && lat <= 300)], ['HD streaming', lvl(d >= 10, d >= 5)],
@@ -904,11 +933,14 @@
     var n = $('noteView'), c = view && typeof view.comment === 'string' && view.comment ? view.comment : (S.viewMode ? '' : S.note);
     n.hidden = !c; n.textContent = c ? 'Your note: ' + c : '';
   }
-  function renderFlags(flags) {
-    var notes = [], f = flags || [];
-    if (f.indexOf('internet_paused') >= 0) notes.push('The internet part of the test was paused by the network team.');
+  function renderFlags(flags, st) {
+    var notes = [], f = Array.isArray(flags) ? flags : [];
+    // paused covers both the operator's pause and the automatic WAN pause (no reason travels in the result)
+    if (f.indexOf('internet_paused') >= 0) notes.push('The internet part of the test was paused.');
     if (f.indexOf('internet_queued') >= 0) notes.push('The internet part of the test had to wait for a free slot and was skipped.');
-    if (f.indexOf('internet_unavailable') >= 0) notes.push('The internet part of the test was not available.');
+    // switched off: one note, never also the outage one (a result stored before internet_off carries internet_unavailable)
+    if (st === 'off') notes.push('The internet part is not tested at this event.');
+    else if (f.indexOf('internet_unavailable') >= 0) notes.push('The internet part of the test was not available.');
     if (f.indexOf('dns_fallback') >= 0) notes.push('Name-lookup timing is measured by the hall sensor, not by your device.');
     if (f.indexOf('nat_suspected') >= 0) notes.push('We could not be sure which device this was, so the network team will not match it to your Wi-Fi.');
     if (f.indexOf('bytes_capped') >= 0) notes.push('The test stopped early to protect the venue network.');
@@ -931,15 +963,15 @@
     }
     var parts = $('parts'); clear(parts);
     if (score) [['Speed', score.speed], ['Responsiveness', score.responsiveness], ['Stability', score.stability]].forEach(function (x) { parts.appendChild(el('span', 'part', x[0] + ' ' + x[1])); });
-    var leg = bestLeg(r.legs);
-    $('verdict').textContent = verdictFor(score, leg, tg, r.legs);
+    var leg = bestLeg(r.legs), st = inetState(r);
+    $('verdict').textContent = verdictFor(score, leg, tg, st);
     $('why').textContent = diag && diag.user_text ? diag.user_text : (opt.viewOnly ? '' : 'The network team is looking at the venue side of your test.');
-    renderFlags(r.flags);
+    renderFlags(r.flags, st);
     renderSpeeds(r, first && animate);
     var fine = !!(view && view.evidence && view.evidence.state !== 'pending');
     renderWaterfall(r, fine, first && animate);
     var gf = $('goodFor'); clear(gf);
-    goodFor(leg, tg, r.legs).forEach(function (x) {
+    goodFor(leg, tg, st).forEach(function (x) {
       var d = el('div', 'gf'); d.appendChild(icon(x[1] === 'ok' ? 'check' : x[1] === 'bad' ? 'cross' : 'dash', x[1]));
       d.appendChild(document.createTextNode(x[1] === 'na' ? x[0] + ' (not checked)' : x[0])); gf.appendChild(d);
     });
