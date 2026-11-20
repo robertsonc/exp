@@ -20,6 +20,23 @@
    "note": "2.9.x declares requires_python>=3.11 (upstream dropped 3.10 after its Oct 2026 EOL) but is pure Python; exp still supports Ubuntu 22.04 (python3.10, SPEC D7). 2.9.2 is vendored on 3.10 deliberately because it fixes GHSA-45c3-73f7-pv4m (crafted DNS reply -> CPU DoS in name decompression; reachable: the probe parses replies from resolvers on the untrusted event LAN). Guarded by the probe suite and an import-every-module smoke test on Python 3.10 in CI (packaging/tests via test/package). Revisit when 22.04 support ends."
   },
   {
+   "name": "dnspython",
+   "version": "2.9.2",
+   "kind": "wheel",
+   "component": "speedtest",
+   "arch": "noarch",
+   "file": "dnspython-2.9.2-py3-none-any.whl",
+   "sha256": "af15f7d385a6ae2fb35a796fde2138004c8c42c7389090e2addc83e3b3340fd8",
+   "license": "ISC",
+   "sources": [
+    {
+     "type": "url",
+     "url": "https://files.pythonhosted.org/packages/1e/0c/5346358b3a20275d256978c35203ddc2c8617f78c1b23795b79ba22ced6d/dnspython-2.9.2-py3-none-any.whl"
+    }
+   ],
+   "note": "Same pinned wheel as the probe's entry (one cache entry, identical sha256): exp-speedtest's DNS-leg authority (speedtest/exp_speedtest/dnsleg.py) parses and builds DNS messages with dnspython. It listens on the venue network (UDP/TCP 53 on serve.listen_ip), so the GHSA-45c3-73f7-pv4m fix in 2.9.2 matters here too. See the probe entry for the Python 3.10 note. pack.py refuses to build a component that imports dns without vendoring it."
+  },
+  {
    "name": "victoria-metrics",
    "version": "v1.106.1",
    "kind": "binary",
