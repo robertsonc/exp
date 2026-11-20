@@ -17,6 +17,10 @@ TimeoutStopSec=30
 LoadCredential=ingest_tokens.json:@CREDS@/ingest_tokens.json
 LoadCredential=dashboard_tokens.json:@CREDS@/dashboard_tokens.json
 LoadCredential=webhooks.json:@CREDS@/webhooks.json
+# M6 speedtest analytics: exps_ / expr_ token digests and the optional per-org device_key secret (empty when unused)
+LoadCredential=speedtest_tokens.json:@CREDS@/speedtest_tokens.json
+LoadCredential=runner_tokens.json:@CREDS@/runner_tokens.json
+LoadCredential=device_key_secret:@CREDS@/device_key_secret
 # /var/lib/exp/collector (records.db, tls/, vm/) and /run/exp/collector (health snapshot)
 StateDirectory=exp/collector
 StateDirectoryMode=0755

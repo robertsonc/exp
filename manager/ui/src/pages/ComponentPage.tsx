@@ -298,7 +298,7 @@ function RunnerView({ sc, comp, m, range, tz }: { sc: StatusComponent | undefine
   );
 }
 
-function SpeedtestView({ sc, comp, m, range, tz, site }: { sc: StatusComponent | undefined; comp: Component | undefined; m: ReturnType<typeof useMetrics>; range: ReturnType<typeof rangeFrom>; tz: string | null; site: string | undefined }): JSX.Element {
+function SpeedtestView({ sc, m, range, tz, site }: { sc: StatusComponent | undefined; m: ReturnType<typeof useMetrics>; range: ReturnType<typeof rangeFrom>; tz: string | null; site: string | undefined }): JSX.Element {
   const paused = metric(sc, 'internet_leg_paused');
   const url = typeof sc?.facts?.['url'] === 'string' ? (sc.facts['url'] as string) : null;
   return (
@@ -318,13 +318,12 @@ function SpeedtestView({ sc, comp, m, range, tz, site }: { sc: StatusComponent |
         </dl>
         {site ? <p><Link to={`/sites/${site}/speedtest`} class="btn btn-secondary">Open the site's speedtest settings</Link></p> : null}
         <p class="dim">Branding, consent text, zones, limits and signage are settings of the site. This component only reports its health: test results never reach the manager.</p>
-        {comp ? null : null}
       </Panel>
       <div class="range-bar"><h2 class="h2">Trends</h2><RangePicker value={range} /></div>
       <div class="charts">
         <MetricChart m={m} title="Tests per hour" range={range} tz={tz} fmt={f1} keys={[{ key: 'tests_per_hour', label: 'tests', color: '--exp-line-network' }, { key: 'rejected_per_hour', label: 'rejected', color: '--exp-line-apps' }]} />
         <MetricChart m={m} title="Active tests and queue" range={range} tz={tz} fmt={f1} keys={[{ key: 'active_tests', label: 'active', color: '--exp-line-internet' }, { key: 'queue_depth', label: 'queued', color: '--exp-line-dns' }]} />
-        <MetricChart m={m} title="On-network throughput (Gb/s, p95)" range={range} tz={tz} fmt={f1} keys={[{ key: 'local_leg_gbps_p95', label: 'Gb/s', color: '--exp-line-path' }]} />
+        <MetricChart m={m} title="On-network throughput (Gb/s, p95)" range={range} tz={tz} fmt={f1} keys={[{ key: 'local_leg_gbps_p95', label: 'Gb/s', color: '--exp-line-dhcp' }]} />
       </div>
     </>
   );
@@ -378,7 +377,7 @@ export function ComponentPage({ id, cid, me }: { id: string; cid: string; me?: M
         {comp.type === 'probe' ? <ProbeView cid={cid} sc={sc} m={m} range={range} tz={d.tz} /> : null}
         {comp.type === 'dashboard' ? <DashboardView sc={sc} comp={comp} m={m} range={range} tz={d.tz} /> : null}
         {comp.type === 'runner' ? <RunnerView sc={sc} comp={comp} m={m} range={range} tz={d.tz} /> : null}
-        {comp.type === 'speedtest' ? <SpeedtestView sc={sc} comp={comp} m={m} range={range} tz={d.tz} site={d.host.data?.site} /> : null}
+        {comp.type === 'speedtest' ? <SpeedtestView sc={sc} m={m} range={range} tz={d.tz} site={d.host.data?.site} /> : null}
       </div>
       ) : null}
     </>

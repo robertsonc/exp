@@ -376,3 +376,31 @@ table.plain thead th { color: var(--exp-text-dim); font-size: var(--exp-text-xs)
   .savebar { position: static; }
   .bars li { grid-template-columns: 5rem 1fr 2.5rem; }
 }
+
+/* ---- M6 speedtest settings ---------------------------------------------------------------------------------- */
+.st-preview { border-radius: var(--exp-radius-md); padding: var(--exp-space-3) var(--exp-space-4); margin-bottom: var(--exp-space-3); border: 1px solid var(--exp-stroke); max-width: 520px; }
+.st-preview-head { display: flex; align-items: center; gap: var(--exp-space-3); }
+.st-preview-logo { width: 40px; height: 40px; object-fit: contain; border-radius: 6px; }
+.st-preview-logo-ph { display: inline-flex; align-items: center; justify-content: center; border: 1px dashed currentColor; font-size: 10px; opacity: 0.7; }
+.st-preview-title { font-size: var(--exp-text-lg, 1.25rem); font-weight: var(--exp-weight-bold); overflow-wrap: anywhere; }
+.st-preview-body { display: flex; align-items: center; gap: var(--exp-space-3); margin-top: var(--exp-space-3); }
+.st-preview-btn { padding: 6px 18px; border-radius: 999px; font-weight: var(--exp-weight-bold); }
+.st-preview-accent { padding: 4px 12px; border-radius: 999px; border: 2px solid; font-size: var(--exp-text-sm); }
+.st-status { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--exp-space-4); }
+.file-btn { position: relative; cursor: pointer; }
+.file-btn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.file-btn:focus-within { outline: 2px solid var(--exp-focus, currentColor); outline-offset: 2px; }
+.plain-list { list-style: none; padding: 0; margin: var(--exp-space-2) 0; }
+.plain-list li { border-bottom: 1px solid var(--exp-stroke); padding: var(--exp-space-2) 0; }
+.consent-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; }
+.signage { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--exp-space-4); }
+.signage-card { margin: 0; padding: var(--exp-space-3); border: 1px solid var(--exp-stroke); border-radius: var(--exp-radius-md); text-align: center; background: #fff; color: #000; break-inside: avoid; }
+.signage-title { font-weight: var(--exp-weight-bold); font-size: 1.1rem; overflow-wrap: anywhere; }
+.signage-zone { font-size: 1.2rem; font-weight: var(--exp-weight-bold); margin: 4px 0; overflow-wrap: anywhere; }
+.signage-url { font-size: 0.75rem; overflow-wrap: anywhere; }
+.qr { width: 100%; max-width: 220px; height: auto; display: block; margin: 8px auto; }
+@media print {
+  body * { visibility: hidden; }
+  .signage, .signage * { visibility: visible; }
+  .signage { position: absolute; left: 0; top: 0; width: 100%; }
+}
