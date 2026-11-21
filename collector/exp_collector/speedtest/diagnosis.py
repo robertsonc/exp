@@ -11,8 +11,8 @@ section 5.3 table), each with the evidence it cites; ``user_text`` is one plain,
 * ``none`` only when the score is at or above ``none_score`` (default 80); then it is the only cause. If the internet
   leg was not measured (status unavailable / paused / queued / skipped; flag ``internet_off`` comes with unavailable)
   the score rests on the on-network leg alone: at or above ``none_score`` the venue network is known good, so only
-  the rules for the path beyond it run (``wan_saturation``, ``network_wide``, ``internet_path``); ``none`` (0.6,
-  status-specific text) if none fires. Below ``none_score`` every rule runs.
+  the rules for the path beyond it run (``wan_saturation``, ``qos_shaping``, ``network_wide``, ``internet_path``);
+  ``none`` (0.6, status-specific text) if none fires. Below ``none_score`` every rule runs.
 * ``internet_off`` (the operator switched the internet leg off) is not an outage: the leg is "not measured", never
   "the internet could not be reached".
 * A degraded test where no rule fires gets an empty cause list ("could not pinpoint"); ``cause`` is never invented.
@@ -617,8 +617,9 @@ def rule_network_wide(c: Ctx) -> Hit | None:
 RULES: tuple[Callable[[Ctx], Hit | None], ...] = (
     rule_wifi_signal, rule_wifi_congestion, rule_wifi_roaming, rule_wired_port, rule_device_limit,
     rule_wan_saturation, rule_policy_block, rule_qos_shaping, rule_dns, rule_network_wide)
-# the rules for the path beyond the venue network (rule_internet_path runs after either set: it needs the WAN hit)
-INTERNET_RULES: tuple[Callable[[Ctx], Hit | None], ...] = (rule_wan_saturation, rule_network_wide)
+# the rules for the path beyond the venue network (rule_internet_path runs after either set: it needs the WAN hit);
+# qos_shaping is the EdgeConnect shaper on the client's WAN flows (owner decision 2026-11-21, CR-m6-collector)
+INTERNET_RULES: tuple[Callable[[Ctx], Hit | None], ...] = (rule_wan_saturation, rule_qos_shaping, rule_network_wide)
 
 
 def _user_text(cause: str, internet_down: bool) -> str:

@@ -50,3 +50,20 @@ core/DC, plain HTTP by default, always anonymous, location by correlation) disag
    `Timing-Allow-Origin` present; no preflight for the library's own requests; `Server-Timing` `cfSpeed*` summed) are in
    `test/fixtures/cloudflare/README.md` and are binding for the page build.
 10. **Result id = session id** (`st_` + ULID); one session produces at most one stored test.
+
+## Owner decisions (2026-11-21, on PR #5)
+
+The four questions raised in the M6 PR were answered by the owner:
+
+1. **`internet_off` flag: accepted.** The box sets `internet_off` instead of `internet_unavailable` when the operator
+   switches the internet leg off (CR-m6-contracts follow-up 2026-11-20); dropping the internet leg from such results
+   was the rejected alternative.
+2. **`qos_shaping` is internet-side: accepted.** With an unmeasured internet leg and a high local-only score the
+   EdgeConnect shaper on the client's WAN flows is evaluated with `wan_saturation`, `network_wide` and `internet_path`
+   (implemented: CR-m6-collector follow-up 2026-11-21).
+3. **Scrub errs toward deletion: accepted.** The owner asked whether MAC randomization makes this moot. Recorded answer:
+   no. Per-SSID randomized MACs are stable for the length of an event, so within one network they still link a device's
+   AP/zone trail, DHCP, flows and firewall lines; wired, managed and older devices keep burned-in MACs; DHCP hostnames
+   often identify the person regardless. Randomization limits cross-network tracking, which is not what the scrub is for.
+4. **Auto-pause at 80 % vs `wan_saturation` above 85 %: accepted** as spec defaults (a test in the gap reads "internet
+   check paused, venue network fine", `none` at 0.6).

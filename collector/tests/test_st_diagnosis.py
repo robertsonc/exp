@@ -458,7 +458,7 @@ def test_internet_ok_high_score_still_short_circuits():
 # ------------------------------------------- unmeasured internet leg with a high local-only score (M6 e2 follow-up)
 # A paused / queued / skipped / switched-off / unavailable internet leg with a local-only score of 100: the venue
 # network is known good, so the local-side rules (band / port expectations, policy, DNS) must not fire on it; only
-# the rules for the path beyond the venue network do (wan_saturation, network_wide, internet_path).
+# the rules for the path beyond the venue network do (wan_saturation, qos_shaping, network_wide, internet_path).
 def _wired_ok(t):
     port = {"port_id": "ge-0/0/12", "up": True, "speed_mbps": 1000, "full_duplex": True, "rx_errors": 0, "tx_errors": 0}
     return [evidence("wired", t, port=port), evidence("identity", t, wired=True)]
@@ -477,8 +477,7 @@ LOCAL_CASES = {
     "c_policy_block_evidence": lambda t: [evidence("security", t)],
     "d_wifi_without_rssi_snr": _wifi_no_signal,
 }
-LOCAL_SIDE = {"wifi_signal", "wifi_congestion", "wifi_roaming", "wired_port", "device_limit", "policy_block",
-              "qos_shaping", "dns"}
+LOCAL_SIDE = {"wifi_signal", "wifi_congestion", "wifi_roaming", "wired_port", "device_limit", "policy_block", "dns"}
 
 
 def _local_only(status):
@@ -546,6 +545,36 @@ def test_unmeasured_high_score_wan_below_threshold_is_none(case, status):
     t = _local_only(status)
     d = _dx(t, LOCAL_CASES[case](t) + [_wan(t, 82)])
     _expect_unmeasured_none(d, status)
+
+
+def _shaped_flows(t):
+    fl = evidence("flows", t)
+    fl["data"]["counts"]["flows_firewall_dropped"] = 0
+    for f in fl["data"]["flows"]:
+        f["firewall_dropped"] = 0
+    fl["data"]["flows"][0].update(traffic_class=7, slow_duration=40, app_type="Bulk_Data_transfer")
+    return fl
+
+
+@pytest.mark.parametrize("stage", ["quick", "final"])
+@pytest.mark.parametrize("status", NOT_OK)
+@pytest.mark.parametrize("case", sorted(LOCAL_CASES))
+def test_unmeasured_high_score_qos_shaping_is_internet_side(case, status, stage):
+    """Owner decision 2026-11-21: the EdgeConnect shaper on the client's WAN flows is a cause beyond the venue network,
+    so it is evaluated with a high local-only score too (it used to be skipped there as local-side)."""
+    t = _local_only(status)
+    d = _dx(t, LOCAL_CASES[case](t) + [_shaped_flows(t)], stage)
+    assert "qos_shaping" in _ids(d) and "none" not in _ids(d), d
+    assert not LOCAL_SIDE & set(_ids(d)), d
+    assert "rate-limited" in d["user_text"] and "traffic class 7" in d["noc_text"], d
+    check_text(d)
+
+
+def test_internet_ok_high_score_hides_qos_shaping_as_before():
+    """Control: with a measured internet leg and score >= none_score the healthy short-circuit is unchanged (spec 5.3)."""
+    t = result(down=200.0, up=150.0, loaded=15.0, i_down=400.0, i_up=200.0, i_loaded=15.0, cv=0.0)
+    d = _dx(t, [_shaped_flows(t)])
+    assert _ids(d) == ["none"] and d["cause"][0]["confidence"] == 0.9, d
 
 
 @pytest.mark.parametrize("status", NOT_OK)

@@ -162,3 +162,15 @@ Tests (`collector/tests/test_st_diagnosis.py`): `test_unmeasured_high_score_loca
 `test_internet_off_is_not_an_outage`, `test_internet_off_low_score_does_not_blame_the_internet`,
 `test_paused_text_holds_for_an_admin_pause_too`, `test_internet_down_with_network_wide_says_the_internet_cannot_be_reached`,
 `test_network_wide_text_unchanged_when_the_internet_is_not_down`; the p2 `test_unmeasured_internet_*` now also cover `off`.
+
+### Follow-up 2026-11-21: `qos_shaping` counts as internet-side (owner decision)
+
+`diagnosis.INTERNET_RULES` is now `(rule_wan_saturation, rule_qos_shaping, rule_network_wide)` (+ `rule_internet_path`
+after either set). With an unmeasured internet leg (unavailable / paused / queued / skipped / `internet_off`) and a
+local-only score >= `none_score`, a client flow in `qos_limited_classes` with a TCP slow duration now yields
+`qos_shaping` instead of `none` at 0.6: the EdgeConnect shaper acts on the WAN path, beyond the venue network. The rule
+reads only EC evidence (flows, shaper alarms), never the internet-leg numbers, so it can fire on this path. Unchanged: with
+a measured internet leg and score >= `none_score` the healthy short-circuit still hides it (spec 5.3), and below
+`none_score` every rule runs. Tests: `test_unmeasured_high_score_qos_shaping_is_internet_side` (4 local evidence cases x
+5 statuses x quick/final; all 40 fail on the previous rule set) and `test_internet_ok_high_score_hides_qos_shaping_as_before`
+(control).
