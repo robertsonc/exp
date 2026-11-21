@@ -332,7 +332,7 @@ def test_full_test_390(world: World):
     assert r["contrast"]["checked"] > 40
 
 
-def local_leg_sane(sub: dict[str, Any], budget: int = 30_000_000) -> dict[str, Any]:
+def local_leg_sane(sub: dict[str, Any], budget: int = 30_000_000, counters: bool = True) -> dict[str, Any]:
     """The on-network figures of a complete run: both directions measured over loopback, loaded latency for both, a stability
     figure, bytes within the session budget and agreeing with the box's own counters (no counters_disagree flag)."""
     loc = sub["req"]["legs"]["local"]
@@ -340,7 +340,8 @@ def local_leg_sane(sub: dict[str, Any], budget: int = 30_000_000) -> dict[str, A
     assert loc["loaded_down_ms"] is not None and loc["loaded_up_ms"] is not None and 0 <= loc["loaded_down_ms"] < 5000, loc
     assert loc["cv"] is not None and loc["failures"] <= 2 and 0 < loc["bytes"] <= budget, loc
     assert loc["idle_ms"] is not None and loc["rpm"] > 0, loc
-    assert "counters_disagree" not in (sub["res"].get("flags") or []), sub["res"].get("flags")
+    if counters:      # off only under CDP link emulation: it throttles above TCP (see test_on_network_speed_matches_the_emulated_link)
+        assert "counters_disagree" not in (sub["res"].get("flags") or []), sub["res"].get("flags")
     return loc
 
 
@@ -586,8 +587,9 @@ def test_cancel_during_the_on_network_leg_stops_its_traffic(world: World, where:
 LINKS = {
     # A6.10's phone link, slower: with a 100 MB budget a direction ends on the spec's rule (a request >= 1 s, then 8 samples)
     "slow": {"downKbps": 40_000, "upKbps": 20_000, "latencyMs": 5},
-    # a fast LAN: the World's 30 MB budget (18 MB down / 12 MB up) runs out in ~0.4 s, before 8 post-ramp samples exist
-    "fast": {"downKbps": 400_000, "upKbps": 200_000, "latencyMs": 2},
+    # a fast LAN: the World's 30 MB budget (18 MB down / 12 MB up) runs out in ~1 s, before 8 post-ramp samples exist. 150, not
+    # 400: a GitHub runner delivered only ~256 Mb/s through CDP at a nominal 400 (CPU-bound), so the link was not what was measured
+    "fast": {"downKbps": 150_000, "upKbps": 75_000, "latencyMs": 2},
 }
 
 
@@ -600,14 +602,20 @@ def test_on_network_speed_matches_the_emulated_link(tmp_path: Path, link: str, b
     within +-20 % of it. "slow": the spec's p90 of post-ramp 250-ms samples (the direction ends on the ramp rule, far below the
     budget). "fast": the budget ends each direction in ~0.4 s; before item 27 the figure was budget / one 250-ms bin (18 MB ->
     576 Mb/s, 12 MB -> 384 Mb/s whatever the link) or the drain tail; now it is bytes / duration of the steady window. The
-    internet leg is off (it is not what this measures, and it would share the emulated link). Displayed == submitted, the box's
-    counters agree, and the worker's own result says which estimator ran (a passthrough listener on the real worker). The
+    internet leg is off (it is not what this measures, and it would share the emulated link). Displayed == submitted, and the
+    worker's own result says which estimator ran (a passthrough listener on the real worker). Byte counters: CDP throttles
+    delivery INSIDE the browser, above TCP, so the box (which books what it put on the connection) legitimately counts more
+    download bytes than reached JavaScript when a direction ends by aborting its in-flight requests (box 34.3 MB vs page 23.4 MB
+    on the slow link): uploads must agree within the 20 % cross-check, downloads must show box >= page (before item 28 the box
+    LOST the unfinished 8-MiB sendfile segment of every aborted download and counted 18.2 MB < 23.4 MB). The old estimator's
+    fast-link artifact itself (budget / one bin) is pinned deterministically by tests/js/local_leg_units.js. The
     main-thread fallback runs the same file on the slow link: at 400 Mb/s the main thread itself is the bottleneck (the reason
     the transfer moved to a worker), which is not what this measures. Before item 27 the slow upload read ~+28 % (the p90 of
     250-ms samples counted from ~100-ms upload progress lumps) and the fast download ~-45 % (one drain-tail sample)."""
     w = World(tmp_path, cfg_over={"limits": {"bytes_local": budget}, "internet_leg": {"enabled": False}})
     try:
         r = run_scenario(w, "full", {"throttle": LINKS[link], "noWorker": mode == "main", "spyLocal": True, "timeout": 120000})
+        stored = [t.doc for t in w.box.fake.app.tests.values()]
     finally:
         w.stop()
     assert r["errors"] == [] and r["csp"] == [] and r["dialogs"] == [], (r["errors"], r["csp"])
@@ -615,7 +623,14 @@ def test_on_network_speed_matches_the_emulated_link(tmp_path: Path, link: str, b
     sub = r["submissions"][-1]
     assert sub["status"] == 202
     same_numbers(r["first"], sub)
-    loc = local_leg_sane(sub, budget)
+    loc = local_leg_sane(sub, budget, counters=False)
+    obs = stored[-1].get("observed") or {}
+    done = (r.get("localSpy") or {}).get("done") or []
+    if len(done) == 2:       # the transfer worker reports each direction (the main-thread fallback has no spy: totals only)
+        page_down, page_up = done[0]["bytes"], done[1]["bytes"]
+        assert obs["local_bytes_down"] >= page_down, (obs, page_down)        # the box cannot have sent less than arrived
+        assert not st.counters_disagree(page_up, obs["local_bytes_up"]), (obs, page_up)
+    assert obs["local_bytes_down"] + obs["local_bytes_up"] >= 0.97 * loc["bytes"], (obs, loc["bytes"])
     want_down, want_up = LINKS[link]["downKbps"] / 1000, LINKS[link]["upKbps"] / 1000
     got = {"down": loc["down_mbps"], "up": loc["up_mbps"], "bytes": loc["bytes"], "cv": loc["cv"], "spy": r["localSpy"]}
     print(f"\n[{link}/{mode}] local {got}")

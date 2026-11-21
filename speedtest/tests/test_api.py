@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import base64
 import json
+import socket
+import struct
 import time
 
 import oas
@@ -264,6 +266,35 @@ def test_down_returns_exact_bytes_and_counts_them(box: Box):
     assert r.h("content-type") == "application/octet-stream" and int(r.h("content-length")) == 2_500_000
     assert len(set(r.body[i:i + 4096] for i in range(0, 200000, 4096))) > 40, "the payload is not trivially repetitive"
     assert box.core._sessions[s.sid].bytes_down == 2_500_000
+
+
+def test_aborted_download_still_books_the_bytes_it_sent(box: Box):
+    """Every on-network direction ends by aborting the requests still in flight. socket.sendfile raises when the client goes
+    away mid-segment (SEG_BYTES = 8 MiB) and its own count is lost with the exception; the bytes it had already sent must still
+    be booked (CR-m6-speedtest-server item 28). Before, the whole unfinished segment vanished from the session counter (and the
+    byte budget), so the box counted LESS than the client provably received and the counters cross-check flagged good runs."""
+    s = box.new_session()
+    total = 0
+    # five aborts: each request starts at a random payload offset, so a short first segment can end before the abort and hide
+    # the loss once; five in a row cannot (the old code booked only the completed segments)
+    for _ in range(5):
+        sock = socket.create_connection(("127.0.0.1", box.http_port), timeout=10)
+        try:
+            sock.sendall(f"GET /st/down?bytes=20000000 HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Exp-Leg-Token: {s.leg_token}\r\n\r\n"
+                         .encode())
+            got = 0
+            while got < 3_000_000:
+                chunk = sock.recv(65536)
+                assert chunk, f"connection closed after {got} bytes"
+                got += len(chunk)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))   # abrupt close (RST): an aborted fetch
+        finally:
+            sock.close()
+        total += got
+        assert wait_for(lambda: box.core.transfers_active == 0, 10), "the aborted transfer did not end"
+    booked = box.core._sessions[s.sid].bytes_down
+    # the box put at least what the client read (minus the ~200-byte headers) on the connections, and at most a segment more each
+    assert total - 5 * 4096 <= booked <= total + 5 * 8 * 1024 * 1024, (total, booked)
 
 
 def test_down_payload_is_incompressible(box: Box):
