@@ -1,4 +1,5 @@
-"""Install each release tarball into an ubuntu:24.04 systemd container the way the agent would
+"""Install each release tarball into a systemd container (ubuntu:24.04 and debian:12, the 64-bit Raspberry Pi OS
+userland; EXP_PACKAGE_OS=debian:12 limits the matrix) the way the agent would
 (unpack to /opt/exp/<c>/<version>, render unit templates by placeholder substitution, daemon-reload) and
 assert the end state: `exp-<c> version` prints the version, `selftest` passes, `health --json` emits valid
 exp.health/1 JSON, and every unit passes `systemd-analyze verify`.
@@ -27,7 +28,9 @@ REPO = Path(__file__).resolve().parents[2]
 BUILD = REPO / "packaging" / "build.sh"
 SCHEMAS = REPO / "shared" / "schemas"
 DOCKERFILE = Path(__file__).resolve().parent / "Dockerfile.systemd"
-IMAGE = "exp-pkg-systemd:24.04"
+# base image -> local tag of the systemd image built from Dockerfile.systemd (--build-arg BASE=<base>)
+IMAGES = {"ubuntu:24.04": "exp-pkg-systemd:24.04", "debian:12": "exp-pkg-systemd:debian12"}
+OSES = [o.strip() for o in os.environ.get("EXP_PACKAGE_OS", ",".join(IMAGES)).split(",") if o.strip()]
 COMPONENTS = ["agent", "probe", "collector", "dashboard", "runner", "speedtest"]
 ARCH = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine(), "")
 STRICT = os.environ.get("EXP_PACKAGE_STRICT") == "1"
@@ -81,19 +84,23 @@ def _docker_ok() -> str:
     return "" if r.returncode == 0 else "docker daemon unavailable: " + (r.stderr.strip()[-200:] or "docker info failed")
 
 
-@pytest.fixture(scope="session")
-def host() -> str:
-    """A running systemd container (name). Skips with the exact reason if one cannot run here."""
+@pytest.fixture(scope="session", params=OSES, ids=lambda o: o.replace(":", ""))
+def host(request) -> str:
+    """A running systemd container (name), one per OS in OSES. Skips with the exact reason if one cannot run here."""
     why = _docker_ok()
     if why:
         pytest.skip(why)
-    if sh(["docker", "image", "inspect", IMAGE], timeout=30).returncode != 0:
-        r = sh(["docker", "build", "-q", "-t", IMAGE, "-f", str(DOCKERFILE), str(DOCKERFILE.parent)], timeout=900)
+    base = request.param
+    assert base in IMAGES, "EXP_PACKAGE_OS: unknown OS %r (known: %s)" % (base, ", ".join(IMAGES))
+    image = IMAGES[base]
+    if sh(["docker", "image", "inspect", image], timeout=30).returncode != 0:
+        r = sh(["docker", "build", "-q", "--build-arg", "BASE=" + base, "-t", image, "-f", str(DOCKERFILE),
+                str(DOCKERFILE.parent)], timeout=900)
         if r.returncode != 0:
-            pytest.skip("cannot build %s: %s" % (IMAGE, r.stderr.strip()[-300:]))
+            pytest.skip("cannot build %s: %s" % (image, r.stderr.strip()[-300:]))
     name = "exp-pkg-%s" % uuid.uuid4().hex[:8]
     r = sh(["docker", "run", "-d", "--name", name, "--hostname", name, "--privileged", "--cgroupns=host",
-            "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw", "--tmpfs", "/run", "--tmpfs", "/run/lock", IMAGE], timeout=120)
+            "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw", "--tmpfs", "/run", "--tmpfs", "/run/lock", image], timeout=120)
     if r.returncode != 0:
         pytest.skip("cannot start a privileged systemd container: " + r.stderr.strip()[-300:])
     try:

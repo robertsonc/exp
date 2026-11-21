@@ -62,23 +62,29 @@ def docker_unavailable_reason() -> str | None:
 _image_cache: dict[str, str | None] = {}
 
 
+def base_image(os_key: str) -> str:
+    """The base image ref for an OS key: "24.04"/"22.04" (Ubuntu, the historic keys) or "debian12"."""
+    m = re.fullmatch(r"debian:?(\d+)", os_key)
+    return f"debian:{m.group(1)}" if m else f"ubuntu:{os_key}"
+
+
 def ensure_image(ubuntu: str) -> str | None:
-    """Build exp-agent-systemd:<ubuntu>. Returns None on success, else the reason it cannot be built."""
+    """Build exp-agent-systemd:<os key> (`ubuntu` is an OS key, see base_image). Returns None on success,
+    else the reason it cannot be built."""
     tag = f"exp-agent-systemd:{ubuntu}"
     if tag in _image_cache:
         return _image_cache[tag]
+    base = base_image(ubuntu)
     reason: str | None = None
     try:
         r = sh(
-            ["docker", "build", "-q", "--build-arg", f"UBUNTU={ubuntu}", "-t", tag, str(HERE)],
+            ["docker", "build", "-q", "--build-arg", f"BASE={base}", "-t", tag, str(HERE)],
             timeout=900,
         )
         if r.returncode != 0:
-            reason = (
-                f"cannot build the ubuntu:{ubuntu} systemd image: {(r.stderr or r.stdout).strip()[-300:]}"
-            )
+            reason = f"cannot build the {base} systemd image: {(r.stderr or r.stdout).strip()[-300:]}"
     except subprocess.TimeoutExpired:
-        reason = f"building the ubuntu:{ubuntu} systemd image timed out"
+        reason = f"building the {base} systemd image timed out"
     _image_cache[tag] = reason
     return reason
 

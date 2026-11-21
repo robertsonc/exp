@@ -6,7 +6,7 @@ Specs: `SPEC.md` section 9, `docs/spec/01-contracts.md` sections 9-11, `docs/spe
 
 ## Manual install (M1, no manager)
 
-Install the data spine (probe, collector, dashboard) on Ubuntu 22.04/24.04 hosts from the signed release tarballs and
+Install the data spine (probe, collector, dashboard) on Ubuntu 22.04/24.04 or Debian 12 (incl. 64-bit Raspberry Pi OS) hosts from the signed release tarballs and
 config files you write yourself. `test/harness/install-manual.sh` does exactly what `exp-agent` would do (and the
 M1 acceptance suite, `test/e2e/m1/`, runs it against the container LAN in `test/harness/`), so a manual install
 and a managed one end up with the same layout.

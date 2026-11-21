@@ -2,7 +2,9 @@
 
 ## 1. Platforms and sizing
 
-Hosts: Ubuntu 22.04 / 24.04 LTS, amd64 or arm64, systemd, python3 ≥ 3.10, NTP active.
+Hosts: Ubuntu 22.04 / 24.04 LTS or Debian 12 (including 64-bit Raspberry Pi OS bookworm on Raspberry Pi 4/5),
+amd64 or arm64, systemd, python3 ≥ 3.10, NTP active. 32-bit (armv7l) Raspberry Pi OS and Debian 11 are not
+supported (CR-pi-debian12).
 
 | Shape | Minimum | Notes |
 |---|---|---|

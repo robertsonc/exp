@@ -66,7 +66,7 @@ environment-protected secret written to `$RUNNER_TEMP` (see `.github/workflows/r
 
 `vendor.lock` pins, per item, a **version and the sha256 of the file that is used**:
 
-* `dnspython 2.9.2` pure-Python wheel from PyPI (probe) → unpacked into `vendor/`. 2.9.x declares Python ≥ 3.11; it is vendored on 3.10 (Ubuntu 22.04) on purpose to fix GHSA-45c3-73f7-pv4m, guarded by a 3.10 import smoke test — see the note in `vendor.lock`.
+* `dnspython 2.9.2` pure-Python wheel from PyPI (probe) → unpacked into `vendor/`. 2.9.x declares Python ≥ 3.11; it is vendored on 3.10 (Ubuntu 22.04) on purpose to fix GHSA-45c3-73f7-pv4m, guarded by a 3.10 import smoke test — see the note in `vendor.lock`. The caveat is Ubuntu 22.04 only: Debian 12 (and 64-bit Raspberry Pi OS bookworm) ships python3.11 and Ubuntu 24.04 python3.12, both inside dnspython's declared range.
 * `VictoriaMetrics v1.106.1` `victoria-metrics-prod` for linux/amd64 and linux/arm64 (collector).
   The canonical `sha256` is the binary inside the **upstream GitHub release archive**
   (`victoria-metrics-linux-<arch>-v1.106.1.tar.gz`; the archive hash is pinned too as `archive_sha256`);
@@ -159,7 +159,8 @@ Rotate (scheduled, or immediately on suspected exposure):
   the real pinned artifacts.
 * `test_install.py` (marker `harness`; needs Docker with privileged containers) - for each component tarball
   (from `$EXP_DIST_DIR`, else built `--unsigned` into a tmp dir): unpack to `/opt/exp/<c>/<v>` in an
-  ubuntu:24.04 systemd container (image from `Dockerfile.systemd`), render the unit templates by placeholder
+  ubuntu:24.04 and a debian:12 systemd container (image from `Dockerfile.systemd`, `--build-arg BASE=<image>`;
+  `EXP_PACKAGE_OS=debian:12` limits the matrix; CI also runs the debian:12 case on an arm64 runner), render the unit templates by placeholder
   substitution, `systemctl daemon-reload`, then assert `exp-<c> version` prints the version, `selftest`
   passes (with the fixture config, empty credential files and a generated TLS pair that the agent would
   provision), `health --json` is valid `exp.health/1`, and every unit passes `systemd-analyze verify`.

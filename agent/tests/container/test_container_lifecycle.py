@@ -1,6 +1,6 @@
 """06-agent.md section 9 items 1, 5, 6, 7 (decommission) and 9 on a real systemd host.
 
-One host per Ubuntu release, tests run in order (the host's state carries over):
+One host per OS in the matrix (Ubuntu 22.04, 24.04, Debian 12), tests run in order (the host's state carries over):
 install.sh -> repair -> re-enrol -> a component converges -> manager down -> self-update ->
 rollback timer -> decommission -> journal scan.
 """
@@ -37,7 +37,7 @@ class State:
 
 
 @pytest.fixture(scope="module")
-def st(host) -> State:  # depends on `host`: a fresh State for every Ubuntu release
+def st(host) -> State:  # depends on `host`: a fresh State for every OS in the matrix
     return State()
 
 

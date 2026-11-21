@@ -178,7 +178,7 @@ jobs:
           retention-days: 3
 
   package-install:
-    # The built tarballs installed into ubuntu:24.04 systemd containers (test/package/test_install.py).
+    # The built tarballs installed into ubuntu:24.04 and debian:12 systemd containers (test/package/test_install.py).
     needs: package
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -201,6 +201,40 @@ jobs:
           set -euo pipefail
           if ls "$RUNNER_TEMP"/ci-dist/exp-*.tar.gz >/dev/null 2>&1; then export EXP_DIST_DIR="$RUNNER_TEMP/ci-dist"; fi
           .venv/bin/python -m pytest test/package/test_install.py -q -ra -m harness
+
+  package-install-arm64:
+    # The Raspberry Pi case on real arm64: the noarch tarballs (probe, agent, ...) and the arm64 ones installed into a
+    # debian:12 systemd container (the 64-bit Raspberry Pi OS bookworm userland). amd64-only tarballs are skipped by
+    # test_install.py's arch filter. The agent and probe MUST be installed and pass, so a skip of either fails the step.
+    needs: package
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: packaging/ci-venv.sh 3.10
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true   # no artifact when no component is packageable yet
+        with:
+          name: ci-dist
+          path: ${{ runner.temp }}/ci-dist
+      - name: Install each tarball in a privileged debian:12 systemd container (arm64)
+        env:
+          EXP_PACKAGE_OS: "debian:12"
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          if ! ls "$RUNNER_TEMP"/ci-dist/exp-*.tar.gz >/dev/null 2>&1; then echo "no tarballs built yet; nothing to install"; exit 0; fi
+          export EXP_DIST_DIR="$RUNNER_TEMP/ci-dist"
+          .venv/bin/python -m pytest test/package/test_install.py -v -ra -m harness -p no:cacheprovider | tee "$RUNNER_TEMP/install-arm64.log"
+          for c in agent probe; do
+            grep -qF "test_install_and_run[debian12-$c] PASSED" "$RUNNER_TEMP/install-arm64.log"
+          done
 
   harness:
     # Container LAN harness (WP-8). A no-op until test/harness/Makefile exists.

@@ -340,13 +340,15 @@ authed_get() {
 
 preflight() {
     [ "$(id -u)" -eq 0 ] || die "must run as root: curl -fsSL $MANAGER_URL/install.sh | sudo bash -s -- <enrol token>"
-    [ -r /etc/os-release ] || die "cannot read /etc/os-release; this installer supports Ubuntu 22.04 and 24.04"
+    local supported="Ubuntu 22.04/24.04 or Debian 12 (incl. Raspberry Pi OS 64-bit)"
+    [ -r /etc/os-release ] || die "cannot read /etc/os-release; this installer supports $supported"
     local os_id os_ver
     os_id="$(. /etc/os-release && printf '%s' "${ID:-}")"
     os_ver="$(. /etc/os-release && printf '%s' "${VERSION_ID:-}")"
     case "$os_id:$os_ver" in
-        ubuntu:22.04 | ubuntu:24.04) ;;
-        *) die "unsupported OS '$os_id $os_ver'; this installer supports Ubuntu 22.04 and 24.04" ;;
+        # Raspberry Pi OS 64-bit (bookworm) reports ID=debian; the 32-bit image (ID=raspbian, armv7l) is refused here.
+        ubuntu:22.04 | ubuntu:24.04 | debian:12) ;;
+        *) die "unsupported OS '$os_id $os_ver'; this installer supports $supported" ;;
     esac
     case "$(uname -m)" in
         x86_64 | amd64) ARCH=amd64 ;;

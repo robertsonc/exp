@@ -26,7 +26,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 def ubuntu_versions() -> list[str]:
-    return [v.strip() for v in os.environ.get("EXP_CONTAINER_UBUNTU", "24.04,22.04").split(",") if v.strip()]
+    """OS keys for the `host` matrix: Ubuntu versions ("24.04") or "debian12" (64-bit Raspberry Pi OS userland)."""
+    keys = os.environ.get("EXP_CONTAINER_UBUNTU", "24.04,22.04,debian12")
+    return [v.strip() for v in keys.split(",") if v.strip()]
+
+
+def os_id(key: str) -> str:
+    return key if key.startswith("debian") else f"ubuntu{key}"
 
 
 @pytest.fixture(scope="session")
@@ -65,7 +71,7 @@ def _stale() -> list[str]:
     return r.stdout.split() or ["none"]
 
 
-@pytest.fixture(scope="module", params=ubuntu_versions(), ids=lambda v: f"ubuntu{v}")
+@pytest.fixture(scope="module", params=ubuntu_versions(), ids=os_id)
 def host(request: pytest.FixtureRequest, world: harness.World) -> Iterator[harness.Container]:
     c = start_systemd_host(request.param, world.ca_pem)
     try:
