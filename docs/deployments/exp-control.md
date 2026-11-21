@@ -15,7 +15,7 @@ The production manager (control panel) for this organization. No secrets in this
 | Access team domain | `robertsonfamily.cloudflareaccess.com` (identity provider: one-time PIN) |
 | Access apps | `exp-manager` (allow: owner email), `exp-manager bypass /api/agent`, `… /install.sh`, `… /healthz` |
 | Release public key | `packaging/keys/release-pub.pem` (Ed25519) |
-| Releases published | `0.1.0`, `0.1.1`, `0.2.0` (0.2.0 adds runner + speedtest; agent, probe, collector amd64+arm64, dashboard, runner, speedtest). New sites: use `0.2.0` |
+| Releases published | `0.1.0`, `0.1.1`, `0.2.0` (0.2.0 adds runner + speedtest; agent, probe, collector amd64+arm64, dashboard, runner, speedtest). New sites: use `0.2.0`. The 0.2.0 artifacts on exp-control were built and signed from release commit `42ee902`; the GitHub Release `v0.2.0` was built by `release.yml` from `4fe89df` (tag). Their file contents, modes and owners are identical; only the embedded file times differ (`SOURCE_DATE_EPOCH` = build commit time), so the tarball sha256 differ. Both are signed with the release key. Future releases: publish to the manager from the GitHub Release assets so both carry the same bytes |
 | First deployed | 2026-11-18 |
 | Last redeployed | 2026-11-21: M6 + Debian 12 hosts (release commit 42ee902, Worker version e6c9b34a), migration `0005_speedtest`; release 0.2.0 published (signed with the owner key, verified against `packaging/keys/release-pub.pem`) |
 
