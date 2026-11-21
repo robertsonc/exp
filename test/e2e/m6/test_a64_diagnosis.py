@@ -123,7 +123,9 @@ def test_a64_wan_saturation_and_auto_pause(slate: M.Core):
         r2, tid2, full2 = run(slate, ph2, name="a64-wan", shotResults="a64-03-wan-390")
         assert full2["test"]["legs"]["internet"]["status"] == "ok", full2["test"]["legs"]["internet"]
         cs = slate.causes(full2)
-        assert cs[0] == "wan_saturation" and "internet_path" not in cs, (cs, full2["diagnosis"]["noc_text"])
+        ok_b = bool(cs) and cs[0] == "wan_saturation" and "internet_path" not in cs
+        _dump_on_fail(full2, ok_b)
+        assert ok_b, (cs, full2["diagnosis"]["noc_text"], full2["test"]["legs"]["local"], full2["test"].get("flags"))
         assert slate.ev(full2, "wan")["data"]["appliances"][0]["interfaces"][0]["util_pct"] > 85
         assert "WAN util" in full2["diagnosis"]["noc_text"]
     finally:
