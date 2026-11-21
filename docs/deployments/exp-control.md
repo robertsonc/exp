@@ -15,9 +15,9 @@ The production manager (control panel) for this organization. No secrets in this
 | Access team domain | `robertsonfamily.cloudflareaccess.com` (identity provider: one-time PIN) |
 | Access apps | `exp-manager` (allow: owner email), `exp-manager bypass /api/agent`, `… /install.sh`, `… /healthz` |
 | Release public key | `packaging/keys/release-pub.pem` (Ed25519) |
-| Releases published | `0.1.0`, `0.1.1` (agent, probe, collector amd64+arm64, dashboard). Use `0.1.1`: `0.1.0`'s agent refuses config edits of a running probe (`CR-m3-facts-netns-ports`) |
+| Releases published | `0.1.0`, `0.1.1`, `0.2.0` (0.2.0 adds runner + speedtest; agent, probe, collector amd64+arm64, dashboard, runner, speedtest). New sites: use `0.2.0` |
 | First deployed | 2026-11-18 |
-| Last redeployed | 2026-11-19: M3 (`main` 3c41605), migrations `0003` + `0004`; `workers.dev` and preview URLs disabled |
+| Last redeployed | 2026-11-21: M6 + Debian 12 hosts (release commit 42ee902, Worker version e6c9b34a), migration `0005_speedtest`; release 0.2.0 published (signed with the owner key, verified against `packaging/keys/release-pub.pem`) |
 
 Verified after deploy (`deploy.sh` step 6 and manual checks): `/healthz` → `ok`; the Worker itself answers
 401 to `/api/admin/v1/me` without a JWT and with a forged JWT (direct request, bypassing Access); `/` redirects to the

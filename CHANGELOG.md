@@ -5,7 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-21
+
+M6: speedtest to the core/DC box, correlated with network evidence (acceptance A6.1-A6.12, 33/33 on the core layout).
+
 ### Added
+- `exp-speedtest` component: the speed-check page served from the core/DC box (local download/upload legs, DNS leg,
+  per-segment path timing, optional internet leg to Cloudflare), internet slots with queue and auto-pause from EdgeConnect
+  WAN utilisation, NAT guard (fails closed), per-IP limits, view-proof share links, problem reports. The vendored
+  `@cloudflare/speedtest` 1.16.0 engine and the on-network transfers run in dedicated Web Workers with a main-thread fallback.
+- `exp-runner` component: per-test correlation with Juniper Mist (client, AP/zone/RSSI, roams, switch port), HPE EdgeConnect
+  Orchestrator (flows, WAN utilisation, health, alarms), DHCP syslog fallback and baseline probes; syslog ring with an optional
+  privacy scrub after the final diagnosis.
+- Collector: speedtest ingest, storage and diagnosis (spec 5.3 rules); aggregates to VictoriaMetrics without per-device labels.
+  Result flag `internet_off` (operator switched the internet leg off; not an outage).
+- Dashboard: speedtest list/detail and breakdowns; identifiers and purge for SSO admins.
+- Manager: speedtest and runner shapes, settings, connectors and QR signage.
+- Hosts: Debian 12 / Raspberry Pi OS 64-bit supported alongside Ubuntu 22.04/24.04 (probes on Raspberry Pi 4/5).
+- CI: browser suites, Mist OpenAPI conformance, arm64 Debian 12 install job. Field validation runbook
+  (`docs/runbooks/m6-field-validation.md`).
 - M6 packaging: `exp-runner` and `exp-speedtest` are released components (noarch tarballs in the signed manifest).
   `exp-speedtest` bundles the pinned dnspython wheel (one `vendor.lock` pin shared with the probe; the build fails if a
   component imports `dns` without vendoring it) and, when `speedtest/page/build.py` exists, the deterministically built
