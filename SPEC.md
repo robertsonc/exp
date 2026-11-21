@@ -132,7 +132,7 @@ ISP › DNS › apps.
 | D4 | **Manager = Cloudflare Workers (TypeScript) + D1 + R2 + Workers Secrets + Rate Limiting + Cron + Static Assets.** No KV/Durable Objects in v1. | Fewest moving parts. DO-based push notification is a v2 option. |
 | D5 | **Admin auth = Cloudflare Access**, and the Worker **also verifies the Access JWT** on every admin route (fail closed). | No password code to write; SSO for free. Defense in depth against Access misconfiguration. |
 | D6 | **Single-tenant**: one manager per organization, deployed into the operator's Cloudflare account. Tables carry `org_id` for a future multi-tenant mode. | Matches "once the manager instance is deployed, the admin signs in". |
-| D7 | **Python 3.10+, stdlib-first** for probe, collector, dashboard, agent. Only vendored deps: `dnspython` (probe). Ubuntu 22.04/24.04. JSON configs (no `tomllib`, which is 3.11+). | Nothing to `pip install` on hosts; Ubuntu ships python3. |
+| D7 | **Python 3.10+, stdlib-first** for probe, collector, dashboard, agent. Only vendored deps: `dnspython` (probe). Ubuntu 22.04/24.04 or Debian 12 (incl. 64-bit Raspberry Pi OS, CR-pi-debian12). JSON configs (no `tomllib`, which is 3.11+). | Nothing to `pip install` on hosts; Ubuntu and Debian ship python3. |
 | D8 | **Dashboard is an on-prem shape**, reachable on the LAN even with the internet down. SSO handoff from the manager when online; manager-managed local accounts and NOC tokens work offline. | Principle 2. Cloudflare Tunnel remote access is a later option (§12). |
 | D9 | **Collector TLS is self-signed and pinned.** The agent generates the key/cert on the collector host; its SHA-256 fingerprint flows to probes/dashboards via desired state. | No CA to run; no browser involved on this path. |
 | D10 | **Signed releases.** Offline Ed25519 release key; per-release manifest signed; agents verify with `openssl` (no Python crypto deps). Release public key pinned at enrolment. | Manager compromise cannot push unsigned code. |
@@ -217,7 +217,7 @@ detect, time to recover, pass/fail. Detail: `10-drills-integrations.md`.
 | Availability | Data plane fully functional with manager unreachable and with internet down. |
 | Footprint | Probe ≤ 150 MB RSS; collector ≤ 2 GB RAM at max scale; agent ≤ 50 MB. |
 | Time | All timestamps UTC ISO-8601 with `Z`. Hosts MUST run NTP; skew > 5 s is flagged. |
-| Platforms | Ubuntu 22.04/24.04 LTS, amd64 and arm64. |
+| Platforms | Ubuntu 22.04/24.04 LTS and Debian 12 (incl. 64-bit Raspberry Pi OS bookworm on Raspberry Pi 4/5), amd64 and arm64. Not 32-bit (armv7l) Raspberry Pi OS. |
 | Browser | Current Chrome, Edge, Firefox, Safari; usable at 390 px width; keyboard accessible. |
 | Brand | HPE design language (`reference/netvitals/DESIGN.md`): HPE green `#01A982`, enterprise clarity, room-readable. |
 

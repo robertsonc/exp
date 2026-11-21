@@ -70,6 +70,36 @@ def test_script_parses_and_has_the_contracted_shape():
     compile(HELPER, "install.sh-helper", "exec")
 
 
+OS_GATE = re.search(r"\n( +local supported=.*?\n +esac\n)", TEXT, re.S).group(1)
+
+
+@pytest.mark.parametrize(
+    "os_id,version,ok",
+    [
+        ("ubuntu", "22.04", True),
+        ("ubuntu", "24.04", True),
+        ("debian", "12", True),  # Debian 12 and 64-bit Raspberry Pi OS bookworm (which reports ID=debian)
+        ("ubuntu", "20.04", False),
+        ("debian", "11", False),
+        ("debian", "13", False),
+        ("raspbian", "12", False),  # 32-bit Raspberry Pi OS (armv7l)
+        ("", "", False),
+    ],
+)
+def test_preflight_os_gate_accepts_exactly_the_supported_set(tmp_path, os_id, version, ok):
+    osr = tmp_path / "os-release"
+    osr.write_text(f'NAME="x"\nID={os_id}\nVERSION_ID="{version}"\n')
+    gate = OS_GATE.replace("/etc/os-release", str(osr))
+    script = f"die() {{ printf '%s\\n' \"$*\" >&2; exit 1; }}\ngate() {{\n{gate}}}\ngate && echo PASSED\n"
+    r = bash(tmp_path / "gate.sh", text=script, tmp=tmp_path)
+    if ok:
+        assert r.returncode == 0 and "PASSED" in r.stdout, r
+    else:
+        assert r.returncode != 0, r
+        assert f"unsupported OS '{os_id} {version}'" in r.stderr, r
+        assert "Ubuntu 22.04/24.04 or Debian 12 (incl. Raspberry Pi OS 64-bit)" in r.stderr, r
+
+
 def test_every_curl_is_https_only_and_bounded_and_secrets_stay_out_of_argv():
     assert "--proto =https" in TEXT and "--max-time" in TEXT and "--fail" in TEXT
     curls = [ln for ln in TEXT.splitlines() if re.search(r"\bcurl\b", ln) and not ln.lstrip().startswith("#")]

@@ -44,16 +44,23 @@ def test_refuses_to_run_as_non_root(world, plain):
     untouched(plain)
 
 
-def test_refuses_an_unsupported_os(world, plain):
-    hid, token = world.add_host("srv-os")
+@pytest.mark.parametrize(
+    "os_id,version",
+    [("ubuntu", "20.04"), ("debian", "11"), ("raspbian", "12")],
+    ids=["ubuntu20.04", "debian11", "raspbian12-32bit"],
+)
+def test_refuses_an_unsupported_os(world, plain, os_id, version):
+    hid, token = world.add_host(f"srv-os-{os_id}{version.replace('.', '')}")
     plain.run(
-        "cp /etc/os-release /tmp/os-release.bak; sed -i 's/^VERSION_ID=.*/VERSION_ID=\"20.04\"/' /etc/os-release"
+        "cp /etc/os-release /tmp/os-release.bak; "
+        f"sed -i -e 's/^ID=.*/ID={os_id}/' -e 's/^VERSION_ID=.*/VERSION_ID=\"{version}\"/' /etc/os-release"
     )
     try:
         r = plain.run(f"bash /tmp/install.sh {token}")
     finally:
         plain.run("cp /tmp/os-release.bak /etc/os-release")
-    assert r.rc != 0 and "unsupported OS" in r.err and "22.04 and 24.04" in r.err
+    assert r.rc != 0 and f"unsupported OS '{os_id} {version}'" in r.err, r
+    assert "Ubuntu 22.04/24.04 or Debian 12 (incl. Raspberry Pi OS 64-bit)" in r.err, r
     assert not token_used(world, token)
     untouched(plain)
 

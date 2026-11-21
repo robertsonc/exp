@@ -152,7 +152,7 @@ function EnrolStep({ host, enrol, onNewToken }: { host: Host; enrol: EnrolToken 
   };
   return (
     <Panel title="2. Run the install command on the host" id="w2">
-      <p>Open a root shell on <strong>{host.name}</strong> (Ubuntu 22.04 or 24.04) and run this one-liner. It installs the agent and enrols the host with this manager.</p>
+      <p>Open a root shell on <strong>{host.name}</strong> (Ubuntu 22.04 or 24.04, or Debian 12 incl. 64-bit Raspberry Pi OS) and run this one-liner. It installs the agent and enrols the host with this manager.</p>
       {enrol && !expired ? (
         <>
           <CopyField value={enrol.command} label="install command" />

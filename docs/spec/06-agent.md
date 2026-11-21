@@ -20,7 +20,8 @@ curl -fsSL https://<manager>/install.sh | sudo bash -s -- expe_XXXXXXXX…
 (With no argument it prompts for the token with echo off.)
 
 Steps — stop with a clear message on any failure, change nothing before step 3:
-1. **Preflight:** root; Ubuntu 22.04 or 24.04; `amd64`/`arm64`; systemd PID 1; `python3` ≥ 3.10;
+1. **Preflight:** root; Ubuntu 22.04 or 24.04, or Debian 12 (including 64-bit Raspberry Pi OS bookworm, which
+   reports `ID=debian`; 32-bit Raspberry Pi OS is refused, CR-pi-debian12); `amd64`/`arm64`; systemd PID 1; `python3` ≥ 3.10;
    `curl`, `openssl`, `tar` present (install `ca-certificates curl openssl` if missing); HTTPS to the
    manager works (honours `HTTPS_PROXY`); time sync active (warn if not — timestamps depend on it).
 2. **Enrol:** `POST /api/agent/v1/enrol` with the token and minimal facts (hostname, machine-id, os,
@@ -183,7 +184,7 @@ With no pending marker, an unexpired window, or no previous tree it exits 0 and 
 
 In systemd containers (pattern: `reference/exm/test/package.sh`) against the manager under
 `wrangler dev` or a contract-faithful fake:
-1. `install.sh` on fresh 22.04 and 24.04 images enrols and starts the agent; the secret is never
+1. `install.sh` on fresh Ubuntu 22.04, Ubuntu 24.04 and Debian 12 images enrols and starts the agent; the secret is never
    printed; re-running is idempotent.
 2. All shapes converge (collector, dashboard, probe with veth ports) and report healthy; probe
    data reaches the collector through the wiring the manager compiled.

@@ -19,7 +19,7 @@ run while any is left; see `docs/spec/changes/CR-wp6-install-sh-serving.md`). Wi
 asks for the token with echo off, from `/dev/tty`. Behind a proxy use `sudo -E` with `HTTPS_PROXY` set.
 
 1. **Preflight, nothing changed** (except `apt-get install ca-certificates curl openssl` when one is missing): root, Ubuntu
-   22.04/24.04, amd64/arm64, systemd as PID 1, python3 >= 3.10, tar/curl/openssl, HTTPS to the manager (system CA store),
+   22.04/24.04 or Debian 12 (incl. 64-bit Raspberry Pi OS bookworm; not the 32-bit armv7l image), amd64/arm64, systemd as PID 1, python3 >= 3.10, tar/curl/openssl, HTTPS to the manager (system CA store),
    time sync (warning only). Any failure stops with the reason; the token is not used up.
 2. **Enrol:** `POST /api/agent/v1/enrol`. The token travels only on a pipe into `curl --data @-`; the answer's secret goes
    straight into `/etc/exp/agent.json` (0600, atomic); later requests get the bearer header through `curl -K -`. Neither is
@@ -138,17 +138,17 @@ runner. (`--root DIR` exists on the CLI for the same purpose; never use it on a 
 .venv/bin/ruff check agent
 make -C agent container-test                 # 06-agent.md section 9 in systemd containers (Docker, privileged; ~15-25 min)
 ```
-`container-test` (sets `EXP_CONTAINER_TESTS=1`, marker `harness`) builds `exp-agent-systemd:<22.04|24.04>` from
-`tests/container/Dockerfile`, runs the TLS fake manager on the docker host, generates a throwaway CA (installed into the
+`container-test` (sets `EXP_CONTAINER_TESTS=1`, marker `harness`) builds `exp-agent-systemd:<22.04|24.04|debian12>`
+from `tests/container/Dockerfile` (`--build-arg BASE=ubuntu:<v>|debian:12`), runs the TLS fake manager on the docker host, generates a throwaway CA (installed into the
 container trust store for the test only), a throwaway Ed25519 release key and signed releases containing the **real** agent
 artifact built from this checkout plus tiny fake component artifacts; nothing is written into the repo. `EXP_CONTAINER_UBUNTU=24.04`
-limits the OS matrix. If systemd cannot run as PID 1 (cgroups, privileges) or an image cannot be built, the affected tests
+limits the OS matrix (default `24.04,22.04,debian12`; `debian12` is the 64-bit Raspberry Pi OS userland). If systemd cannot run as PID 1 (cgroups, privileges) or an image cannot be built, the affected tests
 skip with the exact reason. `EXP_DIST_DIR=<dist>` (+ `EXP_RELEASE_PUBKEY`) additionally runs the "all shapes converge" test
 against real built tarballs (§9 item 2).
 
 | §9 | Test |
 |---|---|
-| 1 | `test_container_lifecycle.py` 01-06: install.sh on 22.04 and 24.04, secret never printed / never in argv, repair, used token, re-enrol, `exp-agent enrol` |
+| 1 | `test_container_lifecycle.py` 01-06: install.sh on Ubuntu 22.04, 24.04 and Debian 12, secret never printed / never in argv, repair, used token, re-enrol, `exp-agent enrol` |
 | 2 | `test_container_shapes.py` (needs `EXP_DIST_DIR`) |
 | 3, 8 | `test_container_verify.py`: tampered manifest, wrong key, wrong sha256, tar-slip, symlink, device, setuid -> refused, nothing installed |
 | 5 | lifecycle 09-10: self-update (+ component), a new agent that cannot report -> rollback timer restores the old one (timer shortened) |
