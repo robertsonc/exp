@@ -396,7 +396,8 @@
   }
 
   // ------------------------------------------------------------------------------------------------ on-network transfer
-  // The transfer itself (streams, ramp, budget, 413 handling, p90 speed, loaded-latency pinger) is src/local-leg.js, the ONE
+  // The transfer itself (streams, ramp, budget, 413 handling, speed estimator: p90 or, when the budget ends a direction first,
+  // the steady window, CR-m6-speedtest-server item 27; loaded-latency pinger) is src/local-leg.js, the ONE
   // implementation, built with src/local-bridge.js into /st/assets/local-leg.js. It runs in a dedicated worker
   // (CR-m6-speedtest-server item 26, follow-up 2026-11-20): on the main thread its fetch() body reader loop and the upload
   // XMLHttpRequests took ~310 ms/s of loader / microtask work and 220 ms XHRLoad tasks under A6.10's 4x CPU throttle (47 fps).

@@ -206,17 +206,27 @@ class Box:
         self.daemon.start()
 
     def _seed_payload(self) -> None:
-        """Reuse one 32 MiB payload file across tests (generating random bytes is the slow part of a fixture)."""
+        """Reuse one 32 MiB payload file across tests (generating random bytes is the slow part of a fixture). The seed is
+        removed when the test process exits, and each box HARD-LINKS it (a copy only across filesystems): the daemon only
+        reads a full-size payload and replaces, never rewrites, a wrong one (static.Payload._ensure), so the link is safe.
+        Copying it into every test's tmp_path kept ~7.5 GB per full speedtest run in pytest's retained tmp dirs."""
+        import atexit
+        import os
         import shutil
         import tempfile
 
         from exp_speedtest.static import PAYLOAD_SIZE
         global _PAYLOAD
         if _PAYLOAD is None or not _PAYLOAD.is_file():
-            _PAYLOAD = Path(tempfile.mkdtemp(prefix="st-payload-")) / "payload.bin"
-            _PAYLOAD.write_bytes(__import__("os").urandom(PAYLOAD_SIZE))
+            seed_dir = Path(tempfile.mkdtemp(prefix="st-payload-"))
+            atexit.register(shutil.rmtree, seed_dir, ignore_errors=True)
+            _PAYLOAD = seed_dir / "payload.bin"
+            _PAYLOAD.write_bytes(os.urandom(PAYLOAD_SIZE))
         self.paths.state_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(_PAYLOAD, self.paths.payload)
+        try:
+            os.link(_PAYLOAD, self.paths.payload)
+        except OSError:                       # another filesystem (or the link exists): fall back to a copy
+            shutil.copyfile(_PAYLOAD, self.paths.payload)
 
     def stop(self) -> None:
         if self.daemon:

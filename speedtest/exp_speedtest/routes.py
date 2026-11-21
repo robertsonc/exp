@@ -236,7 +236,17 @@ class PublicApp:
                         sock.sendall(_pread(f, seg, off))
                         moved = seg
                     else:
-                        moved = sock.sendfile(f, off, seg)
+                        try:
+                            moved = sock.sendfile(f, off, seg)
+                        except OSError:
+                            # the client went away mid-segment (aborted request: every on-network direction ends this way).
+                            # socket.sendfile leaves the file position at off + bytes sent, also on error: book them, or an
+                            # aborted 8-MiB segment vanishes from the session counter and the budget (CR-m6-speedtest-server 28)
+                            partial = f.tell() - off
+                            if 0 < partial <= seg:
+                                sent += partial
+                                core.meter.add(partial)
+                            raise
                         if not moved:
                             break
                     sent += moved
