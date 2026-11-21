@@ -93,6 +93,20 @@ function fakeLocalWorker(mode) {
   };
 }
 
+// A passthrough observer of the REAL transfer worker (test_page_browser.py::test_on_network_speed_matches_the_emulated_link):
+// every Worker is the real one; for /st/assets/local-leg.js a second 'message' listener copies each 'done' result (the page's
+// own onmessage handler is untouched). No product hook: the worker's `res.method` says which estimator produced the figure.
+function spyLocalWorker() {
+  const Real = window.Worker;
+  const S = window.__localSpy = { done: [] };
+  if (!Real) return;                       // noWorker: there is no Worker to observe, and none may appear
+  window.Worker = function (url, opts) {
+    const w = new Real(url, opts);
+    if (/\/local-leg\.js$/.test(String(url))) w.addEventListener("message", (ev) => { const m = ev.data; if (m && m.t === "done") S.done.push(m.res); });
+    return w;
+  };
+}
+
 async function open(browser, o) {
   o = o || {};
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: o.viewport || { width: 390, height: 844 }, deviceScaleFactor: o.dpr || 2,
@@ -125,6 +139,7 @@ async function open(browser, o) {
   if (o.noWorker) await page.addInitScript(() => { delete window.Worker; });      // the fallback path: no dedicated workers at all
   if (o.fakeWorker) await page.addInitScript(fakeWorker, o.fakeWorker);           // a worker that errors / says fatal on cue
   if (o.fakeLocal) await page.addInitScript(fakeLocalWorker, o.fakeLocal);        // the transfer worker misbehaving on cue
+  if (o.spyLocal) await page.addInitScript(spyLocalWorker);                       // the real transfer worker, its results copied
   await page.addInitScript(() => {
     window.__csp = [];
     document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + e.blockedURI));
@@ -206,6 +221,7 @@ async function full(browser, o) {
   const first = await snapshot(page); step('first snapshot');
   const fakeWorkerStats = o.fakeWorker ? await page.evaluate(() => window.__fakeWorker) : null;
   const fakeLocalStats = o.fakeLocal ? await page.evaluate(() => window.__fakeLocal || null) : null;
+  const localSpy = o.spyLocal ? await page.evaluate(() => window.__localSpy || null) : null;
   if (o.shotResults) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotResults); await shot(page, o.shotResults + "-full", true); }
   let flipped = null;
   if (o.correlate) {
@@ -216,7 +232,7 @@ async function full(browser, o) {
     if (o.shotFinal) { await page.evaluate(() => document.getElementById("results").scrollIntoView()); await sleep(300); await shot(page, o.shotFinal, true); }
   }
   const final = flipped || first;
-  const res = { cspHeader, pre, first, flipped, phases, phaseTimes, fakeWorker: fakeWorkerStats, fakeLocal: fakeLocalStats, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), workers: seen.workers, requests: seen.requests,
+  const res = { cspHeader, pre, first, flipped, phases, phaseTimes, fakeWorker: fakeWorkerStats, fakeLocal: fakeLocalStats, localSpy, firstFocus, started, doneAt, hosts: hostsOf(seen.requests), workers: seen.workers, requests: seen.requests,
     mainReqs: seen.mainReqs, csp: seen.csp, cspEvents: final.csp,
     errors: seen.errors, dialogs: seen.dialogs, submissions: seen.submissions, failed: seen.failed, midAnimsMax: Math.max(0, ...midAnims), midAnimsMin: midAnims.length ? Math.min(...midAnims) : null };
   step('flipped'); if (o.report) {

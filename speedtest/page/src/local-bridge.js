@@ -5,7 +5,8 @@
  *   worker -> page  {t: "ready"}                    once, when this file has loaded
  *                   {t: "progress", id, mbps, bytes, at}   one per 250-ms sample of the transfer (no per-chunk messages)
  *                   {t: "alive", id}                once a second while a transfer runs (its end can be quiet for seconds)
- *                   {t: "done", id, res}            the direction's figures (ExpLocalLeg.transfer's result)
+ *                   {t: "done", id, res}            the direction's figures (ExpLocalLeg.transfer's result; `method`, which
+ *                                                  estimator gave mbps, is 'p90' | 'steady' | 'lower_bound' or null: page-only)
  *                   {t: "fatal", id, msg}           the transfer could not run: the page stops using this worker
  * On the main thread (the fallback: the same file as a classic <script src>) it does nothing. */
 (function () {
@@ -17,6 +18,7 @@
   function msgOf(e) { return String(e && e.message || e).slice(0, 200); }
   function num(v) { return typeof v === 'number' && isFinite(v) ? v : undefined; }
   function fin(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
+  function method(v) { return v === 'p90' || v === 'steady' || v === 'lower_bound' ? v : null; }
   self.onmessage = function (ev) {
     var m = ev.data;
     if (!m || typeof m !== 'object') return;
@@ -35,7 +37,8 @@
     try { run = ExpLocalLeg.transfer(m.dir, m.budget, ctx); } catch (e) { run = Promise.reject(e); }
     run.then(function (res) {
       clearInterval(me.hb); job = null; res = res || {};
-      post({ t: 'done', id: id, res: { mbps: fin(res.mbps), cv: fin(res.cv), failures: fin(res.failures), bytes: fin(res.bytes), loaded_ms: fin(res.loaded_ms), samples: fin(res.samples) } });
+      post({ t: 'done', id: id, res: { mbps: fin(res.mbps), cv: fin(res.cv), failures: fin(res.failures), bytes: fin(res.bytes), loaded_ms: fin(res.loaded_ms), samples: fin(res.samples),
+        method: method(res.method) } });
     }, function (e) { clearInterval(me.hb); job = null; post({ t: 'fatal', id: id, msg: msgOf(e) }); });
   };
   post({ t: 'ready' });

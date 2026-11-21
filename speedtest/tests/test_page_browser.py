@@ -583,6 +583,55 @@ def test_cancel_during_the_on_network_leg_stops_its_traffic(world: World, where:
         assert r["workers"] == [] and snap["scriptSrcs"] == [LOCAL_PATH], snap["scriptSrcs"]
 
 
+LINKS = {
+    # A6.10's phone link, slower: with a 100 MB budget a direction ends on the spec's rule (a request >= 1 s, then 8 samples)
+    "slow": {"downKbps": 40_000, "upKbps": 20_000, "latencyMs": 5},
+    # a fast LAN: the World's 30 MB budget (18 MB down / 12 MB up) runs out in ~0.4 s, before 8 post-ramp samples exist
+    "fast": {"downKbps": 400_000, "upKbps": 200_000, "latencyMs": 2},
+}
+
+
+@pytest.mark.parametrize(("link", "budget", "mode", "method"), [("slow", 100_000_000, "worker", "p90"),
+                                                                 ("slow", 100_000_000, "main", None),
+                                                                 ("fast", 30_000_000, "worker", "steady")])
+def test_on_network_speed_matches_the_emulated_link(tmp_path: Path, link: str, budget: int, mode: str, method: str | None):
+    """The on-network figures measure the link, in both regimes of local-leg.js's estimator (CR-m6-speedtest-server item 27):
+    the link is emulated by CDP at a known rate (it applies to the transfer worker's requests too) and Local down / up must be
+    within +-20 % of it. "slow": the spec's p90 of post-ramp 250-ms samples (the direction ends on the ramp rule, far below the
+    budget). "fast": the budget ends each direction in ~0.4 s; before item 27 the figure was budget / one 250-ms bin (18 MB ->
+    576 Mb/s, 12 MB -> 384 Mb/s whatever the link) or the drain tail; now it is bytes / duration of the steady window. The
+    internet leg is off (it is not what this measures, and it would share the emulated link). Displayed == submitted, the box's
+    counters agree, and the worker's own result says which estimator ran (a passthrough listener on the real worker). The
+    main-thread fallback runs the same file on the slow link: at 400 Mb/s the main thread itself is the bottleneck (the reason
+    the transfer moved to a worker), which is not what this measures. Before item 27 the slow upload read ~+28 % (the p90 of
+    250-ms samples counted from ~100-ms upload progress lumps) and the fast download ~-45 % (one drain-tail sample)."""
+    w = World(tmp_path, cfg_over={"limits": {"bytes_local": budget}, "internet_leg": {"enabled": False}})
+    try:
+        r = run_scenario(w, "full", {"throttle": LINKS[link], "noWorker": mode == "main", "spyLocal": True, "timeout": 120000})
+    finally:
+        w.stop()
+    assert r["errors"] == [] and r["csp"] == [] and r["dialogs"] == [], (r["errors"], r["csp"])
+    assert [f for f in r["failed"] if "ERR_ABORTED" not in f] == [], r["failed"][:5]
+    sub = r["submissions"][-1]
+    assert sub["status"] == 202
+    same_numbers(r["first"], sub)
+    loc = local_leg_sane(sub, budget)
+    want_down, want_up = LINKS[link]["downKbps"] / 1000, LINKS[link]["upKbps"] / 1000
+    got = {"down": loc["down_mbps"], "up": loc["up_mbps"], "bytes": loc["bytes"], "cv": loc["cv"], "spy": r["localSpy"]}
+    print(f"\n[{link}/{mode}] local {got}")
+    if link == "fast":       # the regime: the budget really ended both directions
+        assert loc["bytes"] >= 0.97 * budget, got
+    else:
+        assert loc["bytes"] < 0.6 * budget, got
+    assert abs(loc["down_mbps"] - want_down) <= 0.2 * want_down, (want_down, got)
+    assert abs(loc["up_mbps"] - want_up) <= 0.2 * want_up, (want_up, got)
+    if mode == "worker":
+        assert r["workers"] == [f"http://{HOST}{LOCAL_PATH}"] and r["first"]["scriptSrcs"] == [], (r["workers"], r["first"]["scriptSrcs"])
+        assert [d.get("method") for d in r["localSpy"]["done"]] == [method, method], got
+    else:
+        assert r["workers"] == [] and r["first"]["scriptSrcs"] == [LOCAL_PATH], r["first"]["scriptSrcs"]
+
+
 @pytest.mark.parametrize("mode", ["throw", "silent", "fatal_mid"])
 def test_local_worker_misbehaving_falls_back_once(world: World, mode: str):
     """LocalHost robustness, with a scripted stand-in for the transfer worker (ui/page_scenarios.js fakeLocalWorker; the internet

@@ -57,6 +57,7 @@ will NOT verify against a verifier created from the sentinel proof.
 | 24 | Health | `exp.health/1` from `/run/exp/speedtest/status.json` (2 s): `fail` = daemon not running, HTTP listener down, collector `auth_failed` / `tls_pin_mismatch`; `degraded` = collector unreachable (spooling), DNS-leg server or runner channel not bound, no ICMP mechanism, spool > half full. `local_leg_gbps_p95` = p95 of per-second aggregate box throughput (seconds with traffic) over the last hour. |
 | 25 | Packaging hooks | `speedtest/systemd/exp-speedtest.service`, `speedtest/requirements.apt`, `speedtest/bin/exp-speedtest` follow the other components' layout (`@PREFIX@ @CONFIG@ @CREDS@ @VERSION@` placeholders). The root `Makefile` (`COMPONENTS`, `LINT_DIRS`) and `pyproject.toml` `testpaths` now list `speedtest` (surgical additive edits by this step). `packaging/pack.py` `COMPONENTS` / `PER_ARCH_COMPONENTS` and the vendor lock (`dnspython` is declared for `probe` only: the speedtest needs it too) do **not** list `speedtest` yet; the platform step must add them. |
 | 26 | Internet engine in a worker (A6.10) | The vendored Cloudflare engine no longer runs on the page's main thread (its string upload bodies are encoded synchronously by `fetch()`: 770-830 ms main-thread tasks, 35.6 fps in the upload phase). `page/build.py` writes ONE file, `static/assets/cf-engine.js` (~63 KB: `src/engine-prelude.js` + the verbatim library wrapper, library file sha256 4b4ec8c0... asserted by `build.py` (`LIB_SHA256`; the upstream archive hash 08e3c0b4... is pinned in vendor.lock and `test_vendored_files_match_vendor_lock`) + `src/engine-bridge.js`); the library is no longer inlined in `index.html` (one inline script left: `app.js`). In a `DedicatedWorkerGlobalScope` the prelude sets `self.window = self` (the library only reads `window.location.origin`; it touches no `document`/`localStorage`) and the bridge answers `{cmd:"start", config}` / `{cmd:"pause"}` with `started`, `phase`, `results`, `error`, `running`, `finish`, `fatal` messages carrying plain snapshots (bandwidth/latency points with bps, bytes, duration, transferSize, ping; down/up/idle/jitter/loaded latencies). On the main thread the file only exposes `window.CFSpeedTest`. `app.js` `EngineHost` has the engine's callback/play/pause/results surface; **fallback**: `new Worker` throws, the worker errors or says nothing for 6 s after start -> the same file is loaded as a classic `<script src>` and the engine runs on the main thread as before. `logAimApiUrl`/`logMeasurementApiUrl` stay null and the internet plan stays latency/download/upload. Served via `/st/assets/cf-engine.js` (only from the packaged `static/assets/`, never the operator's assets dir), `Content-Type: text/javascript; charset=utf-8`, `nosniff`, `Cache-Control: public, max-age=300` like the other assets, and **its own CSP** (CSP3: a dedicated worker takes its policy from its script response, not the page): `default-src 'none'; <the page's connect-src>; frame-ancestors 'none'` (`StaticSite.worker_csp`, built from the same inputs as `build_csp`). **Page CSP change**: `worker-src 'self'` (never `blob:`/`data:`) and `script-src <hashes> 'self'`; `'self'` is needed ONLY for the same-origin engine file (worker start, and the main-thread fallback `<script src>`); no `unsafe-inline`/`unsafe-eval`. `build.py --out DIR` now also writes `assets/cf-engine.js` (reproducible; the packaging hook overlays the whole tree). Page weight counts the worker file (HTML + engine, gzip -9, + fonts <= 200 KB). Tests: `test_page_browser.py::test_full_test_390` (a worker with that URL ran; internet cv < 0.3, stability >= 40) and `::test_full_test_without_workers_falls_back_to_the_main_thread` (init script deletes `window.Worker`; complete result, comparable figures), `test_page_build.py` (verbatim-once library, worker CSP exact, host/URL-template checks cover the engine file). *(Follow-ups 2026-11-20 at the end of this file: switched-off internet leg on the results page, engine-host robustness, worker-path proof, A6.10 weight; then the on-network transfer in its own worker, `assets/local-leg.js`.)* |
+| 27 | On-network speed when the byte budget ends a direction (2026-11-21) | The local Mb/s was arithmetic, not measurement, whenever the per-test byte budget ended a direction before 8 post-ramp 250-ms samples existed (budget / one sample, or the drain tail). `page/src/local-leg.js` now records each stream's cumulative byte series and when it started and stopped moving bytes; a pure `ExpLocalLeg.estimate` keeps the spec's p90 of post-ramp samples when there are >= 8 inside the steady window, else reports bytes / duration of that window (all streams moving, before the first stops), else a whole-transfer lower bound. Submission unchanged. Evidence, rule, tests: "Item 27" at the end of this file. |
 
 ## 3. Not done / handed on
 
@@ -188,3 +189,90 @@ will NOT verify against a verifier created from the sentinel proof.
   and, as A6.10 does, that no request failed other than with `ERR_ABORTED`.
   `test_page_build.py`: reproducible incl. `local-leg.js`, one implementation (page has none of it, the file is src + bridge),
   served with the worker CSP, other `.js` 404, host checks; `test_units.py`: the allowlist and no shadowing.
+
+## Item 27 (2026-11-21): on-network speed when the byte budget ends a direction early
+
+* **What was wrong (evidence).** `transferLeg` reported the p90 of the 250-ms samples "after the ramp" (`rampAt`, the completion
+  of the first request that took >= 1 s, else 1.5 s), falling back to the second half of all samples when fewer than 3 were after
+  it. When the per-test byte budget (`limits.bytes_local`, 60 % down / the rest up; product default 200 MB) ended a direction
+  first, those samples did not measure the link:
+  * the page browser tests' World (30 MB: 18 MB down, 12 MB up, loopback), five full runs: down **575.31**, up **383.69** Mb/s
+    every time, cv 0, flag `bytes_capped`. 18 MB in one 250-ms sample is 576 Mb/s, 12 MB is 384 Mb/s: the figure was budget /
+    sample length whatever the link did (the transfer was over before the first sample; reproduced here: 575.31 / 383.69-383.85
+    in three more runs);
+  * the e2e core layout (200 MB, ~1.1 Gb/s LAN): local down 1122.69 but **up 23.39** Mb/s with `loaded_up_ms` 5.3 (the link was
+    barely loaded), bytes exactly 200 MB, `bytes_capped`: the budget ran out around the end of the ramp, so the samples after it
+    were the drain tail. The collector then diagnosed `device_limit` ("local slow with good signal") instead of `wan_saturation`
+    (A6.4 part (b) failed once in 4 runs), and a wrong local speed lowers the user's score;
+  * measured for this item with the link emulated by CDP: 400 / 200 Mb/s with the 30 MB budget read 221-229 / 212-217 (one
+    drain sample, cv 0.95); and on the spec's own path a 20 Mb/s upload read **25.7** Mb/s (+28 %, cv 0.15): Chromium reports
+    upload progress per request every ~100 ms (94-97 ms measured), so a 250-ms counter of those lumps puts a lump in one sample
+    or the next and the p90 picks a lucky one (downloads, a chunk every few ms, were right: 39.8 on 40 Mb/s).
+* **Recording** (`transferLeg`). Each stream keeps `{start: ms of its first byte, stop: ms it left its loop, why: 'budget' |
+  'end' | 'failures', pts: [[ms, cumulative bytes], ...]}` from `[created, 0]`, one point per progress callback (download reader
+  chunk, upload progress event, upload completion). `ExpLocalLeg.pushPoint` bounds it: a point less than 1 ms after the one before
+  the last replaces the last (the newest bytes are always kept), and past 1024 points every other point is dropped (first and last
+  kept), so a direction holds at most 5 x 1024 points and every point kept is exact. `endAt` is when the direction ended (8 s, the
+  ramp rule, all streams stopped, Cancel). The counter-based 250-ms rate still feeds the gauge, the stream-growth rule and the
+  ending rule, all unchanged.
+* **Estimator** (`ExpLocalLeg.estimate({streams, bins, rampAt, endAt})`, a pure function -> `{mbps, cv, samples, method,
+  note}`). Bytes at a time are interpolated per stream (linear between its points) and summed: per-stream interpolation is exact
+  for a steady rate however lumpy the reports, a summed counter is not.
+  * **Steady window.** End: the moment the FIRST stream that moved bytes stopped (budget spent or refused, failures) or the
+    direction ended, whichever is first; after it fewer streams move (the drain tail) or requests are aborted. Start: the moment
+    the last stream that ran started moving bytes (its first byte), so the head where fewer streams moved, with each stream's
+    first-request latency, is out. A stream whose first byte came less than 200 ms before the window's end is not waited for: the
+    growth rule can add a fifth stream just before the budget runs out, and waiting for it would shrink the window below 200 ms
+    and push the figure to the lower bound, drain included; its bytes inside the window can only bring the window's rate closer
+    to what the link carries, never above it. The spec's ramp end (`rampAt`) is deliberately **not** a lower limit: it is the
+    *completion* of the first request that took >= 1 s, so by then large requests had been moving bytes for >= 1 s, and in a
+    budget-limited direction it can land right before the budget runs out (the e2e upload above): honouring it then leaves only
+    the drain. The request-size ramp it stands for is a few round trips at LAN speed (100 kB x4 per completion up to 25 MB;
+    ~5-25 ms of a 400-500-ms window under emulation) and can only lower the figure slightly.
+  * **'p90' (the spec, where it has data):** the 250-ms samples after the ramp (`rampAt`, else 1.5 s, as before) that lie wholly
+    inside the steady window; with >= 8 of them the figure is their p90 and cv as before. A sample's bytes now come from the
+    per-stream series at its edges instead of the counter; for downloads the two agree (40 Mb/s emulated: 39.78 before,
+    39.65-40.03 after), for uploads this removes the lump artifact (20 Mb/s: 25.69 -> 20.22-20.76). The 8-s / ramp ending rule is unchanged,
+    so slow and normal links end and are judged as before; a direction that ends on that rule keeps its post-ramp samples (all
+    streams run until it ends; only a sample that began before a late stream's first byte is left out).
+  * **'steady' (the budget ended the direction first):** bytes moved inside the steady window / its duration, when it lasts
+    >= 200 ms; cv over its whole 250-ms sub-windows when there are >= 3 (`samples` = their number), else 0 with `note:
+    'short_steady'` (a window under 750 ms has no stability evidence; the previous code reported 0 for one sample as well).
+  * **'lower_bound':** a window under 200 ms (the whole direction took about that long): bytes / time from the first byte to the
+    last of the whole direction (ramp and drain included, so never above the link; from the first request when there was a single
+    report), cv 0, `note: 'no_steady'`. No bytes at all: 0 Mb/s (`note: 'no_bytes'`), as before.
+  * A figure is never budget / sample length: every rate divides bytes by the time they took.
+* **Result and submission.** `transferLeg` returns `{mbps, cv, failures, bytes, loaded_ms, samples, method}`; `method` is
+  page-only: the worker bridge forwards it in `done.res` as `'p90' | 'steady' | 'lower_bound'` or null (validated) and `app.js`
+  `legResult` ignores it, so nothing reaches the submission (`legs.local` is `additionalProperties: false` in
+  `shared/schemas/speedtest.submission.schema.json`; no field added). `samples` was never submitted. Displayed == submitted as
+  before (the same `numLeg` object), asserted by every full browser run. Worker and main-thread fallback run the same file.
+* **Before / after** (Mb/s; CDP link emulation in Chromium, which delivers ~360 of a nominal 400 Mb/s even to a plain fetch):
+
+  | Setup | before | after |
+  |---|---|---|
+  | World 30 MB, loopback, no emulation | 575.31 / 383.69 every run | 1610-2200 / 1454-1912 (`lower_bound`: 18 MB moves in < 0.1 s) |
+  | 40 / 20 Mb/s, 100 MB budget, worker | 39.78 / 25.69 (cv 0.15) | 39.65-40.03 / 20.22-20.59 (`p90`, cv 0.01-0.02) |
+  | 40 / 20 Mb/s, 100 MB budget, main thread | 39.90 / 25.70 | 39.75-39.94 / 20.35-20.76 |
+  | 400 / 200 Mb/s, 30 MB budget, worker | 221.30-228.73 / 211.89-215.02 (cv 0.95-0.98) | 347.09-359.60 / 194.08-195.54 (`steady`) |
+  | node sim 2 Gb/s, 18 MB / 75 MB down | 576.0 / 415.9 | 1893 (`lower_bound`) / 1983 (`steady`) |
+  | node sim 200 / 600 Mb/s, 12 MB up | 275.7 / 384.0 | 199.1 / 587.3 |
+
+* **Tests.** `speedtest/tests/test_local_leg_estimator.py` runs `speedtest/tests/js/local_leg_units.js` in node on the built
+  asset and on the source (15 cases each, ~0.5 s). Pure cases on synthetic per-stream series: steady 400 Mb/s for 6 s -> p90
+  ~400; a budget that ends at 0.3 s at 2 Gb/s with a ramp head and a drain tail -> ~2000 (not the drain sample, not budget / 0.25
+  s); 18 MB inside one sample -> a lower bound near 2000, not 576; the budget running out 50 ms after the ramp with a 3.8-s drain
+  at 20 Mb/s -> 800, not the tail; upload progress in 100-300 ms lumps -> the average (window and p90 paths); a late fifth stream
+  does not collapse the window; no bytes; the series stays <= 1024 points, exact, newest kept. Simulated cases run the whole
+  `transfer()` on a virtual clock against a fake box behind a fluid link (fetch / XMLHttpRequest with lumpy upload progress):
+  40 Mb/s down (p90, unchanged), 20 Mb/s lumpy upload (p90), 2 Gb/s down with 75 MB and 18 MB budgets, 200 and 600 Mb/s up with
+  12 MB. Against HEAD's file: 28 failed, 3 passed (the inventory and, for both files, the 40 Mb/s download guard, whose figure
+  must not change).
+  `test_page_browser.py::test_on_network_speed_matches_the_emulated_link[slow-worker|slow-main|fast-worker]`: the link emulated
+  by CDP (40 / 20 Mb/s with a 100 MB budget; 400 / 200 Mb/s with the World's 30 MB), internet leg off, Local down / up within
+  +-20 % of the emulated rates, the regime proven (bytes < 60 % of the budget / >= 97 %) and, in the worker, `method` read by a
+  passthrough listener on the real worker (`page_scenarios.js` `spyLocal`, no product hook): `p90` / `steady` for both
+  directions; displayed == submitted, `local_leg_sane` (counters agree). All three fail on HEAD (slow upload 25.69 / 25.70, fast
+  download 228.73). The main-thread fallback runs the slow link only: at 400 Mb/s the main thread itself is the bottleneck
+  (324-350 Mb/s; the reason the transfer moved to a worker), which is not what this measures. Every existing assertion stays.
+* **Weight.** `local-leg.js` 17.6 kB (6.1 kB gzip -9, was 4.0: the estimator and its comments); page total 152.1 kB <= 200 KB.
