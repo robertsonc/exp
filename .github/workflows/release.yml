@@ -6,6 +6,9 @@ name: release
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  # Fallback: Actions -> release -> Run workflow, choosing the TAG (not a branch) as the ref; the VERSION check below
+  # refuses anything that is not a vX.Y.Z tag matching VERSION.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -59,6 +62,7 @@ jobs:
       - name: Check tag matches VERSION
         run: |
           set -euo pipefail
+          [ "${GITHUB_REF_TYPE}" = tag ] || { echo "run this on a vX.Y.Z tag, not a branch (${GITHUB_REF_NAME})" >&2; exit 1; }
           [ "${GITHUB_REF_NAME}" = "v$(cat VERSION)" ] || { echo "tag ${GITHUB_REF_NAME} != v$(cat VERSION)" >&2; exit 1; }
       - name: Fetch vendored dependencies (sha256-verified against packaging/vendor.lock)
         run: packaging/fetch-vendor.sh
@@ -123,6 +127,12 @@ jobs:
         run: |
           set -euo pipefail
           ls dist/*.sig dist/*manifest.json >/dev/null
-          gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" \
-            --title "exp ${GITHUB_REF_NAME}" \
-            --notes "See CHANGELOG.md. Verify with packaging/verify-release.sh and packaging/keys/release-pub.pem."
+          # A release created in the GitHub UI (which is also how a tag is made without git) already exists: attach the
+          # signed files to it instead of failing; otherwise create it.
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" \
+              --title "exp ${GITHUB_REF_NAME}" \
+              --notes "See CHANGELOG.md. Verify with packaging/verify-release.sh and packaging/keys/release-pub.pem."
+          fi
