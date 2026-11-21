@@ -5,7 +5,7 @@ import { useResource } from '../data/hooks';
 import { useHostData } from '../data/hostData';
 import { Badge, EmptyState, ErrorBanner, Missing, Panel, SkeletonBlock, StatusPill, Tabs, healthPill } from '../components/atoms';
 import { OpenDashboardButton } from '../components/OpenDashboard';
-import { CollectorEditor, DashboardEditor, ProbeEditor } from './ComponentEditors';
+import { CollectorEditor, DashboardEditor, ProbeEditor, RunnerEditor } from './ComponentEditors';
 import { MetricChart, RangePicker, rangeFrom, useMetrics } from '../components/MetricChart';
 import { Link, MetricTile, UsageBar } from '../components/viz';
 import { PageHeader } from './common';
@@ -271,6 +271,10 @@ function RunnerView({ sc, comp, m, range, tz }: { sc: StatusComponent | undefine
       <div class="metric-row">
         <MetricTile label="Active drills" value={metric(sc, 'drills_active') ?? <Missing why="not reported" />} />
         <MetricTile label="Allowlist size" value={allowN ?? <Missing why="not in the component configuration" />} />
+        <MetricTile label="Correlations / h" value={metric(sc, 'correlations_per_hour') ?? <Missing why="not reported" />} />
+        <MetricTile label="Evidence lag p95" value={metric(sc, 'evidence_lag_s_p95') === null ? <Missing why="not reported" /> : `${f1(metric(sc, 'evidence_lag_s_p95'))} s`} sev={(metric(sc, 'evidence_lag_s_p95') ?? 0) > 60 ? 'warn' : 'ok'} />
+        <MetricTile label="Syslog lines/s" value={metric(sc, 'syslog_lines_per_s') ?? <Missing why="not reported" />} />
+        <MetricTile label="Syslog dropped/min" value={metric(sc, 'syslog_dropped_per_min') ?? <Missing why="not reported" />} sev={(metric(sc, 'syslog_dropped_per_min') ?? 0) > 0 ? 'warn' : 'ok'} />
       </div>
       <Panel title="Pullers" id="pullers">
         {pullers.length === 0 ? <EmptyState title="No pullers reported" /> : (
@@ -284,7 +288,43 @@ function RunnerView({ sc, comp, m, range, tz }: { sc: StatusComponent | undefine
         )}
       </Panel>
       <div class="range-bar"><h2 class="h2">Trends</h2><RangePicker value={range} /></div>
-      <div class="charts"><MetricChart m={m} title="Active drills" range={range} tz={tz} fmt={f1} keys={[{ key: 'drills_active', label: 'drills', color: '--exp-line-apps' }]} /></div>
+      <div class="charts">
+        <MetricChart m={m} title="Active drills" range={range} tz={tz} fmt={f1} keys={[{ key: 'drills_active', label: 'drills', color: '--exp-line-apps' }]} />
+        <MetricChart m={m} title="Correlations per hour" range={range} tz={tz} fmt={f1} keys={[{ key: 'correlations_per_hour', label: 'correlations', color: '--exp-line-network' }]} />
+        <MetricChart m={m} title="Evidence lag (p95, s)" range={range} tz={tz} fmt={f1} keys={[{ key: 'evidence_lag_s_p95', label: 'lag', color: '--exp-line-dns' }]} />{/* gitleaks:allow (a runner metric name, entropy 3.64, not a credential) */}
+        <MetricChart m={m} title="Syslog lines per second" range={range} tz={tz} fmt={f1} keys={[{ key: 'syslog_lines_per_s', label: 'received', color: '--exp-line-internet' }, { key: 'syslog_dropped_per_min', label: 'dropped / min', color: '--exp-line-apps' }]} />
+      </div>
+    </>
+  );
+}
+
+function SpeedtestView({ sc, m, range, tz, site }: { sc: StatusComponent | undefined; m: ReturnType<typeof useMetrics>; range: ReturnType<typeof rangeFrom>; tz: string | null; site: string | undefined }): JSX.Element {
+  const paused = metric(sc, 'internet_leg_paused');
+  const url = typeof sc?.facts?.['url'] === 'string' ? (sc.facts['url'] as string) : null;
+  return (
+    <>
+      <div class="metric-row">
+        <MetricTile label="Tests / hour" value={metric(sc, 'tests_per_hour') ?? <Missing why="not reported" />} />
+        <MetricTile label="Active tests" value={metric(sc, 'active_tests') ?? <Missing why="not reported" />} />
+        <MetricTile label="Queue depth" value={metric(sc, 'queue_depth') ?? <Missing why="not reported" />} sev={(metric(sc, 'queue_depth') ?? 0) > 0 ? 'warn' : 'ok'} />
+        <MetricTile label="Internet leg" value={paused === null ? <Missing why="not reported" /> : paused > 0 ? 'paused' : 'running'} sev={paused !== null && paused > 0 ? 'warn' : 'ok'} />
+        <MetricTile label="On-network Gb/s (p95)" value={metric(sc, 'local_leg_gbps_p95') ?? <Missing why="not reported" />} />
+        <MetricTile label="Rejected / hour" value={metric(sc, 'rejected_per_hour') ?? <Missing why="not reported" />} />
+      </div>
+      <Panel title="Endpoint" id="st-ep">
+        <dl class="facts">
+          <div><dt>URL</dt><dd>{url ?? DASH}</dd></div>
+          <div><dt>Transport</dt><dd>{typeof sc?.facts?.['tls_mode'] === 'string' ? (sc.facts['tls_mode'] === 'provided' ? 'HTTPS (provided certificate)' : 'plain HTTP') : DASH}</dd></div>
+        </dl>
+        {site ? <p><Link to={`/sites/${site}/speedtest`} class="btn btn-secondary">Open the site's speedtest settings</Link></p> : null}
+        <p class="dim">Branding, consent text, zones, limits and signage are settings of the site. This component only reports its health: test results never reach the manager.</p>
+      </Panel>
+      <div class="range-bar"><h2 class="h2">Trends</h2><RangePicker value={range} /></div>
+      <div class="charts">
+        <MetricChart m={m} title="Tests per hour" range={range} tz={tz} fmt={f1} keys={[{ key: 'tests_per_hour', label: 'tests', color: '--exp-line-network' }, { key: 'rejected_per_hour', label: 'rejected', color: '--exp-line-apps' }]} />
+        <MetricChart m={m} title="Active tests and queue" range={range} tz={tz} fmt={f1} keys={[{ key: 'active_tests', label: 'active', color: '--exp-line-internet' }, { key: 'queue_depth', label: 'queued', color: '--exp-line-dns' }]} />
+        <MetricChart m={m} title="On-network throughput (Gb/s, p95)" range={range} tz={tz} fmt={f1} keys={[{ key: 'local_leg_gbps_p95', label: 'Gb/s', color: '--exp-line-dhcp' }]} />
+      </div>
     </>
   );
 }
@@ -309,7 +349,7 @@ export function ComponentPage({ id, cid, me }: { id: string; cid: string; me?: M
     );
   }
   const health = presence === 'online' ? (sc?.health ?? comp.health) : null;
-  const editable = comp.type === 'probe' || comp.type === 'collector' || comp.type === 'dashboard';
+  const editable = comp.type === 'probe' || comp.type === 'collector' || comp.type === 'dashboard' || comp.type === 'runner';
   const tab = editable && query.get('view') === 'configure' ? 'configure' : 'status';
   return (
     <>
@@ -325,6 +365,7 @@ export function ComponentPage({ id, cid, me }: { id: string; cid: string; me?: M
       {tab === 'configure' ? (
         <div role="tabpanel" id="panel-configure" aria-labelledby="tab-configure">
           {comp.type === 'probe' ? <ProbeEditor key={`${comp.component_id}:${comp.updated_at}`} comp={comp} me={me} /> : null}
+          {comp.type === 'runner' ? <RunnerEditor key={`${comp.component_id}:${comp.updated_at}`} comp={comp} me={me} /> : null}
           {comp.type === 'collector' ? <CollectorEditor key={`${comp.component_id}:${comp.updated_at}`} comp={comp} me={me} /> : null}
           {comp.type === 'dashboard' ? <DashboardEditor key={`${comp.component_id}:${comp.updated_at}`} comp={comp} me={me} tlsFingerprint={typeof sc?.facts?.['tls_fingerprint_sha256'] === 'string' ? (sc.facts['tls_fingerprint_sha256'] as string) : typeof comp.facts?.['tls_fingerprint_sha256'] === 'string' ? (comp.facts['tls_fingerprint_sha256'] as string) : null} factsUrl={typeof sc?.facts?.['url'] === 'string' ? (sc.facts['url'] as string) : typeof comp.facts?.['url'] === 'string' ? (comp.facts['url'] as string) : null} />
             : null}
@@ -336,7 +377,7 @@ export function ComponentPage({ id, cid, me }: { id: string; cid: string; me?: M
         {comp.type === 'probe' ? <ProbeView cid={cid} sc={sc} m={m} range={range} tz={d.tz} /> : null}
         {comp.type === 'dashboard' ? <DashboardView sc={sc} comp={comp} m={m} range={range} tz={d.tz} /> : null}
         {comp.type === 'runner' ? <RunnerView sc={sc} comp={comp} m={m} range={range} tz={d.tz} /> : null}
-        {comp.type === 'speedtest' ? <EmptyState title="Speedtest component">No dedicated panels yet; see the process figures above.</EmptyState> : null}
+        {comp.type === 'speedtest' ? <SpeedtestView sc={sc} m={m} range={range} tz={d.tz} site={d.host.data?.site} /> : null}
       </div>
       ) : null}
     </>

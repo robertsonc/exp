@@ -68,3 +68,7 @@ export function mutateText(method: 'POST', path: string): Promise<string> {
 export function mutateForm<T = unknown>(path: string, form: FormData): Promise<T> {
   return current.mutateForm<T>(path, form);
 }
+
+export function mutateBytes<T = unknown>(path: string, bytes: Blob | ArrayBuffer, contentType: string): Promise<T> {
+  return current.mutateBytes<T>(path, bytes, contentType);
+}

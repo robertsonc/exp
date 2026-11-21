@@ -3,9 +3,9 @@
 PY ?= .venv/bin/python
 RUFF ?= .venv/bin/ruff
 VERSION ?= $(shell cat VERSION)
-COMPONENTS := probe collector dashboard agent runner
+COMPONENTS := probe collector dashboard agent runner speedtest
 # Product directories that exist (linted when present).
-LINT_DIRS := $(wildcard shared/python probe collector dashboard agent runner test packaging)
+LINT_DIRS := $(wildcard shared/python probe collector dashboard agent runner speedtest test packaging)
 
 .PHONY: venv lint test test-shared $(addprefix test-,$(COMPONENTS)) manager-test build release dev help
 

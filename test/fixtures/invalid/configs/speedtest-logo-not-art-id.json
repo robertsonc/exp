@@ -1,0 +1,118 @@
+{
+  "schema": "exp.speedtest.config/1",
+  "speedtest_id": "spd-core",
+  "site": "hall-b",
+  "zones": [
+    {
+      "id": "hall-a",
+      "name": "Hall A"
+    },
+    {
+      "id": "hall-b",
+      "name": "Hall B"
+    },
+    {
+      "id": "hallb-row12",
+      "name": "Hall B, row 12"
+    }
+  ],
+  "zone_labels": {
+    "subnets": [
+      {
+        "cidr": "10.60.0.0/16",
+        "zone": "hall-a"
+      },
+      {
+        "cidr": "10.61.0.0/16",
+        "zone": "hall-b"
+      }
+    ]
+  },
+  "branding": {
+    "title": "Summit speed check",
+    "logo_artifact": "logo.png",
+    "colors": {
+      "primary": "#01a982",
+      "accent": "#7630ea",
+      "background": "#0b1320",
+      "text": "#f7f7f7"
+    },
+    "languages": [
+      "en",
+      "de"
+    ],
+    "copy": {
+      "start_button": "Start",
+      "verdict_good": "Your connection is great."
+    }
+  },
+  "consent": {
+    "text": "We measure your speed and look at this device's Wi-Fi and traffic metadata to diagnose it. No name or email is collected.",
+    "version": 3
+  },
+  "display": {
+    "show_network_details": false
+  },
+  "targets": {
+    "down_mbps": 25,
+    "up_mbps": 10
+  },
+  "limits": {
+    "tests_per_10min_per_ip": 6,
+    "max_concurrent_per_ip": 1,
+    "max_concurrent_tests": 20,
+    "max_concurrent_internet": 10,
+    "bytes_local": 200000000,
+    "bytes_internet": 200000000,
+    "leg_token_ttl_s": 60,
+    "result_deadline_s": 180
+  },
+  "internet_leg": {
+    "enabled": true,
+    "provider": "cloudflare",
+    "paused": false,
+    "auto_pause_wan_util_pct": 80
+  },
+  "serve": {
+    "placement": "core",
+    "hostname": "speed.summit.example",
+    "listen_ip": "10.0.0.9",
+    "require_real_client_ip": true,
+    "client_subnets": [
+      "10.60.0.0/16",
+      "10.61.0.0/16"
+    ],
+    "translated_addresses": [
+      "10.0.0.2"
+    ]
+  },
+  "tls": {
+    "mode": "none"
+  },
+  "dns_leg": {
+    "enabled": true,
+    "zone": "t.speed.summit.example"
+  },
+  "path": {
+    "gateway": "auto",
+    "edge": "10.0.0.2",
+    "edge1": "auto",
+    "note": "infrastructure context, not per-user"
+  },
+  "privacy": {
+    "retention_days": 30,
+    "scrub_after_diagnosis": false
+  },
+  "core_guard": {
+    "iface": "eno2",
+    "util_pct": 70,
+    "min_bytes": 5000000
+  },
+  "collector": {
+    "url": "https://10.32.98.25:8443",
+    "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6"
+  },
+  "local_channel": {
+    "listen": "127.0.0.1:8480"
+  }
+}

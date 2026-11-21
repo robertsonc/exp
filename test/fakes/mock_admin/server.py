@@ -328,7 +328,7 @@ class MockAdmin:
                   "uptime_s": int(1234567 + (at - self.w["now"])),
                   "net": {k: self.host_value(h, f"net_{k}", snap) for k in ("rx_pps", "tx_pps", "rx_bps", "tx_bps")}}
         work: dict[str, Any] = {"measurements_per_min": None, "ingest_records_per_s": None,
-                                "sessions_active": None, "drills_active": None}
+                                "sessions_active": None, "drills_active": None, "tests_per_hour": None}
         for c in comps:
             if c["type"] == "probe" and self.comp_value(c, "measurements_per_min", snap) is not None:
                 work["measurements_per_min"] = round((work["measurements_per_min"] or 0)
@@ -339,6 +339,8 @@ class MockAdmin:
                 work["sessions_active"] = int(self.comp_value(c, "sessions_active", snap) or 0)
             elif c["type"] == "runner" and at is not None:
                 work["drills_active"] = 0
+            elif c["type"] == "speedtest" and at is not None:
+                work["tests_per_hour"] = int(self.comp_value(c, "tests_per_hour", snap) or 0)
         n_issues = sum(1 for i in self.open_issues() if i["host_id"] == h["host_id"])
         return {"host_id": h["host_id"], "name": h["name"], "mgmt_ip": h["mgmt_ip"], "site": h["site"],
                 "shapes": list(h["shapes"]), "state": h["state"], "stale": h["state"] in ("stale", "offline"),
@@ -706,7 +708,7 @@ def r_comp_create(a: MockAdmin, r: Req) -> Resp:
          "created_at": now, "updated_at": now, "_profile": seed.component_profile(d["type"]), "_rotated_at": None,
          "_detail": ""}
     a.w["components"][cid] = c
-    if d["type"] not in h["shapes"] and d["type"] in ("probe", "collector", "dashboard", "runner") and len(h["shapes"]) < 4:
+    if d["type"] not in h["shapes"] and d["type"] in ("probe", "collector", "dashboard", "runner", "speedtest") and len(h["shapes"]) < 5:
         h["shapes"].append(d["type"])
     refresh_port_usage(a, h)
     a.bump(h)
@@ -1621,6 +1623,156 @@ def r_settings_patch(a: MockAdmin, r: Req) -> Resp:
     return ok(new)
 
 
+# ------------------------------------------------------------------ M6 speedtest settings (admin.yaml tag speedtest)
+# INTENT only: this mock, like the manager, has no route for test results or evidence (SR-20).
+DEFAULT_CONSENT = ("We measure your connection speed and record technical details of this device and its network path "
+                   "(Wi-Fi signal, access point, traffic metadata) to diagnose problems. No name or email address is collected.")
+_PNG_MAGIC, _JPEG_MAGIC = b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff"
+_SVG_BAD = re.compile(
+    rb"<\s*(script|foreignobject|iframe|embed|object|link|animate|set|a)\b|\son[a-z]+\s*=|javascript:|@import|<!(DOCTYPE|ENTITY)", re.I)
+
+
+def st_state(a: MockAdmin, site: str) -> dict[str, Any]:
+    a.site(site)
+    return a.w["speedtest"].setdefault(site, {"settings": {}, "consent": None, "paused": False, "logo": None, "updated_at": None})
+
+
+def st_out(a: MockAdmin, site: str) -> dict[str, Any]:
+    st = st_state(a, site)
+    out = json.loads(json.dumps(st["settings"]))
+    if st["logo"]:
+        out.setdefault("branding", {})["logo_artifact"] = st["logo"]["artifact"]
+    out["internet_leg"] = {**out.get("internet_leg", {}), "paused": st["paused"]}
+    out["consent"] = st["consent"] or {"text": DEFAULT_CONSENT, "version": 1}
+    dk = a.w["device_key"]
+    out["device_key"] = {"set": dk["set"], "updated_at": dk["updated_at"]}
+    if st["updated_at"]:
+        out["updated_at"] = st["updated_at"]
+    return out
+
+
+def r_st_get(a: MockAdmin, r: Req) -> Resp:
+    return ok(st_out(a, r.params["site"]))
+
+
+def r_st_put(a: MockAdmin, r: Req) -> Resp:
+    site = r.params["site"]
+    st = st_state(a, site)
+    d = r.json("SpeedtestSettingsPut")
+    serve = d.get("serve")
+    if serve and (serve["listen_ip"] in ("0.0.0.0", "255.255.255.255") or serve["listen_ip"].startswith("127.")):  # noqa: S104
+        raise ApiError(400, "invalid_request", "serve.listen_ip must be a unicast address of the speedtest box")
+    if serve and serve.get("require_real_client_ip") and not (serve.get("client_subnets") or d.get("zone_labels", {}).get("subnets")):
+        raise ApiError(400, "invalid_request", "serve.require_real_client_ip needs the attendee subnets")
+    known = {z["id"] for z in d.get("zones", [])}
+    if known:
+        for sn in d.get("zone_labels", {}).get("subnets", []):
+            if sn["zone"] not in known:
+                raise ApiError(400, "invalid_request", f"zone_labels refers to unknown zone {sn['zone']}")
+    br = d.get("branding", {})
+    if br.get("logo_artifact") and not (st["logo"] and st["logo"]["artifact"] == br["logo_artifact"]):
+        raise ApiError(400, "invalid_request", "branding.logo_artifact can only be set by uploading a logo")
+    now = seed.iso(a.now())
+    consent = d["consent"]
+    cur = st["consent"]
+    hist = a.w["speedtest_history"].setdefault(site, [])
+    if cur is None or consent["text"] != cur["text"]:
+        version = 1 if cur is None else cur["version"] + 1
+        hist.append({"version": version, "text": consent["text"], "changed_by": r.email, "created_at": now})
+        st["consent"] = {"text": consent["text"], "version": version}
+    if "logo_artifact" in br and br["logo_artifact"] is None:
+        st["logo"] = None
+    paused = d.get("internet_leg", {}).get("paused", st["paused"])
+    settings = {k: v for k, v in d.items() if k != "consent"}
+    if "branding" in settings:
+        settings["branding"] = {k: v for k, v in settings["branding"].items() if k != "logo_artifact"}
+    if "internet_leg" in settings:
+        settings["internet_leg"] = {k: v for k, v in settings["internet_leg"].items() if k != "paused"}
+    st["settings"], st["paused"], st["updated_at"] = settings, paused, now
+    a.audit(r.email, "speedtest.settings", f"site:{site}", {"fields": sorted(settings), "consent_version": st["consent"]["version"]})
+    a.mutated()
+    return ok(st_out(a, site))
+
+
+def r_st_history(a: MockAdmin, r: Req) -> Resp:
+    a.site(r.params["site"])
+    return ok({"items": list(reversed(a.w["speedtest_history"].get(r.params["site"], [])))})
+
+
+def r_st_pause(a: MockAdmin, r: Req) -> Resp:
+    st = st_state(a, r.params["site"])
+    d = r.json("SpeedtestPause")
+    st["paused"], st["updated_at"] = d["paused"], seed.iso(a.now())
+    a.audit(r.email, "speedtest.internet_pause", f"site:{r.params['site']}", {"paused": d["paused"]})
+    a.mutated()
+    return ok({"paused": st["paused"], "updated_at": st["updated_at"]})
+
+
+def r_st_logo(a: MockAdmin, r: Req) -> Resp:
+    st = st_state(a, r.params["site"])
+    ctype = (r.h.header("Content-Type") or "").split(";")[0].strip().lower()
+    if ctype not in ("image/png", "image/svg+xml", "image/jpeg"):
+        raise ApiError(415, "unsupported_media_type", "the logo must be image/png, image/svg+xml or image/jpeg")
+    body = r.raw(262144)
+    if not body:
+        raise ApiError(400, "invalid_request", "an image body is required")
+    good = (body.startswith(_PNG_MAGIC) if ctype == "image/png" else body.startswith(_JPEG_MAGIC) if ctype == "image/jpeg"
+            else b"<svg" in body[:512].lower() and not _SVG_BAD.search(body))
+    if not good:
+        raise ApiError(400, "invalid_request", "the body is not an acceptable image of that type")
+    sha = hashlib.sha256(body).hexdigest()
+    st["logo"] = {"artifact": fc.det_id("art_", f"logo:{sha}"), "sha256": sha, "size": len(body), "content_type": ctype}
+    st["updated_at"] = seed.iso(a.now())
+    a.audit(r.email, "speedtest.logo", f"site:{r.params['site']}", {"size": len(body), "content_type": ctype})
+    a.mutated()
+    return ok(dict(st["logo"]), 201)
+
+
+def r_st_qr(a: MockAdmin, r: Req) -> Resp:
+    st = st_state(a, r.params["site"])
+    s = st["settings"]
+    host = (s.get("serve") or {}).get("hostname")
+    if not host:
+        return ok({"items": []})
+    scheme = "https" if (s.get("tls") or {}).get("mode") == "provided" else "http"
+    return ok({"items": [{"zone": z["id"], "name": z["name"], "url": f"{scheme}://{host}/?z={z['id']}"} for z in s.get("zones", [])]})
+
+
+def _st_tls_view(a: MockAdmin, site: str) -> dict[str, Any]:
+    a.site(site)
+    t = a.w["speedtest_tls"].get(site)
+    if not t:
+        return {"set": False, "updated_at": None, "cert": None}
+    return {"set": True, "updated_at": t["updated_at"], "cert": t["cert"]}
+
+
+def r_st_tls_get(a: MockAdmin, r: Req) -> Resp:
+    return ok(_st_tls_view(a, r.params["site"]))
+
+
+def r_st_tls_put(a: MockAdmin, r: Req) -> Resp:
+    site = r.params["site"]
+    a.site(site)
+    d = r.json("SpeedtestTlsPut")
+    if "BEGIN CERTIFICATE" not in d["cert_pem"] or "PRIVATE KEY" not in d["key_pem"]:
+        raise ApiError(422, "invalid_config", "the certificate or key is not a PEM block")
+    now = a.now()
+    a.w["speedtest_tls"][site] = {"updated_at": seed.iso(now), "cert": {
+        "subject": "CN=speed.summit.example", "issuer": "CN=speed.summit.example", "not_before": seed.iso(now - 86400),
+        "not_after": seed.iso(now + 365 * 86400), "sha256": seed.fingerprint(f"speedtest-tls:{site}"), "san": ["speed.summit.example"]}}
+    a.audit(r.email, "speedtest.tls", f"site:{site}", {"secret_set": True})
+    a.mutated()
+    return ok(_st_tls_view(a, site))
+
+
+def r_st_device_key(a: MockAdmin, r: Req) -> Resp:
+    dk = a.w["device_key"]
+    dk.update(set=True, updated_at=seed.iso(a.now()), version=dk.get("version", 0) + 1)
+    a.audit(r.email, "speedtest.device_key", "settings", {"rotated": dk["version"] > 1})
+    a.mutated()
+    return ok({"set": True, "updated_at": dk["updated_at"], "key_id": f"k{dk['version']}"})
+
+
 def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req], Resp]]]:
     spec = [
         ("GET", "/me", "viewer", r_me),
@@ -1677,6 +1829,13 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("POST", "/settings/platform-webhook/test", "admin", r_pw_test),
         ("GET", "/settings/master-key", "admin", r_master_key),
         ("GET", "/audit", "admin", r_audit),
+        ("GET", "/sites/{site}/speedtest", "viewer", r_st_get), ("PUT", "/sites/{site}/speedtest", "admin", r_st_put),
+        ("GET", "/sites/{site}/speedtest/consent-history", "admin", r_st_history),
+        ("POST", "/sites/{site}/speedtest/logo", "admin", r_st_logo),
+        ("POST", "/sites/{site}/speedtest/internet-pause", "operator", r_st_pause),
+        ("GET", "/sites/{site}/speedtest/qr", "viewer", r_st_qr),
+        ("GET", "/sites/{site}/speedtest/tls", "admin", r_st_tls_get), ("PUT", "/sites/{site}/speedtest/tls", "admin", r_st_tls_put),
+        ("POST", "/settings/speedtest-device-key", "owner", r_st_device_key),
         ("GET", "/settings", "viewer", r_settings_get), ("PATCH", "/settings", "owner", r_settings_patch),
     ]
     out = []

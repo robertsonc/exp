@@ -70,6 +70,19 @@ export const runnersOfCollector = (w: World, col: WComponent): WComponent[] =>
     .filter((p) => collectorFor(w, p)?.component_id === col.component_id)
     .sort(byCreated);
 
+export const speedtestsOfCollector = (w: World, col: WComponent): WComponent[] =>
+  componentsOf(w, "speedtest")
+    .filter((p) => collectorFor(w, p)?.component_id === col.component_id)
+    .sort(byCreated);
+
+/** The runner a speedtest talks to over the localhost channel: the first enabled runner on the same host. */
+export const runnerOfSpeedtest = (w: World, st: WComponent): WComponent | null =>
+  componentsOf(w, "runner").filter((r) => r.host_id === st.host_id).sort(byCreated)[0] ?? null;
+
+/** The speedtest a runner pushes to over the localhost channel: the first enabled speedtest on the same host. */
+export const speedtestOfRunner = (w: World, r: WComponent): WComponent | null =>
+  componentsOf(w, "speedtest").filter((s) => s.host_id === r.host_id).sort(byCreated)[0] ?? null;
+
 /** `https://<listen>` and the pin, only once the collector has reported both (else null: probes spool). */
 export function collectorEndpoint(col: WComponent | null): { url: string; pin: string } | null {
   if (!col) return null;
@@ -86,6 +99,20 @@ export const SSO_KIND = "sso_secret";
 export const WEBHOOK_KIND = "webhook_url";
 /** admin-provided dashboard TLS: JSON {cert_pem, key_pem}, owner = the dashboard component id (write-only) */
 export const TLS_KIND = "dashboard_tls";
+/** M6 (01-contracts.md section 14.2): speedtest -> collector token (exps_), owner = the speedtest component */
+export const SPEEDTEST_TOKEN_KIND = "speedtest_token";
+/** runner -> collector token (expr_), owner = the runner component */
+export const RUNNER_TOKEN_KIND = "runner_token";
+/** runner -> speedtest localhost channel token (expl_), owner = pairOwner(runner, speedtest) */
+export const CHANNEL_TOKEN_KIND = "channel_token";
+/** per-org device_key secret (expk_, 32 random bytes): owner DEVICE_KEY_OWNER, never hashed, never returned by an API */
+export const DEVICE_KEY_KIND = "device_key";
+export const DEVICE_KEY_OWNER = "org";
+/** provided TLS pair of the site's speedtest: JSON {cert_pem, key_pem}, owner = speedtestTlsOwner(site) (write-only) */
+export const SPEEDTEST_TLS_KIND = "speedtest_tls";
+export const speedtestTlsOwner = (site: string): string => `speedtest:${site}`;
+/** stored connector credentials (admin/intent.ts INTEGRATION_KIND) */
+export const INTEGRATION_SECRET_KIND = "integration_credentials";
 export const pairOwner = (dashCmp: string, colCmp: string): string => `${dashCmp}:${colCmp}`;
 
 export interface RequiredSecret {
@@ -99,6 +126,13 @@ export function requiredSecrets(w: World): RequiredSecret[] {
   for (const c of w.components) {
     if (!c.enabled) continue;
     if (c.type === "probe" || c.type === "runner") out.push({ ownerRef: c.component_id, kind: INGEST_KIND });
+    if (c.type === "runner") {
+      out.push({ ownerRef: c.component_id, kind: RUNNER_TOKEN_KIND });
+      out.push({ ownerRef: DEVICE_KEY_OWNER, kind: DEVICE_KEY_KIND });
+      const st = speedtestOfRunner(w, c);
+      if (st) out.push({ ownerRef: pairOwner(c.component_id, st.component_id), kind: CHANNEL_TOKEN_KIND });
+    }
+    if (c.type === "speedtest") out.push({ ownerRef: c.component_id, kind: SPEEDTEST_TOKEN_KIND });
     if (c.type === "dashboard") {
       out.push({ ownerRef: c.component_id, kind: SSO_KIND });
       for (const col of collectorsOfDashboard(w, c)) {

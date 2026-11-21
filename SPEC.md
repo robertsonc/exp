@@ -140,7 +140,8 @@ ISP › DNS › apps.
 | D12 | **Platform versioning**: one semver for all components; agent N supports components N and N-1. | Simple compatibility story. |
 | D13 | **Drills are opt-in, allowlisted, time-boxed, auto-reverting, audited, and executed on-prem by a runner.** | Breaking a live network must be deliberate and bounded. |
 | D14 | **Fleet health is a roll-up, not real-time:** agents send host/process/component metrics in the status report every 60 s (30–300); the manager keeps latest values plus D1 roll-ups (5 min × 48 h, 1 h × 30 d) and evaluates fleet issues; the UI polls every 30 s. | One channel (no extra agents or exporters); D1 is ample to 500 hosts; Analytics Engine is the scale-out path. |
-| D15 | **User speedtest is a self-contained page served by a dedicated exp box** (probe + collector + runner) from a probe port on the attendee VLAN — no app, no cloud component of ours. The browser times Wi-Fi/LAN to the box, DNS through its own resolver (delegated nonce zone), and the internet leg to Cloudflare's public speed test; the box times gateway, edge, and edge+1 from the same VLAN, idle and loaded, and runs the correlation (Wi-Fi, flows, security logs, probes). On-prem results, anonymous by default. | The box must see the device's real LAN IP to join network data and must work with the internet down; per-leg timing localizes the fault. |
+| D15 | **User speedtest is a self-contained page served by one exp box at the venue core/DC** (probe + collector + runner), plain HTTP, reached by attendee devices **routed and un-NAT'd**. The browser measures speed to the box ("on-network": Wi-Fi+access+core) and to Cloudflare ("internet"), plus a DNS leg; **the user's physical location and per-leg Wi-Fi/path breakdown are reconstructed from correlation** (Mist AP/zone/RSSI, EC flow+WAN, DHCP), not from where the box sits. Always anonymous; device metadata (MAC/IP/…) is the kept record. | One box is far simpler than per-hall boxes + steering, and correlation already knows each client's AP, zone, switch, and WAN path. Hard dependency: the box must see the real client IP (no NAT), and location quality depends on Mist/EC being connected. |
+| D16 | *(retired, folded into D15)* — the earlier per-zone-box + steering design (QR / subnet redirect / per-VLAN DNS) is **replaced** by the single core box with correlation-based location. A per-zone QR survives only as an optional zone *hint*. | Correlation makes "nearest box" unnecessary; one box is simpler to deploy and operate. |
 
 ## 6. Component summaries
 
@@ -165,8 +166,10 @@ Full detail in `docs/spec/02–06`. Interfaces in `docs/spec/01-contracts.md`.
   roll back, report facts/status, self-update, decommission.
 - **Runner** (`exp-runner`, M5): drill execution and event-correlation pullers, on-prem; in M6 also
   the speedtest correlation connectors (Mist client, EC flows, syslog/SSE security logs).
-- **Speedtest** (`exp-speedtest`, M6): branded on-prem speedtest page and local-leg server; results
-  to its collector; diagnosis and analytics in collector/dashboard (`12-speedtest-analytics.md`).
+- **Speedtest** (`exp-speedtest`, M6): branded self-contained speedtest page served by one core/DC
+  box; measures on-network and internet speed and DNS; the attendee's location and Wi-Fi/path
+  breakdown come from correlation (Mist/EC/DHCP); results to its collector; diagnosis and analytics in
+  collector/dashboard (`12-speedtest-analytics.md`).
 
 ## 7. Key flows
 
@@ -285,7 +288,7 @@ exp/
   dashboard/                 exp-dashboard    (Python server + static SPA)
   agent/                     exp-agent + install/install.sh (Python)
   runner/                    exp-runner       (Python, M5; correlation connectors M6)
-  speedtest/                 exp-speedtest    (Python server + static page, M6)
+  speedtest/                 exp-speedtest    (Python server + one-file page, core/DC box, M6)
   manager/                   exp-manager: worker/ (TS), ui/ (TS SPA), migrations/, deploy.sh, wrangler.toml
   packaging/                 build + sign scripts, systemd unit templates, release keys (public)
   test/                      fixtures/, harness/ (container LAN), e2e/
@@ -313,4 +316,4 @@ incidents + correlated events; synthetic voice/video (WebRTC) tests.
 | Q4 | Wi-Fi probe hardware (USB adapter model)? | Any `nl80211` adapter supported by `iw`/`wpa_supplicant`. |
 | Q5 | Which EC Orchestrator / appliances are allowed drill targets? | None until allowlisted in the UI. |
 | Q6 | Brand name and casing in UI ("HPE exp", "EXP")? | "exp" in code, "HPE EXP" in UI titles. |
-| Q7 | Speedtest: domain/cert, security log sources, identity source, privacy sign-off, WLAN platforms? | See `12-speedtest-analytics.md` §13. |
+| Q7 | Speedtest: domain/cert, security log sources, identity source, privacy sign-off, WLAN platforms, zone steering (QR / subnet redirect / per-VLAN DNS)? | See `12-speedtest-analytics.md` §13; steering §3.1. |

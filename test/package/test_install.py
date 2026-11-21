@@ -28,7 +28,7 @@ BUILD = REPO / "packaging" / "build.sh"
 SCHEMAS = REPO / "shared" / "schemas"
 DOCKERFILE = Path(__file__).resolve().parent / "Dockerfile.systemd"
 IMAGE = "exp-pkg-systemd:24.04"
-COMPONENTS = ["agent", "probe", "collector", "dashboard", "runner"]
+COMPONENTS = ["agent", "probe", "collector", "dashboard", "runner", "speedtest"]
 ARCH = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine(), "")
 STRICT = os.environ.get("EXP_PACKAGE_STRICT") == "1"
 APT_ALLOWLIST = {"busybox", "busybox-static", "iproute2", "iputils-ping", "iperf3", "curl", "openssl",
@@ -175,7 +175,7 @@ def install(host: str, tar: Path, component: str) -> dict:
 
 
 FIXTURE_CONFIGS = {"probe": "probe.json", "collector": "collector.json", "dashboard": "dashboard.json",
-                   "runner": "runner.json"}
+                   "runner": "runner.json", "speedtest": "speedtest.json"}
 
 
 def provision(host: str, component: str, prefix: str) -> None:
@@ -280,3 +280,110 @@ def test_verify_gate_rejects_a_broken_unit(host):
     v = inc(host, "systemd-analyze verify /etc/systemd/system/exp-broken.service 2>&1", timeout=60)
     inc(host, "rm -f /etc/systemd/system/exp-broken.service")
     assert v.returncode != 0 or "error" in v.stdout.lower(), v.stdout
+
+
+# ---------------------------------------------------------------- M6: the two services under real systemd
+
+def _status(host: str, unit: str) -> dict:
+    pid = inc(host, "systemctl show -p MainPID --value %s" % unit, timeout=30).stdout.strip()
+    assert pid.isdigit() and int(pid) > 0, "%s has no main process" % unit
+    raw = inc(host, "cat /proc/%s/status" % pid, timeout=30).stdout
+    return {k: v.strip() for k, _, v in (ln.partition(":") for ln in raw.splitlines())} | {"_pid": pid}
+
+
+def _wait_active(host: str, unit: str, seconds: int = 40) -> None:
+    for _ in range(seconds):
+        if inc(host, "systemctl is-active %s" % unit, timeout=20).stdout.strip() == "active":
+            return
+        sh(["sleep", "1"])
+    log = inc(host, "journalctl -u %s --no-pager -n 20" % unit, timeout=30).stdout
+    pytest.fail("%s did not become active:\n%s" % (unit, log[-1200:]))
+
+
+def test_runner_and_speedtest_run_unprivileged_with_exactly_the_granted_capabilities(host, dist, tmp_path):
+    """The real units under real systemd: users, capability sets, no_new_privs, seccomp, state/runtime dirs, listening
+    ports (the speedtest on 80/53 as a NON-root user), and the agent's scoped ping_group_range drop-in lifecycle."""
+    agent = install(host, tarball_for(dist, "agent", tmp_path), "agent")
+    for c in ("runner", "speedtest"):
+        install(host, tarball_for(dist, c, tmp_path), c)
+    # a speedtest config that binds inside this container: loopback, DNS leg on 127.0.0.1:53
+    cfg = json.loads((REPO / "test" / "fixtures" / "configs" / "speedtest.json").read_text())
+    cfg["serve"]["listen_ip"] = "127.0.0.1"
+    cfg["serve"]["client_subnets"] = []
+    cfg["serve"]["translated_addresses"] = []
+    cfg["core_guard"] = {"iface": "lo", "util_pct": 70, "min_bytes": 5000000}
+    local = tmp_path / "speedtest.config.json"
+    local.write_text(json.dumps(cfg))
+    assert sh(["docker", "cp", str(local), "%s:/etc/exp/speedtest/config.json" % host]).returncode == 0
+    rcfg = json.loads((REPO / "test" / "fixtures" / "configs" / "runner.correlation.json").read_text())
+    rcfg["correlation"]["sources"]["syslog"].update({"bind": "127.0.0.1", "allow": ["127.0.0.0/8"]})
+    rlocal = tmp_path / "runner.config.json"
+    rlocal.write_text(json.dumps(rcfg))
+    assert sh(["docker", "cp", str(rlocal), "%s:/etc/exp/runner/config.json" % host]).returncode == 0
+
+    # --- the agent's scoped, reversible ICMP drop-in, run for real in the container (root, real /proc and sysctl)
+    gid = inc(host, "getent group exp-speedtest | cut -d: -f3").stdout.strip()
+    assert gid.isdigit()
+    assert inc(host, "sysctl -w 'net.ipv4.ping_group_range=1 0'").returncode == 0
+    script = tmp_path / "ping_ctl.py"
+    script.write_text(
+        "import sys\n"
+        "sys.path[:0] = [sys.argv[1] + '/lib']\n"
+        "from exp_agent.context import build_context\n"
+        "from exp_agent import pingsys\n"
+        "ctx = build_context('/')\n"
+        "print(sys.argv[2], pingsys.ensure(ctx, int(sys.argv[3])) if sys.argv[2] == 'ensure' else pingsys.revert(ctx))\n")
+    assert sh(["docker", "cp", str(script), "%s:/tmp/ping_ctl.py" % host]).returncode == 0
+    r = inc(host, "python3 /tmp/ping_ctl.py %s ensure %s" % (agent["prefix"], gid))
+    assert r.returncode == 0 and "True" in r.stdout, r.stdout + r.stderr
+    live = inc(host, "cat /proc/sys/net/ipv4/ping_group_range").stdout.split()
+    assert live == [gid, gid], live
+    drop = inc(host, "cat /etc/sysctl.d/60-exp-speedtest-ping.conf").stdout
+    assert "# exp-original: 1 0" in drop and "net.ipv4.ping_group_range = %s %s" % (gid, gid) in drop
+
+    # --- start both
+    assert inc(host, "systemctl start exp-runner.service exp-speedtest.service", timeout=60).returncode == 0
+    _wait_active(host, "exp-runner.service")
+    _wait_active(host, "exp-speedtest.service")
+    sh(["sleep", "3"])
+    _wait_active(host, "exp-speedtest.service", 5)
+
+    st, rn = _status(host, "exp-speedtest.service"), _status(host, "exp-runner.service")
+    st_uid = inc(host, "id -u exp-speedtest").stdout.strip()
+    rn_uid = inc(host, "id -u exp-runner").stdout.strip()
+    assert st["Uid"].split()[0] == st_uid and rn["Uid"].split()[0] == rn_uid and st_uid != rn_uid != "0"
+    cap_bind = "0000000000000400"  # CAP_NET_BIND_SERVICE (10) and nothing else
+    assert st["CapEff"] == st["CapPrm"] == st["CapAmb"] == st["CapBnd"] == cap_bind, st
+    assert rn["CapEff"] == rn["CapPrm"] == rn["CapAmb"] == rn["CapBnd"] == "0000000000000000", rn
+    for s in (st, rn):
+        assert s["NoNewPrivs"] == "1" and s["Seccomp"] == "2", s
+    listening = inc(host, "ss -H -lntu").stdout
+    assert re.search(r"tcp\s+LISTEN\s+\S+\s+\S+\s+127\.0\.0\.1:80\b", listening), listening
+    assert re.search(r"udp\s+\S+\s+\S+\s+\S+\s+127\.0\.0\.1:53\b", listening), listening  # DNS leg, bound by a non-root user
+    assert re.search(r"127\.0\.0\.1:8480\b", listening), listening  # runner channel
+    assert re.search(r"udp\s+\S+\s+\S+\s+\S+\s+127\.0\.0\.1:5514\b", listening), listening  # syslog: unprivileged ports
+    assert re.search(r"tcp\s+LISTEN\s+\S+\s+\S+\s+127\.0\.0\.1:5514\b", listening), listening
+    assert re.search(r"tcp\s+LISTEN\s+\S+\s+\S+\s+127\.0\.0\.1:6514\b", listening), listening
+    # state and runtime directories are service-owned, mode as the units say
+    own = inc(host, "stat -c '%U %a' /var/lib/exp/speedtest /var/lib/exp/runner /run/exp/speedtest").stdout.split("\n")
+    assert own[0] == "exp-speedtest 755" and own[1] == "exp-runner 700", own
+    # the service cannot write outside its state (ProtectSystem=strict): /etc and /opt stay read-only for it
+    assert inc(host, "systemd-run --wait --pipe -p ProtectSystem=strict true", timeout=60).returncode == 0
+    # health through the agent's own call shape (CREDENTIALS_DIRECTORY, --config): valid JSON, not a hard failure
+    for c in ("speedtest", "runner"):
+        r = inc(host, "%s /opt/exp/%s/current/bin/exp-%s health --json --config /etc/exp/%s/config.json"
+                % (run_env(c), c, c, c), timeout=30)
+        doc = json.loads(r.stdout)
+        assert doc["status"] in ("ok", "degraded"), doc
+    # unprivileged ICMP works for the service group (the path timer needs it): no "no ICMP mechanism" note
+    cmd = "%s /opt/exp/speedtest/current/bin/exp-speedtest health --json --config /etc/exp/speedtest/config.json"
+    h = json.loads(inc(host, cmd % run_env("speedtest")).stdout)
+    assert "no ICMP mechanism" not in h["detail"], h["detail"]
+
+    # --- stop, then revert the drop-in: file gone, original range back
+    inc(host, "systemctl stop exp-runner.service exp-speedtest.service", timeout=60)
+    r = inc(host, "python3 /tmp/ping_ctl.py %s revert" % agent["prefix"])
+    assert r.returncode == 0 and "True" in r.stdout, r.stdout + r.stderr
+    assert inc(host, "test -e /etc/sysctl.d/60-exp-speedtest-ping.conf").returncode != 0
+    assert inc(host, "cat /proc/sys/net/ipv4/ping_group_range").stdout.split() == ["1", "0"]
+    inc(host, "sysctl -w 'net.ipv4.ping_group_range=0 2147483647'")

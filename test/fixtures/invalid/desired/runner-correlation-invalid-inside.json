@@ -1,0 +1,525 @@
+{
+  "schema": "exp.desired/1",
+  "host_id": "h_01M7R3X9G00VHX1J69SY2NWWT4",
+  "version": 50,
+  "generated_at": "2026-11-18T20:00:00.000Z",
+  "org": {
+    "id": "default",
+    "name": "HPE Event NOC"
+  },
+  "site": {
+    "id": "hall-b",
+    "name": "Hall B",
+    "timezone": "America/Chicago"
+  },
+  "agent": {
+    "version": "0.1.0",
+    "artifact": "art_01M7R3X9G0R4V0Q45D0YQATNJ2",
+    "poll_interval_s": 30,
+    "status_interval_s": 60
+  },
+  "release": {
+    "version": "0.1.0",
+    "manifest_url": "/api/agent/v1/releases/0.1.0/manifest",
+    "signature_url": "/api/agent/v1/releases/0.1.0/manifest.sig"
+  },
+  "components": [
+    {
+      "type": "collector",
+      "id": "col-hallb",
+      "component_id": "cmp_01M7R3X9G06DMG2J3N52E6FEBZ",
+      "version": "0.1.0",
+      "artifact": {
+        "id": "art_01M7R3X9G0H2BDQDXZ0N0MDFB5",
+        "name": "exp-collector-0.1.0-amd64.tar.gz",
+        "url": "/api/agent/v1/artifacts/art_01M7R3X9G0H2BDQDXZ0N0MDFB5",
+        "sha256": "943c05bf74ad2bc5e4cf32ca6d30d8831b886fcd9d928547f783d730a76b5a75",
+        "size": 23456789
+      },
+      "config": {
+        "schema": "exp.collector.config/1",
+        "collector_id": "col-hallb",
+        "site": "hall-b",
+        "listen": "10.32.98.25:8443",
+        "probes": [
+          {
+            "probe_id": "probe-a1",
+            "site": "hall-b",
+            "label": "Hall B east"
+          }
+        ],
+        "dashboards": [
+          "dash-main"
+        ],
+        "retention": {
+          "metrics_days": 30,
+          "records_days": 7
+        },
+        "vm": {
+          "listen": "127.0.0.1:8428",
+          "memory_allowed_pct": 40
+        },
+        "rules": {
+          "edge_label": "EC",
+          "lines": [
+            "network",
+            "dhcp",
+            "dns",
+            "internet",
+            "apps",
+            "wifi",
+            "path"
+          ]
+        },
+        "alerts": {
+          "enabled": true,
+          "board_url": "https://10.32.98.30",
+          "timezone": "America/Chicago",
+          "voice": "sysadmin",
+          "hold_down_s": 20,
+          "hold_back_s": 60,
+          "reopen_s": 300,
+          "calm_s": 600
+        },
+        "reflector": {
+          "enabled": true,
+          "port": 8862
+        },
+        "iperf3": {
+          "enabled": true,
+          "port": 5201
+        },
+        "ingest": {
+          "max_body_mb": 4,
+          "max_records": 1000
+        },
+        "speedtests": {
+          "enabled": true,
+          "speedtests": [
+            "spd-core"
+          ],
+          "runners": [
+            "run-core"
+          ],
+          "retention_days": 30,
+          "scrub_after_diagnosis": false,
+          "targets": {
+            "down_mbps": 25,
+            "up_mbps": 10
+          },
+          "max_evidence_kib": 256,
+          "stream_replay_s": 300
+        }
+      },
+      "creds": {
+        "ingest_tokens.json": "{\"probe-a1\":\"4b6bc8e17052c613a1c5b1690674666cfa125e2c5fa62cfe453d215d348921fe\"}",
+        "dashboard_tokens.json": "{\"dash-main\":\"b1da8a592532b2a953fca6688e1044562bbd1017070f304e0887006045b785f3\"}",
+        "webhooks.json": "[{\"id\":\"wh_1\",\"format\":\"slack\",\"url\":\"https://hooks.example.invalid/services/FIXTURE\"}]",
+        "speedtest_tokens.json": "{\"spd-core\":\"c3883fdc00a0eff12d7ea275955a2fda72f4ce4a4489200a2c16eba93637bfce\"}",
+        "runner_tokens.json": "{\"run-core\":\"0d4e1d5ad64298d255c0bbd30769d5be74481fc846ef3a09a3e1cec27356167a\"}",
+        "device_key_secret": "expk_9bFuC_20gne6jmwhPYyzr5h3-skCg5B7DHr4aqxrKYM"
+      }
+    },
+    {
+      "type": "probe",
+      "id": "probe-a1",
+      "component_id": "cmp_01M7R3X9G0DK9JT6C8QGY0HKGZ",
+      "version": "0.1.0",
+      "artifact": {
+        "id": "art_01M7R3X9G04DV21YEBG7XKTE7P",
+        "name": "exp-probe-0.1.0-noarch.tar.gz",
+        "url": "/api/agent/v1/artifacts/art_01M7R3X9G04DV21YEBG7XKTE7P",
+        "sha256": "254b98ffdf52741f4c45027970580d90d6040105584a764d34570043bb886c33",
+        "size": 23456789
+      },
+      "config": {
+        "schema": "exp.probe.config/1",
+        "probe_id": "probe-a1",
+        "site": "hall-b",
+        "collector": {
+          "url": "https://10.32.98.25:8443",
+          "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6",
+          "fallback": []
+        },
+        "mode": "netns",
+        "mgmt_iface": "eno1",
+        "ports": [
+          {
+            "id": "c01",
+            "iface": "enp10s0f0",
+            "role": "client",
+            "vlan": null,
+            "dhcp": {
+              "hostname": "exp-hallb-c01",
+              "vendor_class": "exp-probe",
+              "client_id": "mac"
+            }
+          },
+          {
+            "id": "s01",
+            "iface": "enp130s1f0",
+            "role": "target",
+            "address": "10.1.0.250/24",
+            "gateway": "10.1.0.1",
+            "serve": {
+              "http": true,
+              "https": true,
+              "icmp": true,
+              "reflector": true,
+              "iperf3": false
+            },
+            "faults_allowed": true
+          }
+        ],
+        "heartbeat": {
+          "interval_s": 10,
+          "gateway": true,
+          "dhcp": true,
+          "dns": true,
+          "trace": {
+            "target": "8.8.8.8",
+            "pace_ms": 20,
+            "max_hops": 30,
+            "timeout_s": 2,
+            "control_path": true
+          },
+          "ping": [
+            "1.1.1.1",
+            "8.8.8.8"
+          ],
+          "dns_names": [
+            "google.com",
+            "apple.com",
+            "microsoft.com",
+            "cloudflare.com"
+          ],
+          "alternate_resolver": "1.1.1.1"
+        },
+        "tests": {
+          "dhcp": {
+            "interval_s": 300,
+            "offer_collect_s": 3.0
+          },
+          "dns": {
+            "interval_s": 300,
+            "names": [
+              "www.google.com",
+              "teams.microsoft.com"
+            ]
+          },
+          "app": {
+            "interval_s": 300,
+            "targets": [
+              {
+                "app": "google-search",
+                "url": "https://www.google.com/",
+                "apdex_t_ms": 500
+              }
+            ]
+          },
+          "throughput": {
+            "interval_s": 600,
+            "providers": [
+              "cloudflare"
+            ],
+            "iperf3": {
+              "server": "s01",
+              "duration_s": 10
+            }
+          },
+          "path": {
+            "interval_s": 60,
+            "peers": [
+              {
+                "peer": "s01",
+                "address": "10.1.0.250",
+                "port": 8862,
+                "proto": [
+                  "udp",
+                  "tcp"
+                ],
+                "duration_s": 10,
+                "rate_kbps": 256
+              }
+            ]
+          },
+          "wifi": null
+        },
+        "spool": {
+          "max_mb": 500,
+          "max_days": 7
+        },
+        "labels": {
+          "zone": "floor-1"
+        },
+        "drills": [
+          {
+            "run_id": "run_01M7R3X9G069FVJXC5YPJF5ZVZ",
+            "type": "local.dns_block",
+            "params": {
+              "port": "c01"
+            },
+            "start": "2026-11-18T21:00:00.000Z",
+            "until": "2026-11-18T21:02:00.000Z",
+            "abort": false
+          }
+        ]
+      },
+      "creds": {
+        "ingest_token": "expi_Nuf_7xISl6ksmb2MJhwqSfr-WvDe8V7fNJTuR7wlOxg"
+      }
+    },
+    {
+      "type": "runner",
+      "id": "run-core",
+      "component_id": "cmp_01M7R3X9G09WCX6ZR12SPMK36N",
+      "version": "0.1.0",
+      "artifact": {
+        "id": "art_01M7R3X9G0CBHW4MD9DCPTN4XJ",
+        "name": "exp-runner-0.1.0-noarch.tar.gz",
+        "url": "/api/agent/v1/artifacts/art_01M7R3X9G0CBHW4MD9DCPTN4XJ",
+        "sha256": "feac1e1bf9dc9a435423772504a5848aeb58bb9302d81b634784c3c8c5263ec3",
+        "size": 23456789
+      },
+      "config": {
+        "schema": "exp.runner.config/1",
+        "runner_id": "run-core",
+        "site": "hall-b",
+        "collector": {
+          "url": "https://10.32.98.25:8443",
+          "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6"
+        },
+        "drills_enabled": false,
+        "correlation": {
+          "enabled": true,
+          "window_before_s": 300,
+          "window_after_s": 120,
+          "poll_interval_s": 0,
+          "sources": {
+            "mist": {
+              "sites": [
+                {
+                  "site_id": "00000000-0000-0000-0000-00000000aa01",
+                  "name": "Summit venue"
+                }
+              ],
+              "zone_map": [
+                {
+                  "zone": "hall-b",
+                  "ap_name_prefix": "hallb-ap-"
+                },
+                {
+                  "zone": "hall-a",
+                  "ap_macs": [
+                    "5c:5b:35:00:01:a0"
+                  ]
+                }
+              ],
+              "max_calls_per_test": 6,
+              "cache_ttl_s": 30
+            },
+            "ec": {
+              "appliances": [
+                {
+                  "ne_pk": "1.NE",
+                  "hostname": "ec-core",
+                  "wan_interfaces": [
+                    "wan0"
+                  ]
+                }
+              ],
+              "max_flows": 50,
+              "wan_util": {
+                "enabled": true,
+                "interval_s": 30
+              }
+            },
+            "syslog": {
+              "listen": [
+                "udp:5514",
+                "tcp:5514",
+                "tls:6514"
+              ],
+              "bind": "0.0.0.0",
+              "allow": [
+                "10.0.0.0/8"
+              ],
+              "rate_limit_lines_per_s": 200,
+              "max_line_bytes": 4096,
+              "ring_minutes": 60,
+              "tls": {
+                "mode": "self_signed"
+              }
+            },
+            "sse": {
+              "enabled": false
+            }
+          },
+          "privacy": {
+            "scrub_after_diagnosis": false
+          },
+          "speedtest_channel": {
+            "url": "http://127.0.0.1:8480/local/v1"
+          }
+        }
+      },
+      "creds": {
+        "integrations.json": "{\"mist\":{\"api_base\":\"https://api.mist.example\",\"token\":\"FIXTURE-MIST-TOKEN\"},\"ec\":{\"url\":\"https://orch.example\",\"api_key\":\"FIXTURE-EC-KEY\"}}",
+        "ingest_token": "expi_1E9epXo3BpeAd9Qa2v_uqGXjMeNWoIQ-TkQRp-XvGy0",
+        "collector_token": "expr_1E9epXo3BpeAd9Qa2v_uqGXjMeNWoIQ-TkQRp-XvGy0",
+        "speedtest_channel_token": "expl_y0OUoDaO_TL8inJPCULBi21qhTorlva6dhkSanwX4_0",
+        "device_key_secret": "expk_9bFuC_20gne6jmwhPYyzr5h3-skCg5B7DHr4aqxrKYM"
+      }
+    },
+    {
+      "type": "speedtest",
+      "id": "spd-core",
+      "component_id": "cmp_01M7R3X9G0F8YHR9GWZZACV4Z9",
+      "version": "0.1.0",
+      "artifact": {
+        "id": "art_01M7R3X9G0WVRX2H6WDBV6K4ZF",
+        "name": "exp-speedtest-0.1.0-noarch.tar.gz",
+        "url": "/api/agent/v1/artifacts/art_01M7R3X9G0WVRX2H6WDBV6K4ZF",
+        "sha256": "4d87980430a986c1d2d401994d4ea8337554ec3ccdb779e5dfa37f8801cb75c1",
+        "size": 23456789
+      },
+      "config": {
+        "schema": "exp.speedtest.config/1",
+        "speedtest_id": "spd-core",
+        "site": "hall-b",
+        "zones": [
+          {
+            "id": "hall-a",
+            "name": "Hall A"
+          },
+          {
+            "id": "hall-b",
+            "name": "Hall B"
+          },
+          {
+            "id": "hallb-row12",
+            "name": "Hall B, row 12"
+          }
+        ],
+        "zone_labels": {
+          "subnets": [
+            {
+              "cidr": "10.60.0.0/16",
+              "zone": "hall-a"
+            },
+            {
+              "cidr": "10.61.0.0/16",
+              "zone": "hall-b"
+            }
+          ]
+        },
+        "branding": {
+          "title": "Summit speed check",
+          "logo_artifact": "art_01M7R3X9G0JPFS2FAGQ8ACHEYD",
+          "colors": {
+            "primary": "#01a982",
+            "accent": "#7630ea",
+            "background": "#0b1320",
+            "text": "#f7f7f7"
+          },
+          "languages": [
+            "en",
+            "de"
+          ],
+          "copy": {
+            "start_button": "Start",
+            "verdict_good": "Your connection is great."
+          }
+        },
+        "consent": {
+          "text": "We measure your speed and look at this device's Wi-Fi and traffic metadata to diagnose it. No name or email is collected.",
+          "version": 3
+        },
+        "display": {
+          "show_network_details": false
+        },
+        "targets": {
+          "down_mbps": 25,
+          "up_mbps": 10
+        },
+        "limits": {
+          "tests_per_10min_per_ip": 6,
+          "max_concurrent_per_ip": 1,
+          "max_concurrent_tests": 20,
+          "max_concurrent_internet": 10,
+          "bytes_local": 200000000,
+          "bytes_internet": 200000000,
+          "leg_token_ttl_s": 60,
+          "result_deadline_s": 180
+        },
+        "internet_leg": {
+          "enabled": true,
+          "provider": "cloudflare",
+          "paused": false,
+          "auto_pause_wan_util_pct": 80
+        },
+        "serve": {
+          "placement": "core",
+          "hostname": "speed.summit.example",
+          "listen_ip": "10.0.0.9",
+          "require_real_client_ip": true,
+          "client_subnets": [
+            "10.60.0.0/16",
+            "10.61.0.0/16"
+          ],
+          "translated_addresses": [
+            "10.0.0.2"
+          ]
+        },
+        "tls": {
+          "mode": "none"
+        },
+        "dns_leg": {
+          "enabled": true,
+          "zone": "t.speed.summit.example"
+        },
+        "path": {
+          "gateway": "auto",
+          "edge": "10.0.0.2",
+          "edge1": "auto",
+          "note": "infrastructure context, not per-user"
+        },
+        "privacy": {
+          "retention_days": 30,
+          "scrub_after_diagnosis": false
+        },
+        "core_guard": {
+          "iface": "eno2",
+          "util_pct": 70,
+          "min_bytes": 5000000
+        },
+        "collector": {
+          "url": "https://10.32.98.25:8443",
+          "tls_fingerprint_sha256": "DC:2B:CE:95:F2:A0:0C:B9:5B:3A:CF:F5:00:CB:0C:DE:E7:BD:CA:AC:63:CC:83:95:F6:30:EA:F1:27:34:6D:C6"
+        },
+        "local_channel": {
+          "listen": "127.0.0.1:8480"
+        }
+      },
+      "assets": [
+        {
+          "name": "logo",
+          "content_type": "image/svg+xml",
+          "artifact": {
+            "id": "art_01M7R3X9G0JPFS2FAGQ8ACHEYD",
+            "name": "exp-speedtest-0.1.0-noarch.tar.gz",
+            "url": "/api/agent/v1/artifacts/art_01M7R3X9G0JPFS2FAGQ8ACHEYD",
+            "sha256": "eb7a79ac344ed12c621b6bb71137e1ccc6eb2863cfa6e391d9d7671eb5312a27",
+            "size": 18000
+          }
+        }
+      ],
+      "creds": {
+        "collector_token": "exps_y0OUoDaO_TL8inJPCULBi21qhTorlva6dhkSanwX4_0",
+        "runner_channel_token_sha256": "fcfe81db7907ba118fd76b03fc3d449c09bf456b78dda751e0175cb0c132896f"
+      }
+    }
+  ],
+  "actions": [],
+  "decommission": false
+}

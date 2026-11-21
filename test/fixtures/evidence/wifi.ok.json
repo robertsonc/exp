@@ -1,0 +1,87 @@
+{
+  "schema": "exp.evidence/1",
+  "test_id": "st_01M7R3X9G0QWCYM3A3S1DE8MT4",
+  "kind": "wifi",
+  "source": "mist",
+  "collected_at": "2026-11-18T14:03:40.000Z",
+  "window": {
+    "from": "2026-11-18T13:57:11.120Z",
+    "to": "2026-11-18T14:04:27.540Z"
+  },
+  "status": "ok",
+  "data": {
+    "client": {
+      "mac": "f0:18:98:aa:bb:01",
+      "ap_mac": "5c:5b:35:00:01:a0",
+      "bssid": "5c:5b:35:00:01:a2",
+      "ssid": "Summit-Guest",
+      "band": "5",
+      "channel": 44,
+      "proto": "ax",
+      "rssi": -61,
+      "snr": 34,
+      "tx_rate_mbps": 433.3,
+      "rx_rate_mbps": 390.0,
+      "tx_retries": 812,
+      "rx_retries": 40,
+      "tx_pkts": 96000,
+      "rx_pkts": 120000,
+      "idle_time_s": 0.2,
+      "uptime_s": 1820,
+      "power_saving": false,
+      "dual_band": true,
+      "key_mgmt": "WPA2-PSK/CCMP",
+      "vlan_id": "160",
+      "manufacture": "Apple",
+      "os": "iOS",
+      "last_seen": 1763474547,
+      "retry_pct": 0.85
+    },
+    "ap": {
+      "mac": "5c:5b:35:00:01:a0",
+      "ap_name": "hallb-ap-12",
+      "model": "AP45",
+      "num_clients": 74,
+      "status": "connected",
+      "radio": {
+        "band": "5",
+        "channel": 44,
+        "bandwidth_mhz": 80,
+        "power_dbm": 15,
+        "noise_floor_dbm": -92,
+        "num_clients": 61,
+        "util_all": 81,
+        "util_tx": 22,
+        "util_rx_in_bss": 31,
+        "util_rx_other_bss": 20,
+        "util_non_wifi": 8
+      }
+    },
+    "roams": [
+      {
+        "timestamp": 1763474500,
+        "from_ap_mac": "5c:5b:35:00:01:b0",
+        "ap_mac": "5c:5b:35:00:01:a0",
+        "type": "success",
+        "latency_s": 0.11,
+        "ssid": "Summit-Guest"
+      }
+    ],
+    "events": [
+      {
+        "timestamp": 1763474500,
+        "type": "CLIENT_ASSOC",
+        "type_code": 0,
+        "ssid": "Summit-Guest",
+        "band": "5",
+        "channel": 44,
+        "proto": "ax"
+      }
+    ],
+    "roam_count": 1,
+    "auth_failures": 0
+  },
+  "raw_refs": [
+    "mist:stats/clients/f01898aabb01"
+  ]
+}

@@ -171,7 +171,7 @@ def test_seed_matches_the_brief(adm):
         for c in A(adm, "GET", f"/hosts/{h['host_id']}/components").json()["items"]:
             types.add(c["type"])
             healths.add(c["health"])
-    assert types == {"probe", "collector", "dashboard", "runner"} and {"ok", "degraded", "fail", "unknown"} <= healths
+    assert types == {"probe", "collector", "dashboard", "runner", "speedtest"} and {"ok", "degraded", "fail", "unknown"} <= healths
     rels = get_ok(adm, "/releases")["items"]
     assert [r["version"] for r in rels] == ["0.1.1", "0.1.0"]
     assert rels[0]["sites"] == ["hall-b", "keynote"] and rels[1]["sites"] == ["hall-c"]
@@ -242,7 +242,7 @@ def test_seeded_component_configs_are_valid_rendered_configs(adm):
             n += 1
             if h["state"] != "pending":
                 assert c["rendered_config"]["schema"].startswith("exp.")
-    assert n == 26
+    assert n == 27
 
 
 # -------------------------------------------------------------------- fleet: caching + series
@@ -1126,3 +1126,69 @@ def test_issues_carry_component_type(adm):
     for i in items:
         assert (i["component_type"] is None) == (i["component_id"] is None)
     assert {i["component_type"] for i in items} >= {"probe", "collector", "dashboard", None}
+
+
+# ------------------------------------------------------------------------- M6 speedtest settings (CR-m6-manager)
+
+def test_speedtest_settings_defaults_and_seed(adm):
+    from fakes_support import check_component
+    s = get_ok(adm, "/sites/{site}/speedtest", "/sites/hall-b/speedtest")
+    check_component("admin", "SpeedtestSettings", s)
+    assert s["consent"]["version"] == 3 and s["internet_leg"]["paused"] is False and s["device_key"]["set"] is True
+    assert s["serve"]["listen_ip"] == "10.0.0.9" and "device_key_secret" not in json.dumps(s)
+    d = get_ok(adm, "/sites/{site}/speedtest", "/sites/hall-c/speedtest")      # never saved: defaults, version 1
+    assert d["consent"]["version"] == 1 and "zones" not in d
+    assert A(adm, "GET", "/sites/nope/speedtest").status == 404
+    # the seed carries the all-in-one box: runner + speedtest on one host, with the routed interface
+    box = host_by_name(adm, "hb-run-01")
+    assert set(box["shapes"]) == {"runner", "speedtest"}
+    assert any(a.startswith("10.0.0.9/") for i in box["facts"]["interfaces"] for a in i["addrs"])
+
+
+def test_speedtest_put_validates_versions_consent_and_audits(adm):
+    body = {"consent": {"text": "A"}, "zones": [{"id": "z1", "name": "Z1"}], "zone_labels": {"subnets": [{"cidr": "10.1.0.0/16", "zone": "z1"}]},
+            "serve": {"hostname": "speed.example", "listen_ip": "10.0.0.9", "require_real_client_ip": True}}
+    n0 = audit_count(adm)
+    r = A(adm, "PUT", "/sites/hall-c/speedtest", body, role="admin")
+    assert r.status == 200 and r.json()["consent"] == {"text": "A", "version": 1}
+    assert A(adm, "PUT", "/sites/hall-c/speedtest", {**body, "consent": {"text": "B", "version": 9}}, role="admin").json()["consent"]["version"] == 2
+    assert A(adm, "PUT", "/sites/hall-c/speedtest", {**body, "consent": {"text": "B"}}, role="admin").json()["consent"]["version"] == 2
+    h = A(adm, "GET", "/sites/hall-c/speedtest/consent-history", role="admin").json()
+    assert [i["version"] for i in h["items"]] == [2, 1]
+    assert audit_count(adm) == n0 + 3
+    for bad in ({**body, "surprise": 1}, {"zones": []}, {**body, "serve": {"hostname": "x", "listen_ip": "0.0.0.0"}},  # noqa: S104
+                {**body, "zone_labels": {"subnets": [{"cidr": "10.1.0.0/16", "zone": "nope"}]}},
+                {**body, "branding": {"logo_artifact": "art_01M7R3X9G0JPFS2FAGQ8ACHEYD"}}):
+        assert A(adm, "PUT", "/sites/hall-c/speedtest", bad, role="admin").status == 400
+    assert A(adm, "PUT", "/sites/hall-c/speedtest", body, role="operator").status == 403
+    assert A(adm, "GET", "/sites/hall-c/speedtest/consent-history", role="viewer").status == 403
+
+
+def test_speedtest_pause_logo_qr_tls_and_device_key(adm):
+    from fakes_support import check_component
+    p = A(adm, "POST", "/sites/hall-b/speedtest/internet-pause", {"paused": True}, role="operator")
+    assert p.status == 200 and p.json()["paused"] is True
+    assert A(adm, "GET", "/sites/hall-b/speedtest").json()["internet_leg"]["paused"] is True
+    assert A(adm, "POST", "/sites/hall-b/speedtest/internet-pause", {"paused": True}, role="viewer").status == 403
+    png = b"\x89PNG\r\n\x1a\n" + b"\0" * 20
+    lg = A(adm, "POST", "/sites/hall-b/speedtest/logo", png, headers={"Content-Type": "image/png"}, role="admin")
+    assert lg.status == 201
+    check_component("admin", "SpeedtestLogo", lg.json())
+    assert A(adm, "GET", "/sites/hall-b/speedtest").json()["branding"]["logo_artifact"] == lg.json()["artifact"]
+    assert A(adm, "POST", "/sites/hall-b/speedtest/logo", b"<svg><script/></svg>", headers={"Content-Type": "image/svg+xml"}, role="admin").status == 400
+    assert A(adm, "POST", "/sites/hall-b/speedtest/logo", b"x", headers={"Content-Type": "image/gif"}, role="admin").status == 415
+    q = get_ok(adm, "/sites/{site}/speedtest/qr", "/sites/hall-b/speedtest/qr")
+    check_component("admin", "SpeedtestQr", q)
+    assert q["items"][0]["url"] == "http://speed.summit.example/?z=hall-a"
+    t = A(adm, "PUT", "/sites/hall-b/speedtest/tls", {"cert_pem": "-----BEGIN CERTIFICATE-----x", "key_pem": "-----BEGIN PRIVATE KEY-----x"}, role="admin")
+    assert t.status == 200 and t.json()["set"] is True and "PRIVATE" not in t.text if hasattr(t, "text") else True
+    check_component("admin", "SpeedtestTls", A(adm, "GET", "/sites/hall-b/speedtest/tls", role="admin").json())
+    k = A(adm, "POST", "/settings/speedtest-device-key", {}, role="owner")
+    assert k.status == 200 and set(k.json()) == {"set", "updated_at", "key_id"} and k.json()["key_id"] == "k2"
+    assert A(adm, "POST", "/settings/speedtest-device-key", {}, role="admin").status == 403
+
+
+def test_no_speedtest_results_or_evidence_routes(adm):
+    # SR-20: the manager mock, like the manager, never accepts or serves test results or evidence
+    for _m, rx, _r, _f in server.ROUTES:
+        assert not re.search(r"result|evidence|speedtests|sessions", rx.pattern), rx.pattern

@@ -15,6 +15,8 @@ import sys
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared", "python"))
+from exp_common import speedtest as _st  # noqa: E402  (device_key / score reference implementation)
 from fixture_util import fid, fingerprint, iso_to_ms, sha256_hex, token, ulid  # noqa: E402
 
 PROBE, SITE = "probe-a1", "hall-b"
@@ -548,6 +550,315 @@ def gen_state_etc() -> None:
         put("invalid/manifest/%s.json" % name, d, "manifest.schema.json", "invalid")
 
 
+# ---------------------------------------------------------------- M6 speedtest (12-speedtest-analytics.md)
+ST_SECRET = token("expk", "device-key-secret")
+ST_MAC = "f0:18:98:aa:bb:01"
+ST_IP = "10.60.14.77"
+ST_START, ST_END = "2026-11-18T14:02:11.120Z", "2026-11-18T14:02:27.540Z"
+ST_WIN = {"from": "2026-11-18T13:57:11.120Z", "to": "2026-11-18T14:04:27.540Z"}
+
+
+def st_leg(down, up, idle, jit, ld, lu, cv, nbytes, server, **kw: Any) -> dict:
+    d = {"status": "ok", "down_mbps": down, "up_mbps": up, "idle_ms": idle, "jitter_ms": jit, "loaded_down_ms": ld, "loaded_up_ms": lu,
+         "rpm": int(60000 / max(ld, lu)), "cv": cv, "failures": 0, "bytes": nbytes, "server": server}
+    d.update(kw)
+    return d
+
+
+def st_result(name: str, **kw: Any) -> dict:
+    legs = {"local": st_leg(212.4, 88.1, 6.2, 1.1, 41.0, 55.3, 0.12, 190000000, "spd-core"),
+            "internet": st_leg(184.0, 61.7, 18.9, 2.4, 96.0, 120.4, 0.21, 150000000, "cloudflare:FRA"),
+            "dns": {"cold_ms": 38.0, "warm_ms": 2.1, "resolver_ip": "10.0.0.53", "source": "browser"},
+            "path": {"gateway_ms": {"idle": 0.4, "loaded": 0.9, "samples": 40}, "edge_ms": {"idle": 0.7, "loaded": 1.8, "samples": 40},
+                     "edge1_ms": {"idle": 4.1, "loaded": 9.6, "samples": 40}, "edge1_addr": "203.0.113.1", "device_icmp_ms": 5.9}}
+    d = {"schema": "exp.speedtest/1", "id": fid("st", name), "site": SITE, "zone": "hallb-row12", "zone_source": "mist",
+         "started": ST_START, "ended": ST_END,
+         "client": {"ip": ST_IP, "ua": {"os_family": "iOS", "os_version": "18.1", "browser": "Safari", "device_class": "phone"}, "connection_hint": "wifi"},
+         "consent": {"text_version": 3}, "legs": legs, "score": None, "flags": [],
+         "observed": {"received_at": "2026-11-18T14:02:27.900Z", "server_id": "spd-core", "local_bytes_down": 190000000, "local_bytes_up": 61000000, "session_ms": 16780}}
+    d.update(kw)
+    d["score"] = _st.compute_score(d["legs"], {"down_mbps": 25, "up_mbps": 10}) if d["score"] is None else d["score"]
+    return d
+
+
+def st_ev(test: str, kind: str, source: str, data: dict, status: str = "ok", **kw: Any) -> dict:
+    d = {"schema": "exp.evidence/1", "test_id": fid("st", test), "kind": kind, "source": source, "collected_at": "2026-11-18T14:03:40.000Z",
+         "window": dict(ST_WIN), "status": status, "data": data, "raw_refs": []}
+    d.update(kw)
+    return d
+
+
+def speedtest_cfg() -> dict:
+    return {"schema": "exp.speedtest.config/1", "speedtest_id": "spd-core", "site": SITE,
+            "zones": [{"id": "hall-a", "name": "Hall A"}, {"id": "hall-b", "name": "Hall B"}, {"id": "hallb-row12", "name": "Hall B, row 12"}],
+            "zone_labels": {"subnets": [{"cidr": "10.60.0.0/16", "zone": "hall-a"}, {"cidr": "10.61.0.0/16", "zone": "hall-b"}]},
+            "branding": {"title": "Summit speed check", "logo_artifact": fid("art", "st-logo"),
+                         "colors": {"primary": "#01a982", "accent": "#7630ea", "background": "#0b1320", "text": "#f7f7f7"},
+                         "languages": ["en", "de"], "copy": {"start_button": "Start", "verdict_good": "Your connection is great."}},
+            "consent": {"text": "We measure your speed and look at this device's Wi-Fi and traffic metadata to diagnose it. No name or email is collected.", "version": 3},
+            "display": {"show_network_details": False}, "targets": {"down_mbps": 25, "up_mbps": 10},
+            "limits": {"tests_per_10min_per_ip": 6, "max_concurrent_per_ip": 1, "max_concurrent_tests": 20, "max_concurrent_internet": 10,
+                       "bytes_local": 200000000, "bytes_internet": 200000000, "leg_token_ttl_s": 60, "result_deadline_s": 180},
+            "internet_leg": {"enabled": True, "provider": "cloudflare", "paused": False, "auto_pause_wan_util_pct": 80},
+            "serve": {"placement": "core", "hostname": "speed.summit.example", "listen_ip": "10.0.0.9", "require_real_client_ip": True,
+                      "client_subnets": ["10.60.0.0/16", "10.61.0.0/16"], "translated_addresses": ["10.0.0.2"]},
+            "tls": {"mode": "none"}, "dns_leg": {"enabled": True, "zone": "t.speed.summit.example"},
+            "path": {"gateway": "auto", "edge": "10.0.0.2", "edge1": "auto", "note": "infrastructure context, not per-user"},
+            "privacy": {"retention_days": 30, "scrub_after_diagnosis": False},
+            "core_guard": {"iface": "eno2", "util_pct": 70, "min_bytes": 5000000},
+            "collector": {"url": "https://10.32.98.25:8443", "tls_fingerprint_sha256": FP},
+            "local_channel": {"listen": "127.0.0.1:8480"}}
+
+
+def runner_corr_cfg() -> dict:
+    return {"schema": "exp.runner.config/1", "runner_id": "run-core", "site": SITE,
+            "collector": {"url": "https://10.32.98.25:8443", "tls_fingerprint_sha256": FP}, "drills_enabled": False,
+            "correlation": {
+                "enabled": True, "window_before_s": 300, "window_after_s": 120, "poll_interval_s": 5,
+                "sources": {
+                    "mist": {"sites": [{"site_id": "00000000-0000-0000-0000-00000000aa01", "name": "Summit venue"}],
+                             "zone_map": [{"zone": "hall-b", "ap_name_prefix": "hallb-ap-"}, {"zone": "hall-a", "ap_macs": ["5c:5b:35:00:01:a0"]}],
+                             "max_calls_per_test": 6, "cache_ttl_s": 30},
+                    "ec": {"appliances": [{"ne_pk": "1.NE", "hostname": "ec-core", "wan_interfaces": ["wan0"]}], "max_flows": 50,
+                           "wan_util": {"enabled": True, "interval_s": 30}},
+                    "syslog": {"listen": ["udp:5514", "tcp:5514", "tls:6514"], "bind": "0.0.0.0", "allow": ["10.0.0.0/8"], "rate_limit_lines_per_s": 200,
+                               "max_line_bytes": 4096, "ring_minutes": 60, "tls": {"mode": "self_signed"}},
+                    "sse": {"enabled": False}},
+                "privacy": {"scrub_after_diagnosis": False},
+                "speedtest_channel": {"url": "http://127.0.0.1:8480/local/v1"}}}
+
+
+def collector_speedtests_cfg() -> dict:
+    c = collector_cfg()
+    c["speedtests"] = {"enabled": True, "speedtests": ["spd-core"], "runners": ["run-core"], "retention_days": 30, "scrub_after_diagnosis": False,
+                       "targets": {"down_mbps": 25, "up_mbps": 10}, "max_evidence_kib": 256, "stream_replay_s": 300}
+    return c
+
+
+def gen_speedtest() -> None:
+    # ---- results (exp.speedtest/1)
+    ok = st_result("ok")
+    put("speedtest/result.ok.json", ok, "speedtest.schema.json")
+    pb = st_result("policy-block", zone="hallb-row12",
+                   legs={"local": st_leg(240.0, 95.0, 5.5, 0.9, 30.0, 33.0, 0.08, 180000000, "spd-core"),
+                         "internet": st_leg(0.4, 0.2, 21.0, 3.0, 480.0, 510.0, 0.62, 800000, "cloudflare:FRA", failures=40),
+                         "dns": {"cold_ms": 36.0, "warm_ms": 2.0, "resolver_ip": "10.0.0.53", "source": "browser"}},
+                   comment="Teams and speed.cloudflare.com won't load at my booth")
+    put("speedtest/result.policy-block.json", pb, "speedtest.schema.json")
+    nat = st_result("nat", zone="unresolved", zone_source="unresolved", flags=["nat_suspected"])
+    nat["client"]["ip"] = "10.0.0.2"
+    put("speedtest/result.unresolved-nat.json", nat, "speedtest.schema.json")
+    iu = st_result("inet-down", zone="hall-b", zone_source="subnet", flags=["internet_unavailable", "dns_fallback"],
+                   legs={"local": st_leg(310.0, 120.0, 4.8, 0.7, 22.0, 25.0, 0.05, 195000000, "spd-core"),
+                         "internet": {"status": "unavailable", "server": "cloudflare"},
+                         "dns": {"warm_ms": None, "cold_ms": None, "resolver_ip": None, "source": "probe"}})
+    put("speedtest/result.internet-unavailable.json", iu, "speedtest.schema.json")
+    q = st_result("queued", flags=["internet_queued"], legs={"local": st_leg(150.0, 60.0, 7.0, 1.0, 50.0, 60.0, 0.15, 150000000, "spd-core"),
+                                                            "internet": {"status": "queued"}})
+    put("speedtest/result.internet-queued.json", q, "speedtest.schema.json")
+    scr = st_result("scrubbed")
+    scr["client"].pop("ip")
+    put("speedtest/result.scrubbed.json", scr, "speedtest.schema.json")
+    cd = st_result("counters", flags=["counters_disagree", "bytes_capped"])
+    put("speedtest/result.counters-disagree.json", cd, "speedtest.schema.json")
+
+    def bad(name: str, mutate, schema: str = "speedtest.schema.json", base: dict | None = None) -> None:
+        d = copy.deepcopy(base or ok)
+        mutate(d)
+        put("invalid/speedtest/%s.json" % name, d, schema, "invalid")
+
+    bad("result-bad-id", lambda d: d.update(id="st_notaulid"))
+    bad("result-person-name", lambda d: d["client"].update(name="Alice Example"))
+    bad("result-person-email", lambda d: d.update(email="alice@example.invalid"))
+    bad("result-top-level-person", lambda d: d.update(person={"full_name": "A B"}))
+    bad("result-down-over-100gbps", lambda d: d["legs"]["local"].update(down_mbps=100001))
+    bad("result-duration-over-60s", lambda d: d["legs"]["internet"].update(idle_ms=60001))
+    bad("result-comment-too-long", lambda d: d.update(comment="x" * 501))
+    bad("result-comment-control-char", lambda d: d.update(comment="bad\x07bell"))
+    bad("result-bad-zone-source", lambda d: d.update(zone_source="gps"))
+    bad("result-bad-zone", lambda d: d.update(zone="Hall B / Row 12"))
+    bad("result-unknown-flag", lambda d: d.update(flags=["happy"]))
+    bad("result-naive-timestamp", lambda d: d.update(started="2026-11-18T14:02:11"))
+    bad("result-missing-observed", lambda d: d.pop("observed"))
+    bad("result-score-over-100", lambda d: d["score"].update(total=101))
+    bad("result-bad-leg-status", lambda d: d["legs"]["internet"].update(status="meh"))
+    bad("result-dns-bad-source", lambda d: d["legs"]["dns"].update(source="guess"))
+    bad("result-ua-unknown-class", lambda d: d["client"]["ua"].update(device_class="toaster"))
+    bad("result-raw-user-agent", lambda d: d["client"].update(user_agent="Mozilla/5.0 (iPhone)"))
+
+    # ---- submissions (exp.speedtest.submission/1)
+    sub = {"schema": "exp.speedtest.submission/1",
+           "legs": {"local": {"down_mbps": 205.0, "up_mbps": 85.0, "idle_ms": 6.0, "jitter_ms": 1.0, "loaded_down_ms": 40.0, "loaded_up_ms": 52.0, "rpm": 1150, "cv": 0.12, "failures": 0, "bytes": 188000000},
+                    "internet": {"down_mbps": 180.0, "up_mbps": 60.0, "idle_ms": 19.0, "jitter_ms": 2.4, "loaded_down_ms": 95.0, "loaded_up_ms": 118.0, "rpm": 520, "cv": 0.2, "failures": 0, "bytes": 150000000, "colo": "FRA"},
+                    "dns": {"cold_ms": 38.0, "warm_ms": 2.1, "resolver_ip": "10.0.0.53", "source": "browser"}},
+           "client": {"connection_hint": "wifi"}, "zone_hint": "hallb-row12", "comment": "video calls freeze at my booth", "started_offset_ms": 4100, "duration_ms": 16400}
+    put("speedtest/submission.full.json", sub, "speedtest.submission.schema.json")
+    put("speedtest/submission.minimal.json", {"schema": "exp.speedtest.submission/1", "legs": {"local": {"down_mbps": 50.0, "up_mbps": 20.0, "idle_ms": 8.0}}}, "speedtest.submission.schema.json")
+    put("speedtest/submission.internet-unavailable.json", {"schema": "exp.speedtest.submission/1", "legs": {"local": {"down_mbps": 50.0, "up_mbps": 20.0, "idle_ms": 8.0}, "internet": {"status": "unavailable"}}},
+        "speedtest.submission.schema.json")
+    sb = lambda n, m: bad("submission-" + n, m, "speedtest.submission.schema.json", sub)  # noqa: E731
+    sb("sets-client-ip", lambda d: d["client"].update(ip="10.9.9.9"))
+    sb("sets-score", lambda d: d.update(score={"total": 100, "speed": 100, "responsiveness": 100, "stability": 100}))
+    sb("sets-observed", lambda d: d.update(observed={"received_at": "2026-11-18T14:02:27.900Z", "server_id": "x"}))
+    sb("missing-local", lambda d: d["legs"].pop("local"))
+    sb("negative-speed", lambda d: d["legs"]["local"].update(down_mbps=-1))
+    sb("over-100gbps", lambda d: d["legs"]["internet"].update(up_mbps=100001))
+    sb("comment-control-char", lambda d: d.update(comment="a\x00b"))
+    sb("person-field", lambda d: d.update(name="Alice"))
+    sb("bad-zone-hint", lambda d: d.update(zone_hint="Hall B"))
+    sb("wrong-schema-const", lambda d: d.update(schema="exp.speedtest/1"))
+
+    # ---- evidence (exp.evidence/1), one valid per kind plus the interesting states
+    ev: dict[str, dict] = {}
+    ident = {"resolved_by": "mist", "ip": ST_IP, "mac": ST_MAC, "device_key": _st.device_key(ST_SECRET, ST_MAC), "hostname": "alices-iphone", "username": "guest-portal-7731",
+             "manufacture": "Apple", "os_family": "iOS", "wired": False, "zone": "hallb-row12", "zone_source": "mist", "site_id": "00000000-0000-0000-0000-00000000aa01",
+             "ap_mac": "5c:5b:35:00:01:a0", "ap_name": "hallb-ap-12", "ssid": "Summit-Guest", "band": "5", "vlan": 160, "candidates": 1, "nat_suspected": False, "scrubbed": False}
+    ev["identity.mist"] = st_ev("ok", "identity", "mist", ident, raw_refs=["mist:client:f018:98aabb01"])
+    ev["identity.dhcp-fallback"] = st_ev("ok", "identity", "syslog", {"resolved_by": "dhcp", "ip": ST_IP, "mac": ST_MAC, "device_key": _st.device_key(ST_SECRET, ST_MAC),
+                                                                       "hostname": "alices-iphone", "zone": "hall-a", "zone_source": "subnet", "candidates": 0, "nat_suspected": False},
+                                         status="partial", raw_refs=["syslog:dhcp:1"])
+    ev["identity.nat-suspected"] = st_ev("nat", "identity", "mist", {"resolved_by": "none", "ip": "10.0.0.2", "zone": "unresolved", "zone_source": "unresolved",
+                                                                      "candidates": 0, "nat_suspected": True, "nat_reason": "translated_address"}, status="partial")
+    ev["identity.scrubbed"] = st_ev("ok", "identity", "mist", {"resolved_by": "mist", "device_key": _st.device_key(ST_SECRET, ST_MAC), "manufacture": "Apple", "os_family": "iOS",
+                                                                "zone": "hallb-row12", "zone_source": "mist", "ap_name": "hallb-ap-12", "ssid": "Summit-Guest", "band": "5",
+                                                                "candidates": 1, "nat_suspected": False, "scrubbed": True})
+    wifi = {"client": {"mac": ST_MAC, "ap_mac": "5c:5b:35:00:01:a0", "bssid": "5c:5b:35:00:01:a2", "ssid": "Summit-Guest", "band": "5", "channel": 44, "proto": "ax", "rssi": -61, "snr": 34,
+                       "tx_rate_mbps": 433.3, "rx_rate_mbps": 390.0, "tx_retries": 812, "rx_retries": 40, "tx_pkts": 96000, "rx_pkts": 120000, "idle_time_s": 0.2, "uptime_s": 1820,
+                       "power_saving": False, "dual_band": True, "key_mgmt": "WPA2-PSK/CCMP", "vlan_id": "160", "manufacture": "Apple", "os": "iOS", "last_seen": 1763474547, "retry_pct": 0.85},
+            "ap": {"mac": "5c:5b:35:00:01:a0", "ap_name": "hallb-ap-12", "model": "AP45", "num_clients": 74, "status": "connected",
+                   "radio": {"band": "5", "channel": 44, "bandwidth_mhz": 80, "power_dbm": 15, "noise_floor_dbm": -92, "num_clients": 61, "util_all": 81, "util_tx": 22,
+                             "util_rx_in_bss": 31, "util_rx_other_bss": 20, "util_non_wifi": 8}},
+            "roams": [{"timestamp": 1763474500, "from_ap_mac": "5c:5b:35:00:01:b0", "ap_mac": "5c:5b:35:00:01:a0", "type": "success", "latency_s": 0.11, "ssid": "Summit-Guest"}],
+            "events": [{"timestamp": 1763474500, "type": "CLIENT_ASSOC", "type_code": 0, "ssid": "Summit-Guest", "band": "5", "channel": 44, "proto": "ax"}],
+            "roam_count": 1, "auth_failures": 0}
+    ev["wifi.ok"] = st_ev("ok", "wifi", "mist", wifi, raw_refs=["mist:stats/clients/f01898aabb01"])
+    ev["wifi.unavailable"] = st_ev("nat", "wifi", "mist", {}, status="unavailable")
+    ev["wired.ok"] = st_ev("ok", "wired", "mist", {
+        "client": {"mac": ST_MAC, "ip": [ST_IP], "vlan": [160], "port_id": ["ge-0/0/12"], "device_mac": ["5c:5b:35:00:09:01"], "auth_state": "authenticated", "dhcp_hostname": "booth-pc-12", "timestamp": 1763474540},
+        "port": {"switch_mac": "5c:5b:35:00:09:01", "port_id": "ge-0/0/12", "up": True, "speed_mbps": 100, "full_duplex": False, "rx_errors": 1450, "tx_errors": 12, "stp_state": "forwarding",
+                 "poe_on": False, "uplink": False}, "events": [{"timestamp": 1763474400, "type": "SW_PORT_DOWN", "port_id": "ge-0/0/12", "device_name": "hallb-sw-1"}]})
+    flows = [{"application": "https", "ip1": ST_IP, "port1": 51022, "ip2": "104.18.1.1", "port2": 443, "protocol": "tcp", "bytes_in_tx": 1000, "bytes_in_rx": 150000000, "bytes_out_rx": 900, "bytes_out_tx": 61000000,
+              "bytes_total": 211001900, "uptime_ms": 16000, "outbound_tunnel": "to_dc", "overlay": "DefaultOverlay", "lan_vlan": 160, "traffic_class": 5, "lan_dscp": "trust-lan", "wan_dscp": "trust-lan",
+              "app_type": "Bulk_Data_transfer", "start_s": 1763474531, "end_s": 1763474547, "firewall_dropped": 0, "drop_reason": 0, "nat_type": "LAN_SNAT", "domain": "speed.cloudflare.com"},
+             {"application": "teams", "ip1": ST_IP, "port1": 51100, "ip2": "52.112.0.1", "port2": 3478, "protocol": "udp", "bytes_in_tx": 0, "bytes_in_rx": 0, "bytes_out_rx": 0, "bytes_out_tx": 4000,
+              "bytes_total": 4000, "uptime_ms": 9000, "traffic_class": 2, "app_type": "Voice", "firewall_dropped": 1, "drop_reason": 1}]
+    ev["flows.ok"] = st_ev("ok", "flows", "ec", {"appliance": "1.NE", "counts": {"total_flows": 8123, "matched_flows": 2, "returned_flows": 2, "flows_firewall_dropped": 1, "flows_route_dropped": 0}, "flows": flows},
+                           raw_refs=["ec:flow:1.NE"])
+    ev["wan.ok"] = st_ev("ok", "wan", "ec", {"appliances": [{
+        "ne_pk": "1.NE", "hostname": "ec-core", "state": 1,
+        "interfaces": [{"ifname": "wan0", "wan_if": True, "lan_if": False, "admin": True, "oper": True, "if_speed": "1000", "duplex": "full (auto)", "label": "2", "public_ip": "203.0.113.2",
+                        "max_wan_bandwidth_kbps": 200000, "rx_bps": 185000000, "tx_bps": 60000000, "util_pct": 92.5}],
+        "health": {"latency": [{"tunnel_id": "to_dc", "health_status": "HEALTHY", "critical_mins": 0, "major_mins": 3, "normal_mins": 57, "max": 38}],
+                   "loss": [{"tunnel_id": "to_dc", "health_status": "HEALTHY", "critical_mins": 0, "major_mins": 0, "normal_mins": 60, "max": 0.2}], "jitter": [], "mos": []},
+        "alarms": [{"sequence_id": 551, "severity": "major", "type": "tunnel", "alarm_name": "Tunnel state", "description": "Tunnel to_dc degraded", "time_occurred_ms": 1763474400000,
+                    "occurrence_count": 2, "service_affect": True, "closed": False, "host_name": "ec-core"}],
+        "timeseries": {"columns": ["time", "rx_bps", "tx_bps"], "rows": [[1763474460, 180000000, 59000000], [1763474520, 185000000, 60000000]]}}], "wan_util_pct": 92.5})
+    ev["security.policy-block"] = st_ev("policy-block", "security", "syslog", {
+        "events": [{"ts": "2026-11-18T14:02:12.000Z", "source": "syslog", "format": "kv", "action": "deny", "category": "zbf", "src_ip": ST_IP, "src_port": 51100, "dst_ip": "52.112.0.1", "dst_port": 3478, "proto": "udp",
+                    "rule": "guest-to-internet-deny-rtc", "zone_from": "guest", "zone_to": "internet", "count": 31,
+                    "raw": "action=deny src=10.60.14.77 spt=51100 dst=52.112.0.1 dpt=3478 proto=udp rule=guest-to-internet-deny-rtc"},
+                   {"ts": "2026-11-18T14:02:15.000Z", "source": "syslog", "format": "cef", "action": "block", "category": "url", "src_ip": ST_IP, "dst_ip": "104.18.1.1", "host": "speed.cloudflare.com", "reason": "category: speed test",
+                    "raw": "CEF:0|Example|FW|1|100|URL blocked|5|src=10.60.14.77 dst=104.18.1.1 act=block"}],
+        "counts": {"deny": 31, "drop": 0, "block": 1, "session_limit": 0}, "ec_dropped_flows": 1, "truncated": False}, raw_refs=["syslog:1", "syslog:2"])
+    ev["baseline.ok"] = st_ev("ok", "baseline", "exp", {"probe": PROBE, "site": SITE, "distance": "same_zone", "at": "2026-11-18T14:02:20.000Z", "severity": "ok",
+                                                       "lines": [{"key": "network", "state": "ok"}, {"key": "dns", "state": "ok"}, {"key": "wifi", "state": "warn", "detail": "rssi -71 dBm"}],
+                                                       "throughput": {"down_mbps": 230.0, "up_mbps": 90.0, "latency_idle_ms": 8.0, "latency_loaded_ms": 40.0, "ts": "2026-11-18T14:00:00.000Z"},
+                                                       "wifi": {"ssid": "Summit-Guest", "band": "5", "rssi_dbm": -71, "snr_db": 24}})
+    ev["dns.ok"] = st_ev("ok", "dns", "syslog", {"resolver_ip": "10.0.0.53", "queries": [{"ts": "2026-11-18T14:02:14.000Z", "qname": "speed.cloudflare.com", "qtype": "A", "rcode": "NOERROR", "rtt_ms": 410.0, "client_ip": ST_IP}],
+                                                 "failures": 0, "slow": 1, "slowest_ms": 410.0, "probe_dns": {"state": "ok", "rtt_ms": 12.0, "resolver": "10.0.0.53"}})
+    for k, v in ev.items():
+        put("evidence/%s.json" % k, v, "evidence.schema.json")
+
+    def eb(name: str, base: str, mutate) -> None:
+        d = copy.deepcopy(ev[base])
+        mutate(d)
+        put("invalid/evidence/%s.json" % name, d, "evidence.schema.json", "invalid")
+
+    eb("kind-data-mismatch", "wifi.ok", lambda d: d.update(kind="flows"))
+    eb("unknown-kind", "wifi.ok", lambda d: d.update(kind="app"))
+    eb("wifi-client-email", "wifi.ok", lambda d: d["data"]["client"].update(email="alice@example.invalid"))
+    eb("wifi-guest-object", "wifi.ok", lambda d: d["data"].update(guest={"name": "Alice", "email": "a@example.invalid"}))
+    eb("wifi-rssi-positive", "wifi.ok", lambda d: d["data"]["client"].update(rssi=5))
+    eb("wifi-bad-band", "wifi.ok", lambda d: d["data"]["client"].update(band="60"))
+    eb("flows-over-50", "flows.ok", lambda d: d["data"].update(flows=[dict(flows[0], port1=40000 + i) for i in range(51)]))
+    eb("flows-full-url-field", "flows.ok", lambda d: d["data"]["flows"][0].update(url="https://example.invalid/secret?token=1"))
+    eb("security-over-200-lines", "security.policy-block", lambda d: d["data"].update(events=[dict(d["data"]["events"][0], count=1) for _ in range(201)]))
+    eb("security-bad-action", "security.policy-block", lambda d: d["data"]["events"][0].update(action="permit-ish"))
+    eb("bad-status", "wifi.ok", lambda d: d.update(status="fine"))
+    eb("bad-source", "wifi.ok", lambda d: d.update(source="ldap"))
+    eb("missing-test-id", "wifi.ok", lambda d: d.pop("test_id"))
+    eb("naive-window", "wifi.ok", lambda d: d["window"].update(to="2026-11-18T14:04:27"))
+    eb("identity-person-name", "identity.mist", lambda d: d["data"].update(name="Alice Example"))
+    eb("identity-email", "identity.mist", lambda d: d["data"].update(email="alice@example.invalid"))
+    eb("identity-bad-device-key", "identity.mist", lambda d: d["data"].update(device_key="abc"))
+    eb("identity-bad-nat-reason", "identity.nat-suspected", lambda d: d["data"].update(nat_reason="because"))
+
+    # ---- configs
+    put("configs/speedtest.json", speedtest_cfg(), "speedtest.config.schema.json")
+    tp = speedtest_cfg()
+    tp["tls"] = {"mode": "provided"}
+    tp["serve"]["hostname"] = "speed.summit.example"
+    put("configs/speedtest.tls-provided.json", tp, "speedtest.config.schema.json")
+    put("configs/speedtest.minimal.json", {"schema": "exp.speedtest.config/1", "speedtest_id": "spd-lab", "site": SITE,
+                                            "serve": {"hostname": "10.0.0.9", "listen_ip": "10.0.0.9"}, "tls": {"mode": "none"},
+                                            "collector": {"url": "https://127.0.0.1:8443", "tls_fingerprint_sha256": FP}}, "speedtest.config.schema.json")
+    put("configs/runner.correlation.json", runner_corr_cfg(), "runner.config.schema.json")
+    put("configs/collector.speedtests.json", collector_speedtests_cfg(), "collector.config.schema.json")
+
+    def cb(name: str, base: dict, schema: str, mutate) -> None:
+        d = copy.deepcopy(base)
+        mutate(d)
+        put("invalid/configs/%s.json" % name, d, schema, "invalid")
+
+    SC, RC, CC = speedtest_cfg(), runner_corr_cfg(), collector_speedtests_cfg()
+    sch = "speedtest.config.schema.json"
+    cb("speedtest-bad-tls-mode", SC, sch, lambda d: d["tls"].update(mode="self_signed"))
+    cb("speedtest-bytes-local-tiny", SC, sch, lambda d: d["limits"].update(bytes_local=10))
+    cb("speedtest-bad-client-subnet", SC, sch, lambda d: d["serve"].update(client_subnets=["10.60.0.0/33"]))
+    cb("speedtest-listen-ip-hostname", SC, sch, lambda d: d["serve"].update(listen_ip="speed.summit.example"))
+    cb("speedtest-logo-not-art-id", SC, sch, lambda d: d["branding"].update(logo_artifact="logo.png"))
+    cb("speedtest-collector-http", SC, sch, lambda d: d["collector"].update(url="http://10.32.98.25:8443"))
+    cb("speedtest-channel-not-loopback", SC, sch, lambda d: d["local_channel"].update(listen="0.0.0.0:8480"))
+    cb("speedtest-auto-pause-over-100", SC, sch, lambda d: d["internet_leg"].update(auto_pause_wan_util_pct=150))
+    cb("speedtest-bad-color", SC, sch, lambda d: d["branding"]["colors"].update(primary="green"))
+    cb("speedtest-unknown-provider", SC, sch, lambda d: d["internet_leg"].update(provider="ookla"))
+    cb("speedtest-unknown-key", SC, sch, lambda d: d.update(person_lookup=True))
+    cb("runner-correlation-negative-window", RC, "runner.config.schema.json", lambda d: d["correlation"].update(window_before_s=-5))
+    cb("runner-syslog-ring-over-60", RC, "runner.config.schema.json", lambda d: d["correlation"]["sources"]["syslog"].update(ring_minutes=61))
+    cb("runner-syslog-bad-listen", RC, "runner.config.schema.json", lambda d: d["correlation"]["sources"]["syslog"].update(listen=["icmp:5514"]))
+    cb("runner-channel-not-loopback", RC, "runner.config.schema.json", lambda d: d["correlation"]["speedtest_channel"].update(url="http://10.0.0.9:8480/local/v1"))
+    cb("runner-mist-flows-over-50", RC, "runner.config.schema.json", lambda d: d["correlation"]["sources"]["ec"].update(max_flows=500))
+    cb("collector-speedtests-retention-zero", CC, "collector.config.schema.json", lambda d: d["speedtests"].update(retention_days=0))
+    cb("collector-speedtests-evidence-over-256", CC, "collector.config.schema.json", lambda d: d["speedtests"].update(max_evidence_kib=512))
+
+    # ---- desired: the all-in-one profile (probe + collector + runner + speedtest on ONE box)
+    col = comp_collector()
+    col["config"] = collector_speedtests_cfg()
+    col["creds"] = dict(col["creds"], **{"speedtest_tokens.json": json.dumps({"spd-core": hashlib.sha256(token("exps", "spd-core").encode()).hexdigest()}, separators=(",", ":")),
+                                         "runner_tokens.json": json.dumps({"run-core": hashlib.sha256(token("expr", "run-core").encode()).hexdigest()}, separators=(",", ":")),
+                                         "device_key_secret": ST_SECRET})
+    run = {"type": "runner", "id": "run-core", "component_id": fid("cmp", "run-core"), "version": "0.1.0", "artifact": artifact("runner", "noarch", "runner"),
+           "config": runner_corr_cfg(),
+           "creds": {"integrations.json": json.dumps({"mist": {"api_base": "https://api.mist.example", "token": "FIXTURE-MIST-TOKEN"}, "ec": {"url": "https://orch.example", "api_key": "FIXTURE-EC-KEY"}}, separators=(",", ":")),
+                     "ingest_token": token("expi", "run-core"), "collector_token": token("expr", "run-core"),
+                     "speedtest_channel_token": token("expl", "spd-core"), "device_key_secret": ST_SECRET}}
+    spd = {"type": "speedtest", "id": "spd-core", "component_id": fid("cmp", "spd-core"), "version": "0.1.0", "artifact": artifact("speedtest", "noarch", "speedtest"),
+           "config": speedtest_cfg(),
+           "assets": [{"name": "logo", "content_type": "image/svg+xml", "artifact": {"id": fid("art", "st-logo"), "name": "exp-speedtest-0.1.0-noarch.tar.gz", "url": "/api/agent/v1/artifacts/" + fid("art", "st-logo"),
+                                                                                       "sha256": sha256_hex("artifact:st-logo"), "size": 18000}}],
+           "creds": {"collector_token": token("exps", "spd-core"), "runner_channel_token_sha256": hashlib.sha256(token("expl", "spd-core").encode()).hexdigest()}}
+    prb = comp_probe()
+    aio = desired("srv-core", [col, prb, run, spd], version=50)
+    put("desired/all-in-one-speedtest.json", aio, "desired.schema.json")
+    for name, mut in (("speedtest-config-invalid-inside", lambda d: d["components"][3]["config"]["tls"].update(mode="self_signed")),
+                      ("speedtest-asset-traversal-name", lambda d: d["components"][3]["assets"][0].update(name="../logo")),
+                      ("speedtest-asset-bad-content-type", lambda d: d["components"][3]["assets"][0].update(content_type="text/html")),
+                      ("runner-correlation-invalid-inside", lambda d: d["components"][2]["config"]["correlation"].update(poll_interval_s=0))):
+        d = copy.deepcopy(aio)
+        mut(d)
+        put("invalid/desired/%s.json" % name, d, "desired.schema.json", "invalid")
+
+
 def main() -> None:
     M = gen_measurements()
     gen_invalid_measurements(M)
@@ -555,6 +866,7 @@ def main() -> None:
     gen_desired()
     gen_status_health()
     gen_state_etc()
+    gen_speedtest()
     idx_path = os.path.join(OUT, "INDEX.json")
     with open(idx_path, "w", encoding="utf-8") as f:
         json.dump(dict(sorted(INDEX.items())), f, indent=2)

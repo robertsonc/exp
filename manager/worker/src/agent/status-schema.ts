@@ -9,7 +9,8 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FINGERPRINT = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
 const HOSTPORT =
   /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})$/;
-const HTTPS_URL = /^https:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(\/[^\s]*)?$/;
+// facts.url of a speedtest is http:// by default (D15, CR-m6-spec-resolutions A.1); every other component reports https://
+const HTTP_URL = /^https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(\/[^\s]*)?$/;
 
 const ts = z.string().regex(TS);
 const num0 = z.number().min(0);
@@ -72,7 +73,8 @@ const DiskSchema = z.object({
 export const ComponentFactsSchema = z.object({
   tls_fingerprint_sha256: z.string().regex(FINGERPRINT).optional(),
   listen: z.string().regex(HOSTPORT).optional(),
-  url: z.string().max(512).regex(HTTPS_URL).optional(),
+  url: z.string().max(512).regex(HTTP_URL).optional(),
+  tls_mode: z.enum(["none", "provided"]).optional(),
 });
 
 export const ComponentReportSchema = z.object({

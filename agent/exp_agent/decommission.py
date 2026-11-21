@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from . import pingsys
 from .context import Context
 from .desired import ORDER
 from .selfupdate import AGENT_UNITS
@@ -39,6 +40,11 @@ def remove_component(ctx: Context, c: str, rec: dict[str, Any] | None, purge: bo
     # in `systemctl --failed`
     sc.reset_failed(sorted({*instances, *primary, *(u for u in unit_files if "@." not in u)}))
     fs.remove(paths.bin_link(c))
+    if c == "speedtest":
+        # host changes outside the component tree: the scoped ping_group_range drop-in (original value
+        # restored) and the branding assets
+        pingsys.revert(ctx)
+        fs.rmtree(paths.etc_dir(c) / "assets")
     fs.rmtree(paths.comp_opt(c))
     fs.rmtree(paths.agent_state / "previous" / c)
     fs.rmtree(paths.creds_dir(c))
@@ -52,7 +58,13 @@ def remove_component(ctx: Context, c: str, rec: dict[str, Any] | None, purge: bo
 def local_cleanup(ctx: Context, components: dict[str, Any]) -> None:
     """Remove every component (with data), then the agent itself. Idempotent."""
     for c in ORDER:
-        if c in components or ctx.fs.exists(ctx.paths.comp_opt(c)) or ctx.fs.exists(ctx.paths.etc_dir(c)):
+        stray_sysctl = c == "speedtest" and ctx.fs.exists(ctx.paths.sysctl_dropin)
+        if (
+            c in components
+            or stray_sysctl
+            or ctx.fs.exists(ctx.paths.comp_opt(c))
+            or ctx.fs.exists(ctx.paths.etc_dir(c))
+        ):
             remove_component(ctx, c, components.get(c), purge=True)
     ctx.state.data["components"] = {}
 

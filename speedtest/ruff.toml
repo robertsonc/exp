@@ -1,0 +1,5 @@
+extend = "../ruff.toml"
+line-length = 130
+
+[lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108", "S603", "S607", "S310", "B007", "S110", "S112", "S104", "E501", "S311"]

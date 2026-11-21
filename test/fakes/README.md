@@ -1,4 +1,4 @@
-# test/fakes — fakes for building against the contracts (WP-0)
+# test/fakes — fakes for building against the contracts (WP-0, M6 additions)
 
 Three stdlib-only servers (Python 3.10+, `http.server`, `ssl`). Each is a script **and** an importable module
 (`start()` returns a running server, `.port` is the bound port, `.stop()` shuts it down). All bind `127.0.0.1`
@@ -10,6 +10,12 @@ client that passes against them has met the spec; they are not production code a
 | `fake_collector.py` | WP-1 probe, WP-3 dashboard | `shared/openapi/ingest.yaml`, `collector.yaml` | `python test/fakes/fake_collector.py` |
 | `fake_manager.py` | WP-6 agent | `shared/openapi/agent.yaml` | `python test/fakes/fake_manager.py` |
 | `mock_admin/server.py` | WP-5 manager UI | `shared/openapi/admin.yaml` | `python test/fakes/mock_admin/server.py` |
+| `fake_st_collector.py` | WP-9 runner, WP-10 speedtest | `collector.yaml` (`speedtests`) | `python test/fakes/fake_st_collector.py` |
+| `mist/server.py` | WP-9 runner (Mist connector) | Mist OpenAPI 3.1 (mistapi 0.64.1) | `python test/fakes/mist/server.py` |
+| `orchestrator/server.py` | WP-9 runner (EdgeConnect connector) | pyedgeconnect 0.16.0a1 | `python test/fakes/orchestrator/server.py` |
+| `cloudflare_speed/server.py` | WP-10 speedtest page / harness | `test/fixtures/cloudflare/recording-*.json` | `python test/fakes/cloudflare_speed/server.py` |
+| `syslog_sender.py` | WP-9 runner (syslog listener) | RFC 5424/3164/5425/6587, CEF, LEEF, dhcpd, Kea, Windows DHCP | `python test/fakes/syslog_sender.py --to udp://127.0.0.1:5514` |
+| `fake_ca.py` | the HTTPS fakes above | (helper) | runtime throwaway CA via the `openssl` CLI |
 
 Use the project venv for tests (`/home/user/exp/.venv/bin/python`); the fakes themselves need only the stdlib
 plus `shared/python/exp_common` (they add it to `sys.path` themselves).
@@ -141,3 +147,81 @@ settings and fleet thresholds. Metrics are computed on demand: 5-minute steps (1
 * Not simulated: Cloudflare JWT verification, real token/password storage, GitHub release import (a fixed
   catalogue `0.1.0`, `0.1.1`, `0.2.0`; `POST /releases/upload` checks the manifest and artifact hashes and the
   signature *format* only), real webhook delivery (tests always succeed).
+
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# M6 fakes (speedtest analytics)
+
+Common to all of them: stdlib only (the st collector also uses `jsonschema` when the test venv has it), `start()` returns a running server
+(`.port`, `.app`, `.stop()`), injectable clock (`now_fn=`), a loopback-only `/_fake/` control API plus in-process methods, deterministic
+scenarios. **No key, token or certificate is committed**: tokens are derived at runtime from `fixture:<name>` strings
+(`fakes_common.fixture_token`, `mist.server.default_token()`, `orchestrator.server.default_credentials()`), and HTTPS uses a CA generated at
+runtime (`fake_ca.make_server_tls(tmp_path)` -> `(ca, leaf)`; `start(tls=(leaf.cert_chain, leaf.key))`; clients verify with
+`fake_ca.client_context(ca)`), so gitleaks has nothing to find. Vendor field names come only from the local, verified, MIT-licensed
+references named per fake (dev-time references, never imported); where a reference is silent the fake says so (below) instead of
+guessing, and a vendor-facing parser must not treat such a value as ground truth.
+
+## fake_st_collector (speedtest box and runner against the collector)
+
+`start(tokens=..., now_fn=..., scrub_after_diagnosis=False, window_before_s=300, window_after_s=120, device_key_secret=None)`;
+`default_tokens()` gives `{family: {identity: {token, sha256, site}}}` for `speedtest` (`spd-core`, site `hall-b`, `exps_`),
+`runner` (`runner-core`, `hall-b`, `expr_`) and `dashboard` (`dash-main`, `expd_`). Routes, tokens and error codes are the table in the module
+docstring; in short: ingest (identity binding 403 `identity_mismatch`, idempotent, schema-validated), user-safe status (404 for other speedtests),
+comment, the runner **feed** (poll, `after` cursor, `limit`, long-poll `wait_s` <= 25), **evidence** POST (`exp.evidence/1`, `id_mismatch`,
+`evidence_final`, 413 `evidence_too_large` at 256 KiB/test, replace-on-repost), `evidence/complete` (final diagnosis, `already_final`, optional
+privacy scrub that drops raw ip/mac/hostname/username and keeps `device_key` and the zone), **baseline** read, the dashboard list/detail/purge,
+and the **SSE stream** (`speedtest`, `evidence`, `diagnosis`; `retry: 3000`, `: keepalive`, 300 s `Last-Event-ID` replay).
+A token of the wrong family is unknown on a route (401), so "an `exps_` token cannot post evidence" is testable. `app.set_force(503|429, count,
+retry_after)` or `POST /_fake/force` drives backoff tests; `app.set_baseline(data|None)`; `POST /_fake/window` changes the correlation window.
+The **final diagnosis is a stand-in** with a few obvious rules (WP-11 owns the real rule engine); tests of the real engine must not use this fake.
+
+## mist (Juniper Mist)
+
+`start(token=None, tls=None, now_fn=..., rate_limit=5000)`; `fake.token`, `fake.state` (`MistState`), `fake.app.calls_to("clients/search")`
+(per-test API budget assertions), `fake.app.set_rate_limit(n)`, `fake.app.set_force(status, count)`. Routes and operationIds are the table in
+the module docstring (searchSiteWirelessClients / searchOrgWirelessClients with `ip` + `start`/`end`/`duration`, getSiteWirelessClientStats,
+listSiteWirelessClientsStats, getSiteDeviceStats `radio_stat` util/channel/num_clients, searchSiteWiredClients, searchSiteSwOrGwPorts,
+searchSiteWirelessClientEvents, listClientEventsDefinitions). `Authorization: Token <t>`; 401 otherwise; 429 with the OAS's documented
+"5000 API Calls per hour" detail over a rolling hour (no `Retry-After`: the OAS documents none); pagination with `limit` / `search_after` /
+`next`; wildcard filters (`prefix*`, `*sub*`); MACs are 12 hex digits. Scenarios: `healthy`, `weak_rssi`, `congested_ap`, `roaming`,
+`wired_port_errors`, `nat_ambiguity` (two MACs on one IP), `no_client`; `fake.state.load_scenario(name, at=T, ip=..., mac=...)` or
+`POST /_fake/scenario`. **Gaps stated in the OAS itself:** `events_client` has no client MAC and the event search has no MAC filter, so events
+are AP/SSID/band/time scoped only; only two event type keys are OAS-documented (the others are fake-chosen and must be discovered through
+`/const/client_events`). The test `test_mist.py` validates every response against the OAS schemas when the OAS file is present
+(`EXP_MIST_OAS`, default: the session's vendor-src copy; skipped otherwise).
+
+## orchestrator (HPE EdgeConnect Orchestrator)
+
+`start(release="9.3.4", tls=None, now_fn=...)`; `fake.api_key`, `fake.user` (`(user, password)`), `fake.state` (`OrchState`),
+`fake.app.interface_columns`, `fake.app.health_shape`, `fake.app.session_ttl_s`, `fake.app.expire_sessions()`. Auth as pyedgeconnect does it:
+`X-Auth-Token: <key>`, or `POST /authentication/login` (`orchCsrfToken` cookie, then `X-XSRF-TOKEN` + the session cookie; the session cookie's
+name is not in pyedgeconnect, the fake uses `fake_orch_session`). Endpoints (both the >= 9.3 query form and the older path form): appliance list,
+`get_appliance_flows` (the 63-element positional rows with every index of the docstring; filters ip1/ip2/mask/port/application/protocol/vlan/filter,
+`anyStartTime`/`termStartTime` epoch ms), `interfaceState`, `stats/timeseries/interface` and `trafficClass`, `health/{latency,loss,jitter,mos}PeriodSummary`,
+`POST /alarm/appliance`. **Not documented by pyedgeconnect, so fake-chosen and flagged:** the time-series column names (a parser must read `COLUMN_DEF`;
+`interface_columns` can be reordered to prove it), the `DATA` envelope, the health summary being a dict vs a list per tunnel, the session cookie name, and
+the meaning of `ipEitherFlag` (the fake follows the docstring). Scenarios: `healthy`, `saturated_wan` (92.5 % of `maxWanBandwidth`), `qos_shaped`
+(class 7 + shaper drops), `loss` (3.5 % + critical alarm), `firewall_drop` (ZBF drop, `drop_reason` 1); `POST /_fake/wan_load` changes WAN load over
+time for auto-pause tests. HPE Aruba SSE has no fake: no local vendor documentation exists, the connector reports "unavailable" (CR-m6-spec-resolutions).
+
+## cloudflare_speed (speed.cloudflare.com)
+
+Built from `test/fixtures/cloudflare/recording-*.json` (newest by name). `__down?bytes=`, `__up`, `/cdn-cgi/trace` (with a `colo=` line), `OPTIONS`
+preflights; **response header names, order and case, and every static value equal the recording's** (two `Server-Timing` lines, lowercase
+`access-control-expose-headers`, `Timing-Allow-Origin`, ...); per-request values are generated (`Date`, `CF-RAY`, `cf-meta-request-time`,
+`cf-meta-upload-bytes`, the `cfSpeedEdge`/`cfSpeedWorker`/`cfL4` figures), and the recording sandbox's real egress IP/city/coordinates are never replayed
+(documentation values under the same names). Faithful to the recorded quirks: `colo` is not exposed and `cf-meta-colo` is absent on `__down`
+(only `__up` has it), the trace has no `Timing-Allow-Origin`. Knobs (`fake.app.set(...)` or `POST /_fake/set`): `latency_ms`, `loaded_latency_ms` (requests
+with `during=`), `down_bps`, `up_bps`, `fail` (`reset` | `http500` | `stall` | `slow_headers`), `fail_after_bytes` (cut mid-body), `colo`, `loc`,
+`server_edge_ms`, `server_worker_ms`; `fake.app.kill()` / `heal()` and `POST /_fake/kill|heal`. `test_cloudflare_speed.py` asserts the headers against the recording,
+so a re-recording shows up as a test diff.
+
+## syslog_sender
+
+Generators: `rfc5424_message` (structured data + escapes), `rfc3164_message`, `cef`, `leef` (1.0 / 2.0), `kv`, `ec_firewall` (**representative only**: no local
+vendor documentation of the EdgeConnect firewall / zone-policy log text exists, nor for SSE; pyedgeconnect documents only the syslog *configuration*),
+`dhcp_isc`, `dhcp_kea`, `dhcp_windows` (+ `WINDOWS_DHCP_HEADER`). Formats from the public RFCs / ArcSight CEF / IBM LEEF / dhcpd / Kea / Microsoft documentation as known,
+not from local files (the module docstring cites each). Transports: `send_udp`, `send_tcp` (octet-counting or newline framing), `send_tls` (verifying;
+`ca=`), `send(url, msgs)`. `Receiver(tls=(cert, key))` is a loopback UDP/TCP/TLS capture server (`.udp_port`, `.tcp_port`, `.tls_port`, `.wait_for(n)`) and
+`parse_stream` is the framing parser, so the sender and the listener contract are both exercised.

@@ -15,7 +15,7 @@ import pytest
 import vendor
 from exp_common import config as expconfig
 
-from conftest import COMPONENTS, EPOCH, PKG, REPO, VERIFY, VERSION, sha
+from pkg_common import COMPONENTS, EPOCH, PKG, REPO, VERIFY, VERSION, sha
 
 
 def members(tar: Path) -> dict:
@@ -437,9 +437,13 @@ def test_release_flag_overrides_fallback_in_vendor(monkeypatch):
 def test_real_vendor_lock_is_well_formed():
     lock = vendor.load_lock(PKG / "vendor.lock")
     by = {(i["name"], i["arch"]): i for i in lock["items"]}
-    dns = by[("dnspython", "noarch")]
-    assert dns["version"] == "2.9.2" and dns["component"] == "probe" and dns["kind"] == "wheel"
-    assert dns["sha256"] == "af15f7d385a6ae2fb35a796fde2138004c8c42c7389090e2addc83e3b3340fd8"
+    # dnspython: ONE pin (same file, same sha256) vendored for the two components that parse DNS (probe, speedtest)
+    dnses = [i for i in lock["items"] if i["name"] == "dnspython"]
+    assert sorted(i["component"] for i in dnses) == ["probe", "speedtest"]
+    for dns in dnses:
+        assert dns["version"] == "2.9.2" and dns["kind"] == "wheel" and dns["arch"] == "noarch"
+        assert dns["sha256"] == "af15f7d385a6ae2fb35a796fde2138004c8c42c7389090e2addc83e3b3340fd8"
+    assert len({(i["file"], i["sha256"]) for i in dnses}) == 1
     for arch in ("amd64", "arm64"):
         vm = by[("victoria-metrics", arch)]
         assert vm["version"] == "v1.106.1" and vm["component"] == "collector"
@@ -451,6 +455,7 @@ def test_real_vendor_lock_is_well_formed():
     from pack import component_arches
     assert component_arches(lock, "collector") == ["amd64", "arm64"]
     assert component_arches(lock, "probe") == ["noarch"]
+    assert component_arches(lock, "speedtest") == ["noarch"] and component_arches(lock, "runner") == ["noarch"]
 
 
 def test_vendor_lock_rejects_unpinned_docker_and_http(tmp_path):
@@ -518,3 +523,120 @@ def test_real_components_have_no_package_named_like_an_excluded_directory():
             if d != pkg and d.name in pack.EXCLUDE_DIRS and not any(f.name.startswith("test_") for f in d.iterdir()):
                 bad.append(str(d.relative_to(REPO)))
     assert not bad, "product packages that packaging would drop: %s" % bad
+
+
+# --- M6: runner + speedtest are real components -----------------------------------------------------------
+
+def test_speedtest_and_runner_are_noarch_artifacts_and_speedtest_vendors_dnspython(stub, built):
+    for c in ("runner", "speedtest"):
+        t = built / ("exp-%s-%s-noarch.tar.gz" % (c, VERSION))
+        assert t.is_file(), c
+        names = members(t)
+        top = "exp-%s-%s" % (c, VERSION)
+        assert "%s/systemd/exp-%s.service" % (top, c) in names and "%s/bin/exp-%s" % (top, c) in names
+        assert names["%s/bin/exp-%s" % (top, c)].mode == 0o755
+    st = members(built / ("exp-speedtest-%s-noarch.tar.gz" % VERSION))
+    assert "exp-speedtest-%s/vendor/dns/__init__.py" % VERSION in st
+    assert any(n.endswith("LICENSES/stubdns-LICENSE") for n in st)  # (the stub wheel is called stubdns)
+    assert "exp-runner-%s/vendor/dns/__init__.py" % VERSION not in members(built / ("exp-runner-%s-noarch.tar.gz" % VERSION))
+    third = tarfile.open(built / ("exp-speedtest-%s-noarch.tar.gz" % VERSION)).extractfile(
+        "exp-speedtest-%s/LICENSES/THIRD-PARTY.txt" % VERSION).read().decode()
+    assert "stubdns 1.0 (noarch)" in third
+
+
+def test_component_importing_dns_without_vendoring_it_fails_the_build(stub, tmp_path):
+    items = [i for i in stub["items"] if not (i["name"] == "stubdns" and i["component"] == "speedtest")]
+    lock = tmp_path / "no-dns.lock"
+    lock.write_text(json.dumps({"schema": "exp.vendor.lock/1", "items": items}))
+    r = stub["run"](tmp_path / "out", "--lock", str(lock))
+    assert r.returncode != 0 and "imports 'dns'" in r.stderr and "speedtest" in r.stderr
+
+
+def test_manifest_lists_every_component_exactly_once(stub, built):
+    doc = json.loads((built / ("exp-%s-manifest.json" % VERSION)).read_bytes())
+    names = [a["name"] for a in doc["artifacts"]]
+    assert len(names) == len(set(names))
+    assert "exp-speedtest-%s-noarch.tar.gz" % VERSION in names and "exp-runner-%s-noarch.tar.gz" % VERSION in names
+    assert verify(built, stub["pub"], "--version", VERSION).returncode == 0  # verify-release knows the new names
+
+
+def _page_script(repo: Path, body: str) -> None:
+    d = repo / "speedtest" / "page"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "build.py").write_text(body)
+
+
+PAGE_OK = """import argparse, hashlib, json, pathlib
+ap = argparse.ArgumentParser(); ap.add_argument("--out", required=True); a = ap.parse_args()
+out = pathlib.Path(a.out); (out / "assets").mkdir(parents=True, exist_ok=True)
+html = b"<!doctype html><title>built page</title><script>var x=1</script>"
+(out / "index.html").write_bytes(html)
+(out / "assets" / "font.woff2").write_bytes(b"wOF2" + bytes(range(16)))
+h = "sha256-" + __import__("base64").b64encode(hashlib.sha256(b"var x=1").digest()).decode()
+(out / "csp-hashes.json").write_text(json.dumps({"schema": "exp.speedtest.csp/1", "script": [h], "style": []}))
+"""
+
+
+def test_speedtest_page_is_built_during_packaging_and_overlays_the_static_tree(stub, tmp_path):
+    _page_script(stub["repo"], PAGE_OK)
+    out = tmp_path / "dist"
+    r = stub["run"](out)
+    assert r.returncode == 0, r.stderr
+    top = "exp-speedtest-%s" % VERSION
+    with tarfile.open(out / ("exp-speedtest-%s-noarch.tar.gz" % VERSION)) as tf:
+        names = tf.getnames()
+        assert "%s/lib/exp_speedtest/static/index.html" % top in names
+        assert "%s/lib/exp_speedtest/static/csp-hashes.json" % top in names
+        assert "%s/lib/exp_speedtest/static/assets/font.woff2" % top in names
+        assert "%s/lib/exp_speedtest/static/app.js" % top in names  # committed static files stay
+        assert b"built page" in tf.extractfile("%s/lib/exp_speedtest/static/index.html" % top).read()
+        assert tf.getmember("%s/lib/exp_speedtest/static/index.html" % top).mode == 0o644
+    # the page build is part of the reproducible release: two builds, identical bytes
+    out2 = tmp_path / "dist2"
+    assert stub["run"](out2).returncode == 0
+    a, b = out / ("exp-speedtest-%s-noarch.tar.gz" % VERSION), out2 / ("exp-speedtest-%s-noarch.tar.gz" % VERSION)
+    assert a.read_bytes() == b.read_bytes()
+
+
+def test_nondeterministic_page_build_fails_the_release(stub, tmp_path):
+    _page_script(stub["repo"], PAGE_OK + "import os\n(out / 'index.html').write_bytes(os.urandom(16))\n")
+    r = stub["run"](tmp_path / "dist")
+    assert r.returncode != 0 and "not deterministic" in r.stderr
+
+
+def test_failing_or_unsafe_page_build_fails_the_release(stub, tmp_path):
+    _page_script(stub["repo"], "import sys\nsys.stderr.write('boom')\nsys.exit(3)\n")
+    r = stub["run"](tmp_path / "d1")
+    assert r.returncode != 0 and "page build failed" in r.stderr and "boom" in r.stderr
+    _page_script(stub["repo"], PAGE_OK + "import os\nos.symlink('/etc/passwd', out / 'link')\n")
+    r = stub["run"](tmp_path / "d2")
+    assert r.returncode != 0 and "symlink" in r.stderr
+    _page_script(stub["repo"], "import argparse\nap = argparse.ArgumentParser(); ap.add_argument('--out')\nap.parse_args()\n")
+    r = stub["run"](tmp_path / "d3")
+    assert r.returncode != 0 and "produced 0 files" in r.stderr
+
+
+def test_no_page_script_means_the_committed_static_tree_is_shipped(stub, built):
+    top = "exp-speedtest-%s" % VERSION
+    assert "%s/lib/exp_speedtest/static/app.js" % top in tarfile.open(
+        built / ("exp-speedtest-%s-noarch.tar.gz" % VERSION)).getnames()
+
+
+def test_ready_components_lists_speedtest_when_it_has_the_required_files():
+    r = subprocess.run([str(PKG / "ready-components.sh")], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0
+    ready = r.stdout.strip().split(",")
+    assert "runner" in ready and "speedtest" in ready
+
+
+def test_real_speedtest_and_runner_units_pass_the_packaging_convention():
+    """Static check of the REAL units: apt packages allowlisted, units named exp-*.service, no @-placeholder
+    beyond the documented six, nothing but CAP_NET_BIND_SERVICE for the speedtest."""
+    import pack
+    for c in ("runner", "speedtest"):
+        pack._validate_apt(REPO / c / "requirements.apt", c)
+        for u in (REPO / c / "systemd").iterdir():
+            assert pack.UNIT_RE.match(u.name)
+    caps = [ln for ln in (REPO / "speedtest" / "systemd" / "exp-speedtest.service").read_text().splitlines()
+            if ln.startswith(("AmbientCapabilities=", "CapabilityBoundingSet="))]
+    assert caps == ["AmbientCapabilities=CAP_NET_BIND_SERVICE", "CapabilityBoundingSet=CAP_NET_BIND_SERVICE"]

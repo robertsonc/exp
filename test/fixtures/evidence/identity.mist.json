@@ -1,0 +1,37 @@
+{
+  "schema": "exp.evidence/1",
+  "test_id": "st_01M7R3X9G0QWCYM3A3S1DE8MT4",
+  "kind": "identity",
+  "source": "mist",
+  "collected_at": "2026-11-18T14:03:40.000Z",
+  "window": {
+    "from": "2026-11-18T13:57:11.120Z",
+    "to": "2026-11-18T14:04:27.540Z"
+  },
+  "status": "ok",
+  "data": {
+    "resolved_by": "mist",
+    "ip": "10.60.14.77",
+    "mac": "f0:18:98:aa:bb:01",
+    "device_key": "231b3838d0007bf24d5b048d8a17a19495b0fb11b94a792fa99b1deb58b9e082",
+    "hostname": "alices-iphone",
+    "username": "guest-portal-7731",
+    "manufacture": "Apple",
+    "os_family": "iOS",
+    "wired": false,
+    "zone": "hallb-row12",
+    "zone_source": "mist",
+    "site_id": "00000000-0000-0000-0000-00000000aa01",
+    "ap_mac": "5c:5b:35:00:01:a0",
+    "ap_name": "hallb-ap-12",
+    "ssid": "Summit-Guest",
+    "band": "5",
+    "vlan": 160,
+    "candidates": 1,
+    "nat_suspected": false,
+    "scrubbed": false
+  },
+  "raw_refs": [
+    "mist:client:f018:98aabb01"
+  ]
+}

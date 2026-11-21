@@ -56,7 +56,7 @@ export async function harness(): Promise<Harness> {
     await ensureAdmin(role);
     const h = new Headers({ "Cf-Access-Jwt-Assertion": await signJwt(key, goodClaims(emailOf(role), { iat: Math.floor(nowMs() / 1000) - 5, nbf: Math.floor(nowMs() / 1000) - 5, exp: Math.floor(nowMs() / 1000) + 3600 })), "CF-Connecting-IP": freshIp(), "X-Exp-Request": "1", ...headers });
     let payload: BodyInit | undefined;
-    if (body instanceof FormData) payload = body;
+    if (body instanceof FormData || body instanceof Uint8Array) payload = body as BodyInit;
     else if (body !== undefined) {
       if (!h.has("content-type")) h.set("content-type", "application/json");
       payload = typeof body === "string" ? body : JSON.stringify(body);

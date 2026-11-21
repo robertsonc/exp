@@ -35,7 +35,11 @@ DEFAULT_RUN_DIR = "/run/exp/collector"
 CRED_INGEST = "ingest_tokens.json"
 CRED_DASHBOARD = "dashboard_tokens.json"
 CRED_WEBHOOKS = "webhooks.json"
+CRED_SPEEDTEST = "speedtest_tokens.json"      # M6: {speedtest_id: sha256} (exps_), optional
+CRED_RUNNER = "runner_tokens.json"            # M6: {runner_id: sha256} (expr_), optional
+CRED_DEVICE_KEY = "device_key_secret"         # M6: the per-org expk_ secret, optional (purge-by-MAC on scrubbed rows)
 CRED_FILES = (CRED_INGEST, CRED_DASHBOARD, CRED_WEBHOOKS)
+OPTIONAL_CRED_FILES = (CRED_SPEEDTEST, CRED_RUNNER, CRED_DEVICE_KEY)
 
 MIB = 1024 * 1024
 WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]", "*"})  # noqa: S104 - these are REFUSED, not bound
@@ -75,6 +79,7 @@ class CollectorConfig:
     iperf3_port: int = 5201
     max_body_bytes: int = 4 * MIB
     max_records: int = 1000
+    speedtests: Mapping[str, Any] = dataclasses.field(default_factory=dict, compare=False, repr=False)
     raw: Mapping[str, Any] = dataclasses.field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -123,6 +128,7 @@ class CollectorConfig:
             iperf3_port=int(iperf3.get("port", 5201)),
             max_body_bytes=int(ing.get("max_body_mb", 4)) * MIB,
             max_records=int(ing.get("max_records", 1000)),
+            speedtests=dict(d.get("speedtests") or {}),
             raw=dict(d),
         )
 
@@ -285,6 +291,9 @@ class CredStore:
         self._ingest = _EMPTY
         self._dashboard = _EMPTY
         self._webhooks: tuple[dict[str, str], ...] = ()
+        self._speedtest = _EMPTY
+        self._runner = _EMPTY
+        self._device_key: str | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.reload_errors = 0
@@ -300,6 +309,21 @@ class CredStore:
     def dashboard(self) -> TokenTable:
         return self._dashboard
 
+    @property
+    def speedtest(self) -> TokenTable:
+        """``exps_`` tokens (speedtest -> collector), identity = speedtest id."""
+        return self._speedtest
+
+    @property
+    def runner(self) -> TokenTable:
+        """``expr_`` tokens (runner -> collector), identity = runner id."""
+        return self._runner
+
+    @property
+    def device_key_secret(self) -> str | None:
+        """The optional per-org ``expk_`` secret (lets purge-by-MAC reach rows whose raw MAC was scrubbed)."""
+        return self._device_key
+
     def webhooks(self) -> list[dict[str, str]]:
         return [dict(w) for w in self._webhooks]
 
@@ -311,6 +335,20 @@ class CredStore:
             return None
         return (st.st_mtime_ns, st.st_size, st.st_ino)
 
+    def _signatures(self) -> dict[str, tuple[int, int, int] | None]:
+        return {n: self._signature(n) for n in CRED_FILES + OPTIONAL_CRED_FILES}
+
+    def _read_optional(self) -> tuple[TokenTable, TokenTable, str | None]:
+        """The M6 credentials: each may be absent (a collector without speedtests has none of them)."""
+        def table(name: str) -> TokenTable:
+            text = exp_creds.optional_credential(name, self.directory)
+            return TokenTable(parse_token_hashes(_parse_json_text(text, name) if text else None, name))
+        secret = exp_creds.optional_credential(CRED_DEVICE_KEY, self.directory)
+        secret = secret.strip() if secret else None
+        if secret and not exp_ids.is_token(secret, "expk"):
+            raise exp_creds.CredentialError(f"credential {CRED_DEVICE_KEY!r} is not an expk_ secret")
+        return table(CRED_SPEEDTEST), table(CRED_RUNNER), secret or None
+
     def _read_all(self) -> tuple[TokenTable, TokenTable, tuple[dict[str, str], ...]]:
         texts = {n: exp_creds.read_credential(n, self.directory) for n in CRED_FILES}
         ingest = parse_token_hashes(_parse_json_text(texts[CRED_INGEST], CRED_INGEST), CRED_INGEST)
@@ -320,23 +358,27 @@ class CredStore:
 
     def load(self) -> None:
         """Initial load: raises CredentialError so the caller refuses to start."""
-        sigs = {n: self._signature(n) for n in CRED_FILES}
+        sigs = self._signatures()
         tables = self._read_all()
+        extra = self._read_optional()
         with self._lock:
             self._sig = sigs
             self._ingest, self._dashboard, self._webhooks = tables
+            self._speedtest, self._runner, self._device_key = extra
             self.generation += 1
-        log.info("credentials loaded: %d ingest identities, %d dashboard identities, %d webhooks",
-                 len(self._ingest), len(self._dashboard), len(self._webhooks))
+        log.info("credentials loaded: %d ingest identities, %d dashboard identities, %d webhooks, "
+                 "%d speedtest, %d runner identities", len(self._ingest), len(self._dashboard),
+                 len(self._webhooks), len(self._speedtest), len(self._runner))
 
     def reload_if_changed(self, force: bool = False) -> bool:
         """Re-read the files when any changed (or always with `force`, e.g. on SIGHUP). On error the previous
         good set stays active."""
-        sigs = {n: self._signature(n) for n in CRED_FILES}
+        sigs = self._signatures()
         if sigs == self._sig and not force:
             return False
         try:
             tables = self._read_all()
+            extra = self._read_optional()
         except exp_creds.CredentialError as exc:
             self.reload_errors += 1
             self.last_error = str(exc)
@@ -347,10 +389,12 @@ class CredStore:
         with self._lock:
             self._sig = sigs
             self._ingest, self._dashboard, self._webhooks = tables
+            self._speedtest, self._runner, self._device_key = extra
             self.generation += 1
             self.last_error = ""
-        log.info("credentials reloaded: %d ingest identities, %d dashboard identities, %d webhooks",
-                 len(self._ingest), len(self._dashboard), len(self._webhooks))
+        log.info("credentials reloaded: %d ingest identities, %d dashboard identities, %d webhooks, "
+                 "%d speedtest, %d runner identities", len(self._ingest), len(self._dashboard),
+                 len(self._webhooks), len(self._speedtest), len(self._runner))
         return True
 
     # --- poller -------------------------------------------------------------------------------

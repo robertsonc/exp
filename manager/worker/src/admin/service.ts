@@ -13,9 +13,10 @@ import { COMPONENT_ID_RE, HOST_ID_RE, SEMVER_RE, SLUG_RE, newId } from "../util/
 import { isoNow, isoPlusSeconds } from "../util/time";
 import { validateWebhookUrl } from "../notify/webhook";
 import { validateProbePorts } from "./intent";
-import { DASH_TOKEN_KIND, INGEST_KIND, WEBHOOK_KIND, pairOwner } from "../compile/wiring";
+import { CHANNEL_TOKEN_KIND, DASH_TOKEN_KIND, INGEST_KIND, RUNNER_TOKEN_KIND, SPEEDTEST_TOKEN_KIND, WEBHOOK_KIND, pairOwner, speedtestOfRunner, runnerOfSpeedtest } from "../compile/wiring";
 import { loadWorld } from "../compile/load";
 import { collectorsOfDashboard } from "../compile/wiring";
+import { checkSpeedtestLayout } from "../speedtest/layout";
 
 export const ENROL_TTL_S = 3600;
 export interface Actor {
@@ -23,7 +24,7 @@ export interface Actor {
   ip?: string | null;
 }
 
-const COMPONENT_TYPES = ["probe", "collector", "dashboard", "runner"] as const;
+const COMPONENT_TYPES = ["probe", "collector", "dashboard", "runner", "speedtest"] as const;
 export const PBKDF2_RE = /^pbkdf2_sha256\$600000\$[A-Za-z0-9+/=_-]{8,64}\$[A-Za-z0-9+/=_-]{16,128}$/;
 
 const slug = (v: unknown, what: string): string => {
@@ -107,6 +108,7 @@ export async function addComponent(
   const dup = await env.DB.prepare("SELECT 1 AS x FROM components WHERE type = ?1 AND slug = ?2").bind(c.type, id).first();
   if (dup) throw new ApiError(409, "conflict", `${c.type} ${id} already exists`);
   const cid = newId("cmp_");
+  await checkSpeedtestLayout(env, { hostId, componentId: cid, type: c.type as "probe", slug: id, config: c.config ?? {}, enabled: true });
   const now = isoNow();
   await env.DB.batch([
     env.DB.prepare(
@@ -131,6 +133,7 @@ export async function patchComponent(env: Env, actor: Actor, componentId: string
   if (p.config !== undefined) {
     if (JSON.stringify(p.config).length > 65536) throw new ApiError(422, "invalid_config", "component config exceeds 64 KiB");
     if (row.type === "probe" && Array.isArray(p.config.ports)) await validateProbePorts(env, row.host_id, componentId, p.config.mgmt_iface, p.config.ports);
+    await checkSpeedtestLayout(env, { hostId: row.host_id, componentId, type: row.type as "probe", slug: row.slug, config: p.config, enabled: p.enabled ?? true });
     args.push(JSON.stringify(p.config));
     sets.push(`config_json = ?${args.length}`);
   }
@@ -278,30 +281,44 @@ export async function rotateComponentTokens(
   const row = await env.DB.prepare("SELECT type, host_id FROM components WHERE component_id = ?1").bind(componentId).first<{ type: string; host_id: string }>();
   if (!row) throw notFound("no such component");
   const stmts: D1PreparedStatement[] = [];
-  let kind = "";
-  if (row.type === "probe" || row.type === "runner") {
-    kind = INGEST_KIND;
-    const s = await getSecretByOwner(env, componentId, INGEST_KIND);
-    if (s) stmts.push(await prepareRotateSecret(env, s, newToken("expi"), true));
-  } else if (row.type === "dashboard") {
-    kind = DASH_TOKEN_KIND;
+  const kinds: string[] = [];
+  const rotateOne = async (owner: string, kind: string, prefix: "expi" | "expd" | "exps" | "expr" | "expl") => {
+    const s = await getSecretByOwner(env, owner, kind);
+    if (!s) return;
+    stmts.push(await prepareRotateSecret(env, s, newToken(prefix), true));
+    if (!kinds.includes(kind)) kinds.push(kind);
+  };
+  if (row.type === "probe") {
+    await rotateOne(componentId, INGEST_KIND, "expi");
+  } else if (row.type === "runner") {
+    // M6: the runner holds three tokens: expi_ (ext_* ingest), expr_ (collector feed and evidence) and the localhost channel's expl_
+    await rotateOne(componentId, INGEST_KIND, "expi");
+    await rotateOne(componentId, RUNNER_TOKEN_KIND, "expr");
     const world = await loadWorld(env);
     const comp = world.components.find((c) => c.component_id === componentId);
-    for (const col of comp ? collectorsOfDashboard(world, comp) : []) {
-      const s = await getSecretByOwner(env, pairOwner(componentId, col.component_id), DASH_TOKEN_KIND);
-      if (s) stmts.push(await prepareRotateSecret(env, s, newToken("expd"), true));
-    }
+    const sp = comp ? speedtestOfRunner(world, comp) : null;
+    if (sp) await rotateOne(pairOwner(componentId, sp.component_id), CHANNEL_TOKEN_KIND, "expl");
+  } else if (row.type === "speedtest") {
+    await rotateOne(componentId, SPEEDTEST_TOKEN_KIND, "exps");
+    const world = await loadWorld(env);
+    const comp = world.components.find((c) => c.component_id === componentId);
+    const r = comp ? runnerOfSpeedtest(world, comp) : null;
+    if (r) await rotateOne(pairOwner(r.component_id, componentId), CHANNEL_TOKEN_KIND, "expl");
+  } else if (row.type === "dashboard") {
+    const world = await loadWorld(env);
+    const comp = world.components.find((c) => c.component_id === componentId);
+    for (const col of comp ? collectorsOfDashboard(world, comp) : []) await rotateOne(pairOwner(componentId, col.component_id), DASH_TOKEN_KIND, "expd");
   } else {
     throw invalidRequest("this component type has no rotatable tokens");
   }
   if (stmts.length === 0) throw new ApiError(409, "conflict", "no tokens provisioned yet");
   await env.DB.batch([
     ...stmts,
-    auditStmt(env.DB, { actor: actor.email, action: "component.rotate", resource: `component:${componentId}`, details: { tokens: stmts.length, kind }, ip: actor.ip }),
+    auditStmt(env.DB, { actor: actor.email, action: "component.rotate", resource: `component:${componentId}`, details: { tokens: stmts.length, kind: kinds.join(",") }, ip: actor.ip }),
   ]);
   await recompile(env, { all: true });
   const h = await env.DB.prepare("SELECT desired_version FROM hosts WHERE host_id = ?1").bind(row.host_id).first<{ desired_version: number | null }>();
-  return { component_id: componentId, kinds: [kind], previous_valid_until: isoPlusSeconds(ROTATION_GRACE_S), desired_version: h?.desired_version ?? 0 };
+  return { component_id: componentId, kinds, previous_valid_until: isoPlusSeconds(ROTATION_GRACE_S), desired_version: h?.desired_version ?? 0 };
 }
 
 /** Dashboard local user: the password hash is computed in the browser; plaintext is refused. */

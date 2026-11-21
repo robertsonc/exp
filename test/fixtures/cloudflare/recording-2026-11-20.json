@@ -1,0 +1,959 @@
+{
+  "recorded_at": "2026-11-20T01:23:28.000Z",
+  "origin_header": "http://speed.summit.example",
+  "host": "speed.cloudflare.com",
+  "via_proxy": true,
+  "note": "Only cookie headers are stripped. Timing includes the agent proxy hop when via_proxy is true.",
+  "exchanges": [
+    {
+      "label": "latency probe (idle): library GET __down?bytes=0",
+      "request": {
+        "method": "GET",
+        "url": "https://speed.cloudflare.com/__down?bytes=0",
+        "headers": [
+          [
+            "Host",
+            "speed.cloudflare.com"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "User-Agent",
+            "exp-recorder/1"
+          ],
+          [
+            "Origin",
+            "http://speed.summit.example"
+          ]
+        ],
+        "body_bytes": 0
+      },
+      "response": {
+        "status": 200,
+        "reason": "OK",
+        "headers": [
+          [
+            "Date",
+            "Fri, 20 Nov 2026 01:23:23 GMT"
+          ],
+          [
+            "Content-Type",
+            "application/octet-stream"
+          ],
+          [
+            "Content-Length",
+            "0"
+          ],
+          [
+            "Connection",
+            "keep-alive"
+          ],
+          [
+            "Access-Control-Allow-Origin",
+            "*"
+          ],
+          [
+            "Cache-Control",
+            "no-store, no-transform"
+          ],
+          [
+            "Vary",
+            "Origin"
+          ],
+          [
+            "access-control-expose-headers",
+            "server-timing, content-length, cf-meta-ip, cf-meta-request-time, cf-meta-colo, cf-meta-asn, cf-meta-country, cf-meta-city, cf-meta-postalCode, cf-meta-latitude, cf-meta-longitude, cf-meta-timezone"
+          ],
+          [
+            "asn",
+            "396982"
+          ],
+          [
+            "cf-meta-ip",
+            "160.79.106.148"
+          ],
+          [
+            "cf-meta-request-time",
+            "1795137803324"
+          ],
+          [
+            "city",
+            "Council Bluffs"
+          ],
+          [
+            "colo",
+            "ORD"
+          ],
+          [
+            "country",
+            "US"
+          ],
+          [
+            "latitude",
+            "41.26194"
+          ],
+          [
+            "longitude",
+            "-95.86083"
+          ],
+          [
+            "postalCode",
+            "51503"
+          ],
+          [
+            "timezone",
+            "America/Chicago"
+          ],
+          [
+            "timing-allow-origin",
+            "*"
+          ],
+          [
+            "Report-To",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=67WI6DNuxfOL7zM%2BwYOdP7m%2Fl2lC8jC06yhsMrvJnz5Edeb0ZhWaOjBwxiQcRR46KbbLH2%2FNjACbkRTW9gzWzMgnpMrJ1n0lvVZrxXLQYjcUYrRiqqRm5yumAm0ZfHPvulT1zP0r\"}]}"
+          ],
+          [
+            "Nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+          ],
+          [
+            "Server-Timing",
+            "cfSpeedEdge;dur=2, cfSpeedWorker;dur=20"
+          ],
+          [
+            "Server",
+            "cloudflare"
+          ],
+          [
+            "CF-RAY",
+            "a5d3a626cd8075e4-ORD"
+          ],
+          [
+            "server-timing",
+            "cfL4;desc=\"?proto=TCP&rtt=10572&min_rtt=10511&rtt_var=3001&sent=5&recv=8&lost=0&retrans=0&sent_bytes=3930&recv_bytes=1794&delivery_rate=397365&cwnd=53&unsent_bytes=0&cid=ace414ea81603239&ts=46&x=0\""
+          ]
+        ],
+        "body": {
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "head_hex": ""
+        }
+      },
+      "timing_ms": {
+        "connect_incl_tunnel_tls": 299.0,
+        "ttfb_after_send": 41.1,
+        "total_after_connect": 41.1
+      }
+    },
+    {
+      "label": "latency probe during download load (library adds during=)",
+      "request": {
+        "method": "GET",
+        "url": "https://speed.cloudflare.com/__down?bytes=0&during=downloadload",
+        "headers": [
+          [
+            "Host",
+            "speed.cloudflare.com"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "User-Agent",
+            "exp-recorder/1"
+          ],
+          [
+            "Origin",
+            "http://speed.summit.example"
+          ]
+        ],
+        "body_bytes": 0
+      },
+      "response": {
+        "status": 200,
+        "reason": "OK",
+        "headers": [
+          [
+            "Date",
+            "Fri, 20 Nov 2026 01:23:23 GMT"
+          ],
+          [
+            "Content-Type",
+            "application/octet-stream"
+          ],
+          [
+            "Content-Length",
+            "0"
+          ],
+          [
+            "Connection",
+            "keep-alive"
+          ],
+          [
+            "Access-Control-Allow-Origin",
+            "*"
+          ],
+          [
+            "Cache-Control",
+            "no-store, no-transform"
+          ],
+          [
+            "Vary",
+            "Origin"
+          ],
+          [
+            "access-control-expose-headers",
+            "server-timing, content-length, cf-meta-ip, cf-meta-request-time, cf-meta-colo, cf-meta-asn, cf-meta-country, cf-meta-city, cf-meta-postalCode, cf-meta-latitude, cf-meta-longitude, cf-meta-timezone"
+          ],
+          [
+            "asn",
+            "396982"
+          ],
+          [
+            "cf-meta-ip",
+            "160.79.106.147"
+          ],
+          [
+            "cf-meta-request-time",
+            "1795137803721"
+          ],
+          [
+            "city",
+            "Council Bluffs"
+          ],
+          [
+            "colo",
+            "ORD"
+          ],
+          [
+            "country",
+            "US"
+          ],
+          [
+            "latitude",
+            "41.26194"
+          ],
+          [
+            "longitude",
+            "-95.86083"
+          ],
+          [
+            "postalCode",
+            "51503"
+          ],
+          [
+            "timezone",
+            "America/Chicago"
+          ],
+          [
+            "timing-allow-origin",
+            "*"
+          ],
+          [
+            "Report-To",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=UR5%2B0jNWhpTBKro5s9oHkq2MD2JTV7c4Nhyqq%2F48g2INWGGzGDECmgPQntZt%2BKMDQrWe5p2YDIXP%2FGC%2FQjqzcGWW74TeTEq77VTjN6wLNZJ6x5kMoaXhDqMhiXnYkUpc2lJCQi4q\"}]}"
+          ],
+          [
+            "Nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+          ],
+          [
+            "Server-Timing",
+            "cfSpeedEdge;dur=7, cfSpeedWorker;dur=41"
+          ],
+          [
+            "Server",
+            "cloudflare"
+          ],
+          [
+            "CF-RAY",
+            "a5d3a6293cac618a-ORD"
+          ],
+          [
+            "server-timing",
+            "cfL4;desc=\"?proto=TCP&rtt=10957&min_rtt=10848&rtt_var=3134&sent=6&recv=7&lost=0&retrans=0&sent_bytes=3931&recv_bytes=1814&delivery_rate=387985&cwnd=53&unsent_bytes=0&cid=2b9cb1c531c84c5c&ts=73&x=0\""
+          ]
+        ],
+        "body": {
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "head_hex": ""
+        }
+      },
+      "timing_ms": {
+        "connect_incl_tunnel_tls": 345.6,
+        "ttfb_after_send": 67.9,
+        "total_after_connect": 67.9
+      }
+    },
+    {
+      "label": "download 100 kB",
+      "request": {
+        "method": "GET",
+        "url": "https://speed.cloudflare.com/__down?bytes=100000",
+        "headers": [
+          [
+            "Host",
+            "speed.cloudflare.com"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "User-Agent",
+            "exp-recorder/1"
+          ],
+          [
+            "Origin",
+            "http://speed.summit.example"
+          ]
+        ],
+        "body_bytes": 0
+      },
+      "response": {
+        "status": 200,
+        "reason": "OK",
+        "headers": [
+          [
+            "Date",
+            "Fri, 20 Nov 2026 01:23:24 GMT"
+          ],
+          [
+            "Content-Type",
+            "application/octet-stream"
+          ],
+          [
+            "Content-Length",
+            "100000"
+          ],
+          [
+            "Connection",
+            "keep-alive"
+          ],
+          [
+            "Access-Control-Allow-Origin",
+            "*"
+          ],
+          [
+            "Cache-Control",
+            "no-store, no-transform"
+          ],
+          [
+            "Vary",
+            "Origin"
+          ],
+          [
+            "access-control-expose-headers",
+            "server-timing, content-length, cf-meta-ip, cf-meta-request-time, cf-meta-colo, cf-meta-asn, cf-meta-country, cf-meta-city, cf-meta-postalCode, cf-meta-latitude, cf-meta-longitude, cf-meta-timezone"
+          ],
+          [
+            "asn",
+            "396982"
+          ],
+          [
+            "cf-meta-ip",
+            "160.79.106.144"
+          ],
+          [
+            "cf-meta-request-time",
+            "1795137804115"
+          ],
+          [
+            "city",
+            "Council Bluffs"
+          ],
+          [
+            "colo",
+            "ORD"
+          ],
+          [
+            "country",
+            "US"
+          ],
+          [
+            "latitude",
+            "41.26194"
+          ],
+          [
+            "longitude",
+            "-95.86083"
+          ],
+          [
+            "postalCode",
+            "51503"
+          ],
+          [
+            "timezone",
+            "America/Chicago"
+          ],
+          [
+            "timing-allow-origin",
+            "*"
+          ],
+          [
+            "Report-To",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=Z4Hkt%2FJIFIJSRzVtvza81%2B3UwnYyf4GgEPVbnMszf2uSrnz%2BW%2FPIH3%2BgAto75FgoTNP4dOvdXdpIZ5XkhKVDY4zLfYGkiLZ0GEY53TqbFCTYaMIlDRSZlYKagpUTtJncpS4iQuWa\"}]}"
+          ],
+          [
+            "Nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+          ],
+          [
+            "Server-Timing",
+            "cfSpeedEdge;dur=6, cfSpeedWorker;dur=13"
+          ],
+          [
+            "Server",
+            "cloudflare"
+          ],
+          [
+            "CF-RAY",
+            "a5d3a62bacc4e829-ORD"
+          ],
+          [
+            "server-timing",
+            "cfL4;desc=\"?proto=TCP&rtt=10555&min_rtt=10464&rtt_var=3102&sent=6&recv=8&lost=0&retrans=0&sent_bytes=3931&recv_bytes=1799&delivery_rate=388342&cwnd=53&unsent_bytes=0&cid=34daa49e7f85649d&ts=43&x=0\""
+          ]
+        ],
+        "body": {
+          "length": 100000,
+          "sha256": "1120a8195b1b31db766febc0bebe9f500cb97ecb982bfdac33156e6c537064dd",
+          "head_hex": "3030303030303030303030303030303030303030303030303030303030303030"
+        }
+      },
+      "timing_ms": {
+        "connect_incl_tunnel_tls": 321.6,
+        "ttfb_after_send": 38.9,
+        "total_after_connect": 49.8
+      }
+    },
+    {
+      "label": "upload 1 kB (body is a string of '0', no custom headers)",
+      "request": {
+        "method": "POST",
+        "url": "https://speed.cloudflare.com/__up?bytes=1000",
+        "headers": [
+          [
+            "Host",
+            "speed.cloudflare.com"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "User-Agent",
+            "exp-recorder/1"
+          ],
+          [
+            "Origin",
+            "http://speed.summit.example"
+          ],
+          [
+            "Content-Type",
+            "text/plain;charset=UTF-8"
+          ]
+        ],
+        "body_bytes": 1000
+      },
+      "response": {
+        "status": 200,
+        "reason": "OK",
+        "headers": [
+          [
+            "Date",
+            "Fri, 20 Nov 2026 01:23:24 GMT"
+          ],
+          [
+            "Content-Type",
+            "text/plain;charset=UTF-8"
+          ],
+          [
+            "Content-Length",
+            "0"
+          ],
+          [
+            "Connection",
+            "keep-alive"
+          ],
+          [
+            "Access-Control-Allow-Origin",
+            "*"
+          ],
+          [
+            "Vary",
+            "Origin"
+          ],
+          [
+            "access-control-allow-headers",
+            "content-type"
+          ],
+          [
+            "access-control-expose-headers",
+            "server-timing, cf-meta-colo, cf-meta-request-time, cf-meta-upload-bytes"
+          ],
+          [
+            "cf-meta-colo",
+            "ORD"
+          ],
+          [
+            "cf-meta-request-time",
+            "1795137804495"
+          ],
+          [
+            "cf-meta-upload-bytes",
+            "1000"
+          ],
+          [
+            "timing-allow-origin",
+            "*"
+          ],
+          [
+            "Report-To",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=3qhY8lKq0D7IjvJWXVaNxrfICIZciC0xWae5AKPsFDpwDl4jh6WqL96Ws4KJQO2YeB09FPbrIzoMGkleqpcJviMFj902lL2U31FB4eXGHfMtVQXcZLidQtzxqdINK%2BHRrZX%2BiUJs\"}]}"
+          ],
+          [
+            "Nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+          ],
+          [
+            "Server-Timing",
+            "cfSpeedEdge;dur=4, cfSpeedWorker;dur=4"
+          ],
+          [
+            "Server",
+            "cloudflare"
+          ],
+          [
+            "CF-RAY",
+            "a5d3a62e0c2b0046-ORD"
+          ],
+          [
+            "server-timing",
+            "cfL4;desc=\"?proto=TCP&rtt=11606&min_rtt=11530&rtt_var=4378&sent=4&recv=6&lost=0&retrans=0&sent_bytes=3931&recv_bytes=2880&delivery_rate=366348&cwnd=53&unsent_bytes=0&cid=e650d62d790d233b&ts=31&x=0\""
+          ]
+        ],
+        "body": {
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "head_hex": ""
+        }
+      },
+      "timing_ms": {
+        "connect_incl_tunnel_tls": 326.5,
+        "ttfb_after_send": 26.9,
+        "total_after_connect": 26.9
+      }
+    },
+    {
+      "label": "colo / loc from the trace endpoint",
+      "request": {
+        "method": "GET",
+        "url": "https://speed.cloudflare.com/cdn-cgi/trace",
+        "headers": [
+          [
+            "Host",
+            "speed.cloudflare.com"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "User-Agent",
+            "exp-recorder/1"
+          ],
+          [
+            "Origin",
+            "http://speed.summit.example"
+          ]
+        ],
+        "body_bytes": 0
+      },
+      "response": {
+        "status": 200,
+        "reason": "OK",
+        "headers": [
+          [
+            "Date",
+            "Fri, 20 Nov 2026 01:23:24 GMT"
+          ],
+          [
+            "Content-Type",
+            "text/plain"
+          ],
+          [
+            "Content-Length",
+            "229"
+          ],
+          [
+            "Connection",
+            "keep-alive"
+          ],
+          [
+            "If-Modified-Since",
+            "off"
+          ],
+          [
+            "Expires",
+            "Thu, 01 Jan 1970 00:00:01 GMT"
+          ],
+          [
+            "Access-Control-Allow-Origin",
+            "*"
+          ],
+          [
+            "Report-To",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=hnqo6xRHQdgm5XbpTXkZ2rrzixGZeVoZ1JKZ9Tz8Cm%2BiyjvubJwbupFo58I7G403MDaaFKX5rY903RC6WF12hcMLzb%2BkGwR%2BfTOZDRaTiK8rQWJ9kFZkD7z%2FN%2BZ3%2FTU30%2BhjJRyP\"}]}"
+          ],
+          [
+            "Nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+          ],
+          [
+            "Server",
+            "cloudflare"
+          ],
+          [
+            "CF-RAY",
+            "a5d3a62edaf84b8d-ORD"
+          ]
+        ],
+        "body": {
+          "length": 229,
+          "sha256": "c93c865051c658926c98f2c176960ae66a4d0ceab67646996e04c8d7922e5a6f",
+          "head_hex": "666c3d363132663135310a683d73706565642e636c6f7564666c6172652e636f"
+        }
+      },
+      "timing_ms": {
+        "connect_incl_tunnel_tls": 97.0,
+        "ttfb_after_send": 17.8,
+        "total_after_connect": 17.8
+      }
+    },
+    {
+      "label": "CORS preflight for __up, no custom headers (what the library sends when authorization is off)",
+      "request": {
+        "method": "OPTIONS",
+        "url": "https://speed.cloudflare.com/__up?bytes=1000",
+        "headers": [
+          [
+            "Host",
+            "speed.cloudflare.com"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "User-Agent",
+            "exp-recorder/1"
+          ],
+          [
+            "Origin",
+            "http://speed.summit.example"
+          ],
+          [
+            "Access-Control-Request-Method",
+            "POST"
+          ]
+        ],
+        "body_bytes": 0
+      },
+      "response": {
+        "status": 204,
+        "reason": "No Content",
+        "headers": [
+          [
+            "Date",
+            "Fri, 20 Nov 2026 01:23:25 GMT"
+          ],
+          [
+            "Connection",
+            "keep-alive"
+          ],
+          [
+            "Access-Control-Allow-Origin",
+            "*"
+          ],
+          [
+            "Vary",
+            "Origin"
+          ],
+          [
+            "access-control-allow-headers",
+            "authorization, content-type"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET, POST, OPTIONS"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "timing-allow-origin",
+            "*"
+          ],
+          [
+            "Report-To",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=ful0P%2B02qkVZLhPuJVpDrkemDzyyWG3V%2BSZyM5QTboFmAaQ7Svf%2Fy66DCvXXVk0LS%2FVbr1VfedHua77qmmlKOazasbVbgYQ6l5Qb41jswd577iqdA6Qsm0v74P5fbTplB9KEEMKN\"}]}"
+          ],
+          [
+            "Nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+          ],
+          [
+            "Server-Timing",
+            "cfSpeedEdge;dur=5, cfSpeedWorker;dur=207"
+          ],
+          [
+            "Server",
+            "cloudflare"
+          ],
+          [
+            "CF-RAY",
+            "a5d3a6310c1c9a31-ORD"
+          ],
+          [
+            "server-timing",
+            "cfL4;desc=\"?proto=TCP&rtt=10708&min_rtt=10607&rtt_var=4050&sent=5&recv=6&lost=0&retrans=0&sent_bytes=3931&recv_bytes=1836&delivery_rate=398227&cwnd=53&unsent_bytes=0&cid=ba3a6ecf93133813&ts=236&x=0\""
+          ]
+        ],
+        "body": {
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "head_hex": ""
+        }
+      },
+      "timing_ms": {
+        "connect_incl_tunnel_tls": 321.6,
+        "ttfb_after_send": 233.0,
+        "total_after_connect": 233.0
+      }
+    },
+    {
+      "label": "CORS preflight for __up with custom headers (only if the library's authorization option were enabled; exp does not enable it)",
+      "request": {
+        "method": "OPTIONS",
+        "url": "https://speed.cloudflare.com/__up?bytes=1000",
+        "headers": [
+          [
+            "Host",
+            "speed.cloudflare.com"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "User-Agent",
+            "exp-recorder/1"
+          ],
+          [
+            "Origin",
+            "http://speed.summit.example"
+          ],
+          [
+            "Access-Control-Request-Method",
+            "POST"
+          ],
+          [
+            "Access-Control-Request-Headers",
+            "authorization,content-type"
+          ]
+        ],
+        "body_bytes": 0
+      },
+      "response": {
+        "status": 204,
+        "reason": "No Content",
+        "headers": [
+          [
+            "Date",
+            "Fri, 20 Nov 2026 01:23:25 GMT"
+          ],
+          [
+            "Connection",
+            "keep-alive"
+          ],
+          [
+            "Access-Control-Allow-Origin",
+            "*"
+          ],
+          [
+            "Vary",
+            "Origin"
+          ],
+          [
+            "access-control-allow-headers",
+            "authorization, content-type"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET, POST, OPTIONS"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "timing-allow-origin",
+            "*"
+          ],
+          [
+            "Report-To",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=lgnh2O9ElwGCvzmI%2BZCmIuDnjsmDzi5Xop6NU4ayfrqPpsfRDCxSKnZwWFhtoqPytVNknaKKhCJiydnW0uvdjI8oBPtuUXvw1mhx2IXHEI1jjgcwi%2FRWMiE7zk%2FCEyxGsY9yk04S\"}]}"
+          ],
+          [
+            "Nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+          ],
+          [
+            "Server-Timing",
+            "cfSpeedEdge;dur=5, cfSpeedWorker;dur=2"
+          ],
+          [
+            "Server",
+            "cloudflare"
+          ],
+          [
+            "CF-RAY",
+            "a5d3a6346e4580ba-ORD"
+          ],
+          [
+            "server-timing",
+            "cfL4;desc=\"?proto=TCP&rtt=10701&min_rtt=10643&rtt_var=3044&sent=4&recv=7&lost=0&retrans=0&sent_bytes=3932&recv_bytes=1896&delivery_rate=396731&cwnd=53&unsent_bytes=0&cid=d7ac4d743e7e67d4&ts=28&x=0\""
+          ]
+        ],
+        "body": {
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "head_hex": ""
+        }
+      },
+      "timing_ms": {
+        "connect_incl_tunnel_tls": 299.6,
+        "ttfb_after_send": 24.7,
+        "total_after_connect": 24.7
+      }
+    },
+    {
+      "label": "CORS preflight for __down (not normally sent: simple GET)",
+      "request": {
+        "method": "OPTIONS",
+        "url": "https://speed.cloudflare.com/__down?bytes=0",
+        "headers": [
+          [
+            "Host",
+            "speed.cloudflare.com"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "User-Agent",
+            "exp-recorder/1"
+          ],
+          [
+            "Origin",
+            "http://speed.summit.example"
+          ],
+          [
+            "Access-Control-Request-Method",
+            "GET"
+          ]
+        ],
+        "body_bytes": 0
+      },
+      "response": {
+        "status": 204,
+        "reason": "No Content",
+        "headers": [
+          [
+            "Date",
+            "Fri, 20 Nov 2026 01:23:25 GMT"
+          ],
+          [
+            "Connection",
+            "keep-alive"
+          ],
+          [
+            "Access-Control-Allow-Origin",
+            "*"
+          ],
+          [
+            "Vary",
+            "Origin"
+          ],
+          [
+            "access-control-allow-headers",
+            "authorization, content-type"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET, POST, OPTIONS"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "timing-allow-origin",
+            "*"
+          ],
+          [
+            "Report-To",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=LqHuzg2wDn%2BwUPG0jDhEX80CqwEQvnU13J2ZFjg4TBtdPxa1DZFD4OYMp61vZsGPL43wR8AxtuPmFv3bF6kTzjOmjwOVUUdnTb9LuH7qNTVFPbwLSAKIe047a18hzDlmYoe6dx7i\"}]}"
+          ],
+          [
+            "Nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+          ],
+          [
+            "Server-Timing",
+            "cfSpeedEdge;dur=4, cfSpeedWorker;dur=2"
+          ],
+          [
+            "Server",
+            "cloudflare"
+          ],
+          [
+            "CF-RAY",
+            "a5d3a6366ace871c-ORD"
+          ],
+          [
+            "server-timing",
+            "cfL4;desc=\"?proto=TCP&rtt=10988&min_rtt=10984&rtt_var=3096&sent=4&recv=7&lost=0&retrans=0&sent_bytes=3931&recv_bytes=1834&delivery_rate=383825&cwnd=53&unsent_bytes=0&cid=ed5ea63804d0250c&ts=30&x=0\""
+          ]
+        ],
+        "body": {
+          "length": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "head_hex": ""
+        }
+      },
+      "timing_ms": {
+        "connect_incl_tunnel_tls": 290.1,
+        "ttfb_after_send": 26.4,
+        "total_after_connect": 26.5
+      }
+    }
+  ],
+  "idle_latency_ttfb_ms_samples": [
+    212.6,
+    46.6,
+    43.7,
+    42.3,
+    59.5,
+    59.9,
+    68.9,
+    43.9
+  ]
+}

@@ -4,7 +4,7 @@
 # see test/harness/README.md. Nothing here touches the docker host's network or needs the internet.
 #
 #   harness.sh build             build the two images (net, host)
-#   harness.sh up [all|split|multisite]
+#   harness.sh up [all|split|multisite|core]
 #                                start the LAN and the hosts of a layout
 #                                  all   : one host (h1: probe + collector + dashboard), 3 test ports
 #                                  split : hc (collector + dashboard, no ports) and hp (probe, 3 test ports)
@@ -12,6 +12,11 @@
 #                                          gateway + dnsmasq each) and 4 hosts: hb1, hb2 (site 1) and hc1 (site 2),
 #                                          each with 3 test ports (collector + probe), and hd (dashboard, no ports);
 #                                          plus a webhook receiver (https, 9443) in the net container
+#                                  core  : M6 all-in-one box "core" (probe + collector + runner + speedtest + dashboard)
+#                                          on a ROUTED core segment (10.9.0.0/24, box 10.9.0.10, no NAT towards the attendee
+#                                          VLAN 10.1.0.0/24), the fake Cloudflare speed server (speed.cloudflare.com), fake Mist
+#                                          and EdgeConnect Orchestrator, the DNS-leg delegation; clients are made with
+#                                          `lanctl client-dhcp` (see test/e2e/m6)
 #   harness.sh down              remove every container and the management network
 #   harness.sh status            what is running, as JSON
 #   harness.sh shell [name]      interactive shell in a host (default: first host) or `net`
@@ -28,6 +33,8 @@ HOST_IMG=exp-harness-host:${EXP_HARNESS_UBUNTU:-24.04}
 MGMT=$P-mgmt
 NETC=$P-net
 NET_IP=$BASE.2
+CORE_IP=${EXP_CORE_IP:-10.9.0.10}
+LAYOUT=
 
 say() { echo "harness: $*" >&2; }
 die() { echo "harness: $*" >&2; exit 1; }
@@ -47,7 +54,8 @@ layout_hosts() {
         all)   echo "h1:11:3" ;;
         split) echo "hc:12:0 hp:13:3" ;;
         multisite) echo "hb1:21:3:1 hb2:22:3:1 hc1:23:3:2 hd:24:0" ;;
-        *) die "unknown layout '$1' (all|split|multisite)" ;;
+        core)  echo "core:11:3" ;;
+        *) die "unknown layout '$1' (all|split|multisite|core)" ;;
     esac
 }
 layout_sites() { case "$1" in multisite) echo 2 ;; *) echo 1 ;; esac; }
@@ -85,6 +93,15 @@ start_host() {          # name last-octet nports idx [site]
         docker exec "$NETC" /opt/lan/lanctl plug "$name-tp$i" --pid "$pid" --ifname "tp$i" \
             --mac "$(printf '02:ee:%02x:00:00:%02x' "$idx" "$i")" --site "$site"
     done
+    if [ "$LAYOUT" = core ]; then
+        # the box's routed interface on the core segment; attendee VLANs reach it through the gateway (routed, not NAT'd).
+        # The default route stays on the management network (the probe's control path); the event-side prefixes go via
+        # the core gateway so the box's path timer measures gateway -> edge -> edge+1 on the event path.
+        docker exec "$NETC" /opt/lan/lanctl plug core-lan --pid "$pid" --ifname core0 --mac 02:ee:09:00:00:00 --site 3
+        docker exec "$c" sh -c "ip addr add $CORE_IP/24 dev core0 && ip link set core0 up \
+            && ip route add 10.1.0.0/24 via 10.9.0.1 && ip route add 10.255.1.0/30 via 10.9.0.1 \
+            && ip route add 10.255.2.0/30 via 10.9.0.1 && ip route add 1.1.1.1/32 via 10.9.0.1"
+    fi
 }
 
 cmd_up() {
@@ -96,8 +113,15 @@ cmd_up() {
     # not --internal: docker drops (br_netfilter) anything leaving an internal network for a non-local destination,
     # which would block the management path to the simulated internet; masquerade off = no NAT to the real one
     docker network create -o com.docker.network.bridge.enable_ip_masquerade=false --subnet "$SUBNET" --gateway "$BASE.1" "$MGMT" >/dev/null
+    LAYOUT=$layout
+    local core_env=()
+    [ "$layout" != core ] || core_env=(-e EXP_LAN_CORE=1 -e "EXP_CORE_IP=$CORE_IP" -v "$(cd "$HERE/../.." && pwd):/opt/repo:ro")
     docker run -d --name "$NETC" --hostname "$NETC" --privileged --pid=host --network "$MGMT" --ip "$NET_IP" \
-        -e "EXP_LAN_SITES=$(layout_sites "$layout")" -v "$HERE/net:/opt/lan:ro" "$NET_IMG" >/dev/null
+        -e "EXP_LAN_SITES=$(layout_sites "$layout")" "${core_env[@]}" -v "$HERE/net:/opt/lan:ro" "$NET_IMG" >/dev/null
+    if [ "$layout" = core ]; then      # the DHCP client for the client namespaces (the net image has none): from the host image
+        docker run --rm --entrypoint cat "$HOST_IMG" /usr/bin/busybox | docker exec -i "$NETC" sh -c \
+            'cat > /usr/local/bin/busybox && chmod 755 /usr/local/bin/busybox'
+    fi
     for _ in $(seq 120); do
         docker exec "$NETC" test -e /run/lan/ready 2>/dev/null && break
         [ "$(docker inspect -f '{{.State.Running}}' "$NETC")" = true ] || { docker logs "$NETC" >&2; die "net container exited"; }

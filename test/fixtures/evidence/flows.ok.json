@@ -1,0 +1,72 @@
+{
+  "schema": "exp.evidence/1",
+  "test_id": "st_01M7R3X9G0QWCYM3A3S1DE8MT4",
+  "kind": "flows",
+  "source": "ec",
+  "collected_at": "2026-11-18T14:03:40.000Z",
+  "window": {
+    "from": "2026-11-18T13:57:11.120Z",
+    "to": "2026-11-18T14:04:27.540Z"
+  },
+  "status": "ok",
+  "data": {
+    "appliance": "1.NE",
+    "counts": {
+      "total_flows": 8123,
+      "matched_flows": 2,
+      "returned_flows": 2,
+      "flows_firewall_dropped": 1,
+      "flows_route_dropped": 0
+    },
+    "flows": [
+      {
+        "application": "https",
+        "ip1": "10.60.14.77",
+        "port1": 51022,
+        "ip2": "104.18.1.1",
+        "port2": 443,
+        "protocol": "tcp",
+        "bytes_in_tx": 1000,
+        "bytes_in_rx": 150000000,
+        "bytes_out_rx": 900,
+        "bytes_out_tx": 61000000,
+        "bytes_total": 211001900,
+        "uptime_ms": 16000,
+        "outbound_tunnel": "to_dc",
+        "overlay": "DefaultOverlay",
+        "lan_vlan": 160,
+        "traffic_class": 5,
+        "lan_dscp": "trust-lan",
+        "wan_dscp": "trust-lan",
+        "app_type": "Bulk_Data_transfer",
+        "start_s": 1763474531,
+        "end_s": 1763474547,
+        "firewall_dropped": 0,
+        "drop_reason": 0,
+        "nat_type": "LAN_SNAT",
+        "domain": "speed.cloudflare.com"
+      },
+      {
+        "application": "teams",
+        "ip1": "10.60.14.77",
+        "port1": 51100,
+        "ip2": "52.112.0.1",
+        "port2": 3478,
+        "protocol": "udp",
+        "bytes_in_tx": 0,
+        "bytes_in_rx": 0,
+        "bytes_out_rx": 0,
+        "bytes_out_tx": 4000,
+        "bytes_total": 4000,
+        "uptime_ms": 9000,
+        "traffic_class": 2,
+        "app_type": "Voice",
+        "firewall_dropped": 1,
+        "drop_reason": 1
+      }
+    ]
+  },
+  "raw_refs": [
+    "ec:flow:1.NE"
+  ]
+}

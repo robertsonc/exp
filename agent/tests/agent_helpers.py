@@ -344,8 +344,13 @@ class Env:
         creds: dict[str, str] | None = None,
         arch: str | None = None,
     ) -> dict[str, Any]:
-        fixture = {"collector": "collector-host", "dashboard": "dashboard-host", "probe": "probe-host"}[c]
-        base = fc.load_fixture(f"desired/{fixture}.json")["components"][0]
+        if c in ("runner", "speedtest"):  # M6: the all-in-one fixture carries both
+            doc = fc.load_fixture("desired/all-in-one-speedtest.json")
+            base = next(x for x in doc["components"] if x["type"] == c)
+            base.pop("assets", None)
+        else:
+            fixture = {"collector": "collector-host", "dashboard": "dashboard-host", "probe": "probe-host"}[c]
+            base = fc.load_fixture(f"desired/{fixture}.json")["components"][0]
         arch = arch or ("amd64" if c == "collector" else "noarch")
         name = f"exp-{c}-{version}-{arch}.tar.gz"
         a = self.artifacts[name]

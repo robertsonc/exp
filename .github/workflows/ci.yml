@@ -104,6 +104,17 @@ jobs:
       - run: packaging/ci-venv.sh 3.10
       - name: Fixtures validate against their schemas; OpenAPI documents are valid; fakes conform
         run: make test-shared
+      - name: Mist fake conforms to Juniper's Mist OpenAPI (mistapi 0.64.1 sdist, sha256-pinned; a dev-time reference, never vendored)
+        # Without EXP_MIST_OAS these checks skip; here they MUST run, so a skip fails the step.
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/mistapi"; mkdir -p "$d"
+          curl -fsSL --retry 3 --max-time 120 -o "$d/mistapi.tar.gz" "https://files.pythonhosted.org/packages/source/m/mistapi/mistapi-0.64.1.tar.gz"
+          echo "94077eec6bd2272d72dc41bb2fe604988e375e2e8b60a1e9d0f1f56f684376e9  $d/mistapi.tar.gz" | sha256sum -c -
+          tar -xzf "$d/mistapi.tar.gz" -C "$d" mistapi-0.64.1/mist_openapi/mist.openapi.json
+          EXP_MIST_OAS="$d/mistapi-0.64.1/mist_openapi/mist.openapi.json" .venv/bin/python -m pytest \
+            test/fakes/tests/test_mist.py -q -rs -p no:cacheprovider | tee "$RUNNER_TEMP/mist-oas.log"
+          ! grep -qiE 'skipped' "$RUNNER_TEMP/mist-oas.log"
       - name: Golden verdicts (EXM outage fixture)
         if: hashFiles('collector/tests/golden/**') != ''
         run: .venv/bin/python -m pytest collector/tests/golden -q
@@ -131,8 +142,8 @@ jobs:
           ready="$(packaging/ready-components.sh)"
           echo "ready: ${ready:-none}"
           echo "list=$ready" >> "$GITHUB_OUTPUT"
-          for c in agent probe collector dashboard runner; do
-            case ",$ready," in *",$c,"*) ;; *) echo "::warning::component $c is not packageable yet (convention files missing); release.yml requires all five";; esac
+          for c in agent probe collector dashboard runner speedtest; do
+            case ",$ready," in *",$c,"*) ;; *) echo "::warning::component $c is not packageable yet (convention files missing); release.yml requires all six";; esac
           done
       - name: Unsigned build twice, byte-identical
         if: steps.comps.outputs.list != ''
@@ -239,6 +250,40 @@ jobs:
         if: hashFiles('test/harness/Makefile') == ''
         run: echo "test/harness/Makefile absent (WP-8); nothing to run"
 
+  browser:
+    # The unit job has no browser, so these suites skip there. Here they MUST run: a skip fails the step.
+    name: browser (dashboard UI, speedtest page; Chromium)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - run: packaging/ci-venv.sh 3.10
+      - name: Playwright + Chromium (pinned, installed outside the checkout)
+        env:
+          PLAYWRIGHT_VERSION: "1.63.0"
+        run: |
+          set -euo pipefail
+          npm install --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/pw" "playwright@${PLAYWRIGHT_VERSION}"
+          (cd "$RUNNER_TEMP/pw" && npx --no-install playwright install --with-deps chromium)
+      - name: Browser suites (one pytest process per component, as make test does)
+        run: |
+          set -euo pipefail
+          export NODE_PATH="$RUNNER_TEMP/pw/node_modules"
+          for t in dashboard/tests/test_ui_browser.py dashboard/tests/test_speedtest_ui.py speedtest/tests/test_page_browser.py; do
+            log="$RUNNER_TEMP/$(basename "$t" .py).log"
+            .venv/bin/python -m pytest "$t" -q -rs -p no:cacheprovider | tee "$log"
+            ! grep -qiE 'skipped' "$log"
+          done
+
   gitleaks:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -272,8 +317,24 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check pip-audit==2.7.3
-          python -c "import json; [print(i['name']+'=='+i['version']) for i in json.load(open('packaging/vendor.lock'))['items'] if i['kind']=='wheel']" > "$RUNNER_TEMP/vendored.txt"
-          pip-audit --no-deps --disable-pip -r "$RUNNER_TEMP/vendored.txt"
+          # One pin per package per file: components may vendor the same wheel (dnspython: probe + speedtest) or, in
+          # their own tarballs, different versions of it; pip-audit refuses a package listed twice in one run.
+          python - "$RUNNER_TEMP" <<'PY'
+          import json, sys
+          pins = sorted({(i["name"].lower(), i["version"]) for i in json.load(open("packaging/vendor.lock"))["items"] if i["kind"] == "wheel"})
+          layers = []
+          for name, ver in pins:
+              layer = next((l for l in layers if name not in l), None)
+              if layer is None:
+                  layer = {}
+                  layers.append(layer)
+              layer[name] = ver
+          for k, layer in enumerate(layers):
+              with open(f"{sys.argv[1]}/vendored-{k}.txt", "w") as f:
+                  f.write("".join(f"{n}=={v}\n" for n, v in sorted(layer.items())))
+          print(f"{len(pins)} vendored pin(s) in {len(layers)} file(s)")
+          PY
+          for f in "$RUNNER_TEMP"/vendored-*.txt; do cat "$f"; pip-audit --no-deps --disable-pip -r "$f"; done
       - name: npm audit --omit=dev (report only)
         continue-on-error: true
         run: |

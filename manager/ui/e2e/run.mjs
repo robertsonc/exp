@@ -24,6 +24,7 @@ function loadPlaywright() {
 const { chromium } = loadPlaywright();
 const { default: AxeBuilder } = await import('@axe-core/playwright');
 const { adminTests } = await import('./admin-tests.mjs');
+const { speedtestTests } = await import('./speedtest-tests.mjs');
 const { allPages } = await import('./pages.mjs');
 const { snapshot } = await import('./snapshots.mjs');
 
@@ -494,6 +495,7 @@ await test('390 px viewport: no horizontal scroll on any page, both themes', asy
 });
 
 await adminTests({ test, newPage, BASE, API, getJson, hostsAll, python, repo });
+await speedtestTests({ test, newPage, BASE, API, getJson });
 
 await test('auth states: 401 explains the expired Access session; 403 says not an admin', async () => {
   let page = await newPage();

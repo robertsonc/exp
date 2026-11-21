@@ -360,8 +360,77 @@
         },
         {
           "$ref": "#/$defs/expn_token"
+        },
+        {
+          "$ref": "#/$defs/exps_token"
+        },
+        {
+          "$ref": "#/$defs/expr_token"
+        },
+        {
+          "$ref": "#/$defs/expl_token"
+        },
+        {
+          "$ref": "#/$defs/expk_token"
+        },
+        {
+          "$ref": "#/$defs/expt_token"
+        },
+        {
+          "$ref": "#/$defs/expv_token"
         }
       ]
+    },
+    "st_id": {
+      "type": "string",
+      "pattern": "^st_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Speedtest result / session id: prefix + ULID (M6). Used in /st/r/{id}."
+    },
+    "exps_token": {
+      "type": "string",
+      "pattern": "^exps_[A-Za-z0-9_-]{43}$",
+      "description": "Speedtest-to-collector token (M6): identity-bound per speedtest component. prefix + base64url(32 bytes), no padding."
+    },
+    "expr_token": {
+      "type": "string",
+      "pattern": "^expr_[A-Za-z0-9_-]{43}$",
+      "description": "Runner-to-collector token (M6): identity-bound per runner (new-test feed, evidence write, baseline read). prefix + base64url(32 bytes), no padding."
+    },
+    "expl_token": {
+      "type": "string",
+      "pattern": "^expl_[A-Za-z0-9_-]{43}$",
+      "description": "Runner-to-speedtest localhost-channel token (M6); 127.0.0.1 only. prefix + base64url(32 bytes), no padding."
+    },
+    "expk_token": {
+      "type": "string",
+      "pattern": "^expk_[A-Za-z0-9_-]{43}$",
+      "description": "Per-org device_key secret (M6): HMAC key for device_key = HMAC-SHA256(secret, MAC). Never reaches the manager's results path. prefix + base64url(32 bytes), no padding."
+    },
+    "expt_token": {
+      "type": "string",
+      "pattern": "^expt_[A-Za-z0-9_-]{43}$",
+      "description": "Speedtest session leg token (M6): short-lived (60 s), byte-budgeted, held in speedtest memory only, never stored. prefix + base64url(32 bytes), no padding."
+    },
+    "expv_token": {
+      "type": "string",
+      "pattern": "^expv_[A-Za-z0-9_-]{43}$",
+      "description": "Speedtest view proof (M6): derived from the URL-fragment key in the browser; only its sha256 is stored (view_verifier). prefix + base64url(32 bytes), no padding."
+    },
+    "device_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "HMAC-SHA256(per-org expk_ secret, lower-case colon MAC), 64 hex chars (exp_common.speedtest.device_key). The only per-device join key allowed in aggregates and exports."
+    },
+    "ip_addr": {
+      "type": "string",
+      "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}$|^[0-9A-Fa-f:]{2,45}$",
+      "maxLength": 45,
+      "description": "IPv4 dotted quad or IPv6 text (shape check only; exp_common validates the address)."
+    },
+    "zone_id": {
+      "type": "string",
+      "pattern": "^(unresolved|[a-z0-9][a-z0-9-]{0,63})$",
+      "description": "Speedtest zone: a configured zone slug, or the literal 'unresolved' (identity resolution failed closed)."
     }
   }
 }

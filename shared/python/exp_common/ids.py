@@ -4,9 +4,14 @@
   time-ordered. Within the same millisecond (or if the clock steps backwards) the random part is
   incremented, so ids from one process are strictly monotonic.
 * Prefixed internal ids: ``h_`` host, ``cmp_`` component, ``rel_`` release, ``art_`` artifact,
-  ``usr_`` dashboard user, ``noc_`` NOC token id, ``drl_`` drill, ``run_`` drill run, ``evt_`` audit.
+  ``usr_`` dashboard user, ``noc_`` NOC token id, ``drl_`` drill, ``run_`` drill run, ``evt_`` audit,
+  ``st_`` speedtest result (M6).
 * Tokens: type prefix + base64url(32 random bytes, no padding) = 43 chars. ``expe_`` enrol,
   ``expa_`` agent secret, ``expi_`` probe ingest, ``expd_`` dashboard->collector, ``expn_`` NOC.
+  M6 adds ``exps_`` speedtest->collector, ``expr_`` runner->collector, ``expl_`` runner->speedtest
+  (localhost channel), ``expk_`` the per-org device_key secret, and the two ephemeral speedtest page
+  credentials ``expt_`` (session leg token, server memory only) and ``expv_`` (view proof derived from
+  the URL-fragment key; only its sha256 is stored). Same format; see 01-contracts.md section 14.2.
   Servers store only ``token_hash(token)`` (sha256 hex) and compare in constant time.
 * Slugs: ``[a-z0-9][a-z0-9-]{0,63}``.
 """
@@ -26,10 +31,10 @@ _DECODE = {c: i for i, c in enumerate(CROCKFORD)}
 ULID_RE = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
 
-ID_PREFIXES = ("h_", "cmp_", "rel_", "art_", "usr_", "noc_", "drl_", "run_", "evt_")
-TOKEN_PREFIXES = ("expe_", "expa_", "expi_", "expd_", "expn_")
+ID_PREFIXES = ("h_", "cmp_", "rel_", "art_", "usr_", "noc_", "drl_", "run_", "evt_", "st_")
+TOKEN_PREFIXES = ("expe_", "expa_", "expi_", "expd_", "expn_", "exps_", "expr_", "expl_", "expk_", "expt_", "expv_")
 TOKEN_BODY_LEN = 43  # base64url of 32 bytes without padding
-_TOKEN_RE = re.compile(r"exp[aeidn]_[A-Za-z0-9_-]{43}\Z")
+_TOKEN_RE = re.compile(r"exp[aeidnsrlktv]_[A-Za-z0-9_-]{43}\Z")
 
 _MAX_MS = (1 << 48) - 1
 _MAX_RAND = (1 << 80) - 1

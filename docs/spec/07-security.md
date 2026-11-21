@@ -43,7 +43,7 @@ test.
 | T8 | Supply chain | **SR-11** vendored dependencies pinned by version **and** sha256; VictoriaMetrics verified against upstream checksums at build time; reproducible tarballs; CI tokens least-privilege; dependency and secret scanning in CI. |
 | T9 | Drill misuse or runaway drill | **SR-12** all guardrails in `10-drills-integrations.md` §4 (off by default, allowlist, time box, revert-intent persisted before the fault, kill switch ≤ 5 s, preconditions, one external drill per site, audit). |
 | T10 | XSS/CSRF via probe-supplied text | **SR-13** UIs insert untrusted text with `textContent` only; strict CSP without inline script; CSRF token + Origin check on state-changing requests; secure cookies (`__Host-`, `HttpOnly`, `Secure`, `SameSite=Lax`). |
-| T11 | Secret leakage via logs/argv/status | **SR-14** secrets never in logs, argv, status reports, diagnostics, error messages, or API responses; token prefixes enable scanning; CI and acceptance tests scan journals/logs/D1 dumps for `exp[aeidn]_` patterns and webhook URLs. |
+| T11 | Secret leakage via logs/argv/status | **SR-14** secrets never in logs, argv, status reports, diagnostics, error messages, or API responses; token prefixes enable scanning; CI and acceptance tests scan journals/logs/D1 dumps for `exp[aeidnsrlktv]_` patterns (all eleven token prefixes, M6) and webhook URLs. |
 | T12 | SSRF via configured URLs | **SR-15** webhook and integration URLs must be `https`; webhooks to private, loopback, or link-local addresses are refused unless explicitly allowlisted; redirects not followed for webhooks. (Probe app tests fetching configured URLs on the event network are the feature, not SSRF.) |
 | T13 | DoS of the manager | **SR-16** rate limits on enrol/agent/admin routes; `304` hot path is one indexed read; bounded request sizes. |
 | T14 | Privilege escalation on hosts | **SR-17** dedicated service users; systemd hardening per unit; safe unpack (tar slip, symlinks, setuid); no recursive or symlink-following `chown`; paths confined to allowed roots; no `shell=True`. |
@@ -51,7 +51,8 @@ test.
 | T16 | Clock manipulation | **SR-19** ingest time window; skew metric; NTP status in facts. |
 | T17 | Privacy | **SR-20** telemetry stays on-prem; the manager stores host facts only; probe DHCP hostnames carry no personal data; Wi-Fi credentials are secrets. |
 | T18 | Public speedtest abuse (bandwidth sink, DoS of the event WAN, injected text) — M6 | **SR-21** strict validation and rate/size limits on the unauthenticated page; **SR-22** local-leg endpoints need short-lived session tokens with byte budgets, the path timer probes only configured hops, the DNS-leg server answers only its zone; **SR-23** user text is untrusted, `textContent` only. (`12-speedtest-analytics.md` §10) |
-| T19 | Personal data in speedtest evidence (IP, MAC, username, flows, security logs) — M6 | **SR-24** syslog receiver allowlisted, rate-limited, bounded, 60-min expiry unless attached; **SR-25** anonymous-by-default retention, keyed `device_key`, purge tooling, exports without raw identifiers. (`12-speedtest-analytics.md` §9–10) |
+| T19 | Personal data in speedtest evidence (IP, MAC, username, flows, security logs) — M6 | **SR-24** syslog receiver allowlisted, rate-limited, bounded, 60-min expiry unless attached; **SR-25** no name/email anywhere, device/network metadata kept for the configured window (default 30 d, no automatic raw-identifier scrub; optional `scrub_after_diagnosis`), keyed `device_key` (per-org `expk_` secret, never on the manager's results path), purge tooling, exports and the dashboard without raw identifiers unless the admin role asks (`identifiers=true`). (`12-speedtest-analytics.md` §9–10, `01-contracts.md` §14, `changes/CR-m6-spec-resolutions.md`) |
+| T20 | Page integrity and session theft over plain HTTP; wrong-device binding behind NAT — M6 | **SR-26** plain HTTP is the default (D15): the page carries no credentials, the leg token (`expt_`) is 60 s / single-session / byte-budgeted / memory-only, results are bound server-side to the observed client IP and never trusted from the wire, the result key travels only in the URL fragment and as an `expv_` proof header (`01-contracts.md` §14.2), servers never log headers; page integrity is a residual risk accepted for the event LAN (`tls.mode = provided` removes it). Identity resolution **fails closed** on NAT (outside client subnets, translated address, 0 or > 1 Mist MACs). |
 
 ## 4. Lessons carried in as requirements
 
@@ -82,6 +83,21 @@ From EXM, the SASE TestDrive assessment, and lab work:
 - A manual penetration-test checklist before accepting M2 and M5: admin auth bypass attempts,
   enrol token reuse/race, agent secret scope, artifact authz, dashboard auth/CSRF/XSS, drill
   guardrail bypass, webhook SSRF.
+
+### M6 speedtest requirements (SR-21 … SR-26) — confirmed
+
+`12-speedtest-analytics.md` §10 defines SR-21…SR-26; they are accepted unchanged except as qualified by
+`changes/CR-m6-spec-resolutions.md` (retention default 30 d with no automatic scrub; plain HTTP default; fail-closed NAT
+guard). Each has its enforcement test, owned by the implementing WP and run at the M6 gate:
+
+| SR | Enforcement (test that proves the bad request is refused) |
+|---|---|
+| SR-21 | oversized/malformed bodies, unknown keys, out-of-range numbers on every public route → 400/413; rate limits → 429 + `Retry-After`; a wrong or missing view proof → 404 (no enumeration); no internal address reflected to anyone but the key holder |
+| SR-22 | `/st/ping|down|up` without, with expired or over-budget `expt_` → 401/413; the path timer refuses any target not configured or not the requesting client; the DNS-leg server refuses recursion, other zones, zone transfer; rate-limited |
+| SR-23 | comment with HTML/control characters/over-length → refused or stored as text and rendered with `textContent` (XSS test on the result page and the dashboard); parameterized SQL only |
+| SR-24 | syslog from a non-allowlisted source, over-rate, over-length lines → dropped and counted; ring rows expire at 60 min unless attached; nothing from a line is executed or followed |
+| SR-25 | no name/email property in any wire schema (`test/fixtures` + `shared` tests) and none in any table (query); retention purge and `speedtest purge` leave no rows (end state); with `scrub_after_diagnosis` no raw IP/MAC/username/hostname remains after the final diagnosis (A6.6); VM aggregates carry no per-device labels (cardinality test); exports exclude raw identifiers without `identifiers=true` |
+| SR-26 | the fragment key never appears in server logs/URLs; the leg token expires at 60 s and is refused for another session; a result from another source IP → 403; behind a translated source IP the test is `unresolved` + `nat_suspected` (A6.12) |
 
 ## 6. Incident response procedures (documented in the admin guide)
 

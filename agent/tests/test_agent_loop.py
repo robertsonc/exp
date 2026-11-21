@@ -238,7 +238,7 @@ def test_malformed_component_facts_are_dropped_not_sent(env):
         "facts": {
             "tls_fingerprint_sha256": "not-a-fingerprint",
             "listen": "10.0.0.1:8443",
-            "url": "http://x",
+            "url": "ftp://x",  # (http:// is valid since M6: a speedtest serves plain HTTP by default)
             "extra": 1,
         },
     }
@@ -251,6 +251,16 @@ def test_malformed_component_facts_are_dropped_not_sent(env):
     col = next(c for c in rep["components"] if c["type"] == "collector")
     assert col["health"] == "ok" and col["facts"] == {"listen": "10.0.0.1:8443", "extra": 1}
     assert col["metrics"] == {"vm_up": 1}
+
+
+def test_http_url_fact_is_kept_for_plain_http_speedtests(env):
+    from exp_agent.health import clean_facts
+
+    dropped: list[str] = []
+    doc = clean_facts({"facts": {"url": "http://10.0.0.9/", "tls_mode": "none"}}, dropped)
+    assert doc["facts"] == {"url": "http://10.0.0.9/", "tls_mode": "none"} and dropped == []
+    clean_facts({"facts": {"url": "javascript:1"}}, dropped)
+    assert dropped == ["url"]
 
 
 def test_desired_404_keeps_state_without_escalating_backoff_and_logs_once(env):

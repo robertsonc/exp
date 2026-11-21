@@ -12,7 +12,7 @@ export interface AuditEvent {
   ip?: string | null;
 }
 
-const TOKEN_RE = /exp[aeidn]_[A-Za-z0-9_-]{8,}/g;
+const TOKEN_RE = /exp[aeidnsrlktv]_[A-Za-z0-9_-]{8,}/g;
 const URL_SECRET_RE = /https?:\/\/(hooks|[^\s"']*webhook)[^\s"']*/gi;
 const SECRET_KEY_RE = /(secret|token|password|passwd|credential|api_?key|private|ciphertext|authorization|url)/i;
 

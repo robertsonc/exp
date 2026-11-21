@@ -705,7 +705,14 @@
               "$ref": "common.schema.json#/$defs/hostport"
             },
             "url": {
-              "$ref": "common.schema.json#/$defs/https_url"
+              "$ref": "common.schema.json#/$defs/http_url",
+              "description": "https:// for every component except the M6 speedtest, whose url is http:// by default (D15, CR-m6-spec-resolutions A.1); matches health.schema.json facts.url (CR-m6-manager)."
+            },
+            "tls_mode": {
+              "enum": [
+                "none",
+                "provided"
+              ]
             }
           },
           "additionalProperties": true

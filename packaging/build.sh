@@ -88,7 +88,7 @@ if [ -n "$only" ]; then
 else
   while IFS= read -r c; do [ -n "$c" ] && comps+=("$c"); done < <("${PACK[@]}" detect --repo "$repo")
 fi
-[ -n "$only" ] || for c in agent probe collector dashboard runner; do
+[ -n "$only" ] || for c in agent probe collector dashboard runner speedtest; do
   found=0; for x in ${comps[@]+"${comps[@]}"}; do [ "$x" = "$c" ] && found=1; done
   [ "$found" = 1 ] && continue
   [ "${EXP_PACKAGE_STRICT:-}" = 1 ] && die "component $c has no code (bin/ and exp_$c/ absent) and EXP_PACKAGE_STRICT=1"

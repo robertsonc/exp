@@ -10,7 +10,7 @@ LAYOUT ?= all
 HOST ?=
 ARTIFACTS ?= $(ROOT)/test/e2e/.artifacts
 
-.PHONY: up down shell build status ci ci-m3 lanctl
+.PHONY: up down shell build status ci ci-m3 ci-m6 lanctl
 
 build:
 	./harness.sh build
@@ -43,3 +43,11 @@ ci-m3: build
 	EXP_E2E_ARTIFACTS="$(ARTIFACTS)" $(PY) -m pytest $(ROOT)/test/e2e/m3 -q -rA -p no:cacheprovider \
 	    --junitxml="$(ARTIFACTS)/m3-junit.xml" || rc=$$?; \
 	EXP_HARNESS_PREFIX=expm3 EXP_HARNESS_SUBNET=172.30.43.0/24 ./harness.sh down; exit $$rc
+
+# M6 core layout: A6.1 A6.2 A6.3 A6.7 A6.9 A6.11 (own docker prefix/subnet: expm6 / 172.30.46.0/24, see test/e2e/m6/m6lib.py).
+# Builds a 0.2.0 release with a throwaway key unless EXP_E2E_DIST + EXP_E2E_PUBKEY point at one; needs node + Playwright Chromium.
+ci-m6: build
+	@mkdir -p "$(ARTIFACTS)"; rc=0; \
+	EXP_E2E_ARTIFACTS="$(ARTIFACTS)" $(PY) -m pytest $(ROOT)/test/e2e/m6 -q -rA -p no:cacheprovider \
+	    --junitxml="$(ARTIFACTS)/m6-junit.xml" || rc=$$?; \
+	EXP_HARNESS_PREFIX=expm6 EXP_HARNESS_SUBNET=172.30.46.0/24 ./harness.sh down; exit $$rc

@@ -46,6 +46,29 @@ gateway drops everything from its LAN: the "Network down" fault), `canary IP --s
 site; `restore` clears every site. `hooks-mode CODE|ok` makes the receiver answer an error status (retry tests),
 `hooks-clear` truncates its log. Host names/addresses: see `layout_hosts` in `harness.sh`.
 
+### Layout `core` (M6: A6.1 A6.2 A6.3 A6.7 A6.9 A6.11, `test/e2e/m6`)
+
+ONE all-in-one box `core` (probe + collector + runner + speedtest + dashboard) on a **routed core segment**; the attendee VLAN
+reaches it through the gateway **without NAT** (D15). Own docker prefix/subnet `expm6` / `172.30.46.0/24`.
+
+```
+ client ns (phone, DHCP)  --  br-ev 10.1.0.0/24 --- gw [dnsmasq: server=/t.speed.exp.test/10.9.0.10] --- gw-core 10.9.0.1/24 -- br-core -- core0 10.9.0.10 (box)
+                                                      |  10.255.1.0/30                                                       eth0 172.30.46.11 (mgmt: collector, dashboard)
+                                                   [ns edge: NAT of the LAN ranges towards the isp; 10.9.0.0/24 routed back, un-NAT'd]
+                                                      |  10.255.2.0/30
+                                                   [ns isp 10.255.2.2 (edge+1)] -- 10.255.5.0/30 -- [ns cf: 1.1.1.1, speed.cloudflare.com 104.16.132.230 (fake Cloudflare, https)]
+ net container, management address 172.30.46.2: fake Mist (8485) and fake EdgeConnect Orchestrator (8486), https, harness CA
+```
+
+* `1.1.1.1` lives one router beyond the isp (namespace `cf`) so the box's TTL-limited trace has a real "edge+1" hop.
+* `speed.cloudflare.com` resolves (LAN dnsmasq) to the fake Cloudflare; its throwaway certificate is trusted by the test Chromium by
+  public-key pin only (`--ignore-certificate-errors-spki-list`), never installed anywhere.
+* Clients: `lanctl plug ... --site 1` + `lanctl client-dhcp` (busybox `udhcpc`, copied in from the host image) give a network
+  namespace a lease from the LAN dnsmasq; `test/e2e/m6/m6lib.py` runs Playwright Chromium (390 x 844 phone) in it with
+  `nsenter -n` and a private mount namespace carrying the DHCP-given `resolv.conf`.
+* `harness.sh up core` also needs `EXP_LAN_CORE=1` inside the net container (set by harness.sh) and the repository mounted at
+  `/opt/repo` (the fakes run from it).
+
 ## Commands
 
 ```
@@ -65,6 +88,11 @@ test/harness/harness.sh lanctl <cmd>           the fault API
 | `cut-internet` | the whole simulated internet goes away on every path (the `isp` namespace drops all non-loopback traffic: event LANs via the edge AND the management network); A3.4 |
 | `restore` | remove every fault (flushes the `EXP_FAULT_*` chains, `cut-internet` included) |
 | `status` | JSON of the faults in place |
+| `delay --at gateway\|edge\|wan --ms N` / `delay-clear` | core layout: a constant one-way delay on ONE link (+N ms RTT of everything beyond it); held by `net/pktdelay.py` over NFQUEUE, so it needs no `sch_netem` (the dev sandbox kernel has none) |
+| `delegation on\|off` | core layout: the gateway resolver forwards the DNS-leg zone to the box / answers NXDOMAIN for it |
+| `client-dhcp --pid P --ifname IF` | core layout: DHCP client in the namespace of process P; prints the lease as JSON |
+| `nat-core on\|off` | core layout: the gateway masquerades attendee traffic towards the box (the box sees `10.9.0.1`, a translated source: the A6.12 NAT-guard path, a D15 violation); `restore` turns it off, `status` reports `nat_core` |
+| `fake cf\|mist\|orch METHOD PATH [JSON]` | core layout: the fakes' loopback-only `/_fake/` control API (cf = fake Cloudflare speed server) |
 | `canary IP` | exit 0 when the resolver answers `canary.exp.test` (known-good control before/after a fault) |
 
 ## Manual installer and the acceptance suite

@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speedtest.submission.schema.json",
+  "title": "exp.speedtest.submission/1",
+  "description": "Body of POST /st/api/v1/sessions/{id}/result: what the page reports (12 section 7.1 wire side). Everything the server can observe (client.ip, timestamps, site, server, byte counters, score, flags) is NOT accepted from here: unknown keys are rejected, so a client cannot try to set them.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.speedtest.submission/1"
+    },
+    "legs": {
+      "type": "object",
+      "properties": {
+        "local": {
+          "type": "object",
+          "properties": {
+            "down_mbps": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Browser-measured download Mb/s."
+            },
+            "up_mbps": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Browser-measured upload Mb/s."
+            },
+            "idle_ms": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "Idle RTT."
+            },
+            "jitter_ms": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "Idle jitter."
+            },
+            "loaded_down_ms": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "RTT under download."
+            },
+            "loaded_up_ms": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "RTT under upload."
+            },
+            "rpm": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "cv": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "failures": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1099511627776
+            },
+            "status": {
+              "enum": [
+                "ok",
+                "unavailable",
+                "paused",
+                "queued",
+                "skipped"
+              ]
+            },
+            "colo": {
+              "type": "string",
+              "maxLength": 8,
+              "pattern": "^[A-Za-z0-9]{0,8}$",
+              "description": "Internet leg only: serving location from /cdn-cgi/trace (the 'colo=' line)."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Browser-reported leg; the server maps it to exp.speedtest/1 legs.<leg> and bounds it."
+        },
+        "internet": {
+          "type": "object",
+          "properties": {
+            "down_mbps": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Browser-measured download Mb/s."
+            },
+            "up_mbps": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Browser-measured upload Mb/s."
+            },
+            "idle_ms": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "Idle RTT."
+            },
+            "jitter_ms": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "Idle jitter."
+            },
+            "loaded_down_ms": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "RTT under download."
+            },
+            "loaded_up_ms": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60000,
+              "description": "RTT under upload."
+            },
+            "rpm": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "cv": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "failures": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1099511627776
+            },
+            "status": {
+              "enum": [
+                "ok",
+                "unavailable",
+                "paused",
+                "queued",
+                "skipped"
+              ]
+            },
+            "colo": {
+              "type": "string",
+              "maxLength": 8,
+              "pattern": "^[A-Za-z0-9]{0,8}$",
+              "description": "Internet leg only: serving location from /cdn-cgi/trace (the 'colo=' line)."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Browser-reported leg; the server maps it to exp.speedtest/1 legs.<leg> and bounds it."
+        },
+        "dns": {
+          "$ref": "speedtest.schema.json#/$defs/dns_leg"
+        }
+      },
+      "required": [
+        "local"
+      ],
+      "additionalProperties": false,
+      "description": "local is always present (the page always runs it); internet may carry status != ok; dns is the browser-measured DNS leg (source 'browser')."
+    },
+    "client": {
+      "type": "object",
+      "properties": {
+        "connection_hint": {
+          "enum": [
+            "wifi",
+            "ethernet",
+            "cellular",
+            "other",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "Browser hints only; the server parses the User-Agent itself."
+    },
+    "zone_hint": {
+      "$ref": "common.schema.json#/$defs/slug",
+      "description": "Optional ?z= zone hint from a QR code / portal link (a hint only, 12 3.1)."
+    },
+    "comment": {
+      "type": "string",
+      "maxLength": 500,
+      "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+      "description": "Optional problem report (can also be posted later to /comment)."
+    },
+    "started_offset_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60000,
+      "description": "Browser time from session creation to the start of the first leg (the server derives absolute timestamps itself)."
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60000,
+      "description": "Browser-measured total test duration."
+    }
+  },
+  "required": [
+    "schema",
+    "legs"
+  ],
+  "additionalProperties": false
+}

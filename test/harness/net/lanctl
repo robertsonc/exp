@@ -24,6 +24,20 @@
   hooks-mode CODE|ok / hooks-clear              multisite: make the webhook receiver answer CODE (e.g. 503) / restore 200;
                                                truncate its recorded POSTs (/var/lib/lan/webhooks.jsonl)
   ca                                            print the harness CA certificate (PEM) path
+  --- core layout (M6; EXP_LAN_CORE=1) ---
+  plug ... --site 3                             plug a port on the core segment (br-core, 10.9.0.0/24)
+  client-dhcp --pid P --ifname IF               run a DHCP client in the namespace of process P; prints {ip,router,dns,mask}
+  delay --at gateway|edge|wan --ms N            a constant one-way delay on ONE link = +N ms RTT of everything beyond it (no sch_netem
+                                               needed: pktdelay.py holds the packets of an NFQUEUE): gateway = core<->gateway (egress
+                                               gw-core), edge = gateway<->edge (egress edge-dn), wan = edge<->isp (egress edge-up).
+                                               Cumulative per hop: a leg timed to a hop moves only when the delay is on a link at or
+                                               before that hop
+  delay-clear                                   remove every delay (restore does too)
+  delegation on|off                             the gateway resolver forwards the DNS-leg zone to the box / answers NXDOMAIN
+  nat-core on|off                               the gateway NATs (masquerades) attendee traffic towards the box: the box then sees the
+                                               gateway's core address (10.9.0.1) instead of the attendee's address = the translated
+                                               path of A6.12 (a D15 violation: the box placed where the venue NATs); restore turns it off
+  fake cf|mist|orch METHOD PATH [JSON]          call a fake's loopback-only /_fake/ control API (cf: fake Cloudflare speed server)
 Faults live only in iptables chains EXP_FAULT_* of the gw/gw2/edge namespaces; `restore` flushes them.
 """
 from __future__ import annotations
@@ -41,6 +55,12 @@ HOOKS_LOG = Path("/var/lib/lan/webhooks.jsonl")
 HOOKS_MODE = Path("/run/lan/hooks.mode")
 GW_NS = {1: "gw", 2: "gw2"}                 # site -> gateway namespace
 BRIDGE = {1: "br-ev", 2: "br-ev2"}
+PLUG_BRIDGE = {**BRIDGE, 3: "br-core"}      # site 3 = the M6 core segment (plug only)
+DNS_ZONE = "t.speed.exp.test"
+SERVERS_FILE = Path("/run/lan/gw-servers.conf")
+CORE_IP = "10.9.0.10"
+NETEM = {"gateway": ("gw", "gw-core"), "edge": ("edge", "edge-dn"), "wan": ("edge", "edge-up")}
+FAKES = {"mist": 8485, "orch": 8486}
 EDGE_IF = {1: "edge-dn", 2: "edge-dn2"}     # the edge's interface towards that site's gateway
 GW_UP = {1: "gw-up", 2: "gw2-up"}
 GW_LAN = {1: "gw-ev", 2: "gw-ev2"}
@@ -102,11 +122,16 @@ def cmd_plug(a: argparse.Namespace) -> None:
     ports = load()
     if label in ports:
         raise SystemExit(f"lanctl: {label} is already plugged")
-    site = site_ok(a.site)
+    if a.site == 3:
+        if not netns_exists("gw") or not Path("/sys/class/net/br-core").exists():
+            raise SystemExit("lanctl: there is no core segment in this LAN (EXP_LAN_CORE=1)")
+        site = 3
+    else:
+        site = site_ok(a.site)
     br, peer = f"b-{label}", f"q-{label}"
     run(["ip", "link", "add", br, "type", "veth", "peer", "name", peer])
     run(["ip", "link", "set", peer, "address", mac])
-    run(["ip", "link", "set", br, "master", BRIDGE[site]])
+    run(["ip", "link", "set", br, "master", PLUG_BRIDGE[site]])
     run(["ip", "link", "set", br, "up"])
     run(["ip", "link", "set", peer, "netns", str(int(a.pid)), "name", a.ifname])
     run(["nsenter", "-t", str(int(a.pid)), "-n", "ip", "link", "set", a.ifname, "up"])
@@ -182,10 +207,128 @@ def fault_chains() -> list[tuple[str, tuple[str, ...]]]:
     return chains
 
 
+def _nat_core_rule(op: str) -> list[str]:
+    return ["iptables", "-w", "-t", "nat", op, "POSTROUTING", "-o", "gw-core", "-d", CORE_IP, "-j", "MASQUERADE"]
+
+
+def _nat_core(on: bool) -> None:
+    present = nsx("gw", *_nat_core_rule("-C"), check=False).returncode == 0
+    if on and not present:
+        nsx("gw", *_nat_core_rule("-A"))
+    elif not on and present:
+        nsx("gw", *_nat_core_rule("-D"))
+
+
+def cmd_nat_core(a: argparse.Namespace) -> None:
+    _nat_core(a.state == "on")
+
+
 def cmd_restore(_a: argparse.Namespace) -> None:
+    if netns_exists("gw"):
+        _nat_core(False)
     for ns, chains in fault_chains():
         for c in chains:
             nsx(ns, "iptables", "-w", "-F", c)
+    cmd_delay_clear(_a)
+    if SERVERS_FILE.exists():
+        _delegation(True)
+
+
+# ---------------------------------------------------------------------------------------------- M6 core layout
+NFQ = {"gateway": 11, "edge": 12, "wan": 13}
+RUN_DIR = Path("/run/lan")
+
+
+def _nfq_rule(at: str, dev: str) -> list[str]:
+    return ["-o", dev, "-j", "NFQUEUE", "--queue-num", str(NFQ[at]), "--queue-bypass"]
+
+
+def _icmp_err_rule(dev: str) -> list[str]:
+    """ICMP time-exceeded / unreachable errors a ROUTER generates itself are not held: after a user-space hold they never reach the
+    receiver on this kernel (found with `ping -t 2`), and they carry no leg timing (the box times echo replies)."""
+    return ["-o", dev, "-p", "icmp", "-m", "icmp", "--icmp-type", "time-exceeded", "-j", "ACCEPT"]
+
+
+def _delay_off(at: str) -> None:
+    ns, dev = NETEM[at]
+    pidf = RUN_DIR / f"delay-{at}.pid"
+    if netns_exists(ns):
+        for rule in (_icmp_err_rule(dev), _nfq_rule(at, dev)):
+            while nsx(ns, "iptables", "-w", "-t", "mangle", "-D", "POSTROUTING", *rule, check=False).returncode == 0:
+                pass
+    if pidf.exists():
+        try:
+            run(["kill", "-TERM", pidf.read_text().strip()], check=False)
+        except OSError:
+            pass
+        pidf.unlink(missing_ok=True)
+
+
+def cmd_delay(a: argparse.Namespace) -> None:
+    """A constant one-way delay on one egress, held in user space (pktdelay.py over NFQUEUE): kernel-independent, no sch_netem."""
+    if not (0 <= a.ms <= 2000):
+        raise SystemExit("lanctl: --ms must be 0..2000")
+    ns, dev = NETEM[a.at]
+    if not netns_exists(ns):
+        raise SystemExit("lanctl: no such namespace")
+    _delay_off(a.at)
+    if a.ms == 0:
+        return
+    p = subprocess.Popen(["ip", "netns", "exec", ns, sys.executable, "/opt/lan/pktdelay.py", "--queue", str(NFQ[a.at]),
+                          "--delay-ms", str(a.ms)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, start_new_session=True)  # noqa: S603
+    assert p.stdout is not None
+    if p.stdout.readline().strip() != "ready":
+        raise SystemExit("lanctl: pktdelay did not start")
+    (RUN_DIR / f"delay-{a.at}.pid").write_text(str(p.pid))
+    nsx(ns, "iptables", "-w", "-t", "mangle", "-A", "POSTROUTING", *_icmp_err_rule(dev))
+    nsx(ns, "iptables", "-w", "-t", "mangle", "-A", "POSTROUTING", *_nfq_rule(a.at, dev))
+
+
+def cmd_delay_clear(_a: argparse.Namespace) -> None:
+    for at in NETEM:
+        _delay_off(at)
+
+
+def _delegation(on: bool) -> None:
+    SERVERS_FILE.write_text((f"server=/{DNS_ZONE}/{CORE_IP}\n" if on else f"local=/{DNS_ZONE}/\n"))
+    pid = Path("/run/lan/gw-dnsmasq.pid").read_text().strip()
+    run(["kill", "-HUP", pid])
+
+
+def cmd_delegation(a: argparse.Namespace) -> None:
+    _delegation(a.state == "on")
+
+
+def cmd_client_dhcp(a: argparse.Namespace) -> None:
+    if not IFNAME_RE.match(a.ifname):
+        raise SystemExit("lanctl: bad --ifname")
+    r = run(["nsenter", "-t", str(int(a.pid)), "-n", "/usr/local/bin/busybox", "udhcpc", "-i", a.ifname, "-n", "-q", "-f", "-t", "6",
+             "-T", "2", "-s", "/opt/lan/udhcpc.script"], check=False)
+    out = {}
+    for line in r.stdout.splitlines():
+        if line.startswith("LEASE "):
+            out = dict(kv.split("=", 1) for kv in line[6:].split() if "=" in kv)
+    if not out:
+        raise SystemExit("lanctl: no DHCP lease: " + (r.stderr or r.stdout)[-300:])
+    print(json.dumps(out))
+
+
+def cmd_fake(a: argparse.Namespace) -> None:
+    if not a.path.startswith("/_fake/") or ".." in a.path:
+        raise SystemExit("lanctl: only /_fake/ paths")
+    argv = ["curl", "-sk", "-m", "20", "-X", a.method.upper(), "-H", "Content-Type: application/json", "-w", "\n%{http_code}"]
+    if a.body:
+        argv += ["--data-binary", a.body]
+    if a.which == "cf":
+        argv += ["https://127.0.0.1" + a.path]
+        r = nsx("cf", *argv, check=False)
+    else:
+        argv += [f"https://127.0.0.1:{FAKES[a.which]}" + a.path]
+        r = run(argv, check=False)
+    body, _, code = r.stdout.rpartition("\n")
+    print(body)
+    if not code.startswith("2"):
+        raise SystemExit(f"lanctl: fake {a.which} answered {code}")
 
 
 def cmd_status(_a: argparse.Namespace) -> None:
@@ -194,7 +337,8 @@ def cmd_status(_a: argparse.Namespace) -> None:
         for c in chains:
             rules = nsx(ns, "iptables", "-w", "-S", c).stdout.splitlines()
             out[f"{ns}:{c}"] = [r for r in rules if r.startswith("-A")]
-    print(json.dumps({"faults": out, "active": any(out.values())}, indent=1))
+    nat = netns_exists("gw") and nsx("gw", *_nat_core_rule("-C"), check=False).returncode == 0
+    print(json.dumps({"faults": out, "nat_core": nat, "active": any(out.values()) or nat}, indent=1))
 
 
 def cmd_canary(a: argparse.Namespace) -> None:
@@ -262,6 +406,27 @@ def main(argv: list[str]) -> int:
     p.set_defaults(fn=cmd_gateway_down)
     sub.add_parser("cut-internet").set_defaults(fn=cmd_cut_internet)
     sub.add_parser("restore").set_defaults(fn=cmd_restore)
+    p = sub.add_parser("delay")
+    p.add_argument("--at", choices=sorted(NETEM), required=True)
+    p.add_argument("--ms", type=int, required=True)
+    p.set_defaults(fn=cmd_delay)
+    sub.add_parser("delay-clear").set_defaults(fn=cmd_delay_clear)
+    p = sub.add_parser("delegation")
+    p.add_argument("state", choices=("on", "off"))
+    p.set_defaults(fn=cmd_delegation)
+    p = sub.add_parser("nat-core")
+    p.add_argument("state", choices=("on", "off"))
+    p.set_defaults(fn=cmd_nat_core)
+    p = sub.add_parser("client-dhcp")
+    p.add_argument("--pid", required=True, type=int)
+    p.add_argument("--ifname", required=True)
+    p.set_defaults(fn=cmd_client_dhcp)
+    p = sub.add_parser("fake")
+    p.add_argument("which", choices=["cf", *sorted(FAKES)])
+    p.add_argument("method")
+    p.add_argument("path")
+    p.add_argument("body", nargs="?")
+    p.set_defaults(fn=cmd_fake)
     sub.add_parser("status").set_defaults(fn=cmd_status)
     p = sub.add_parser("canary")
     p.add_argument("ip")

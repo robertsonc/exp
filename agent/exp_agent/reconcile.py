@@ -1,7 +1,7 @@
 """Reconcile (06-agent.md section 3): idempotent, ordered, verified, with rollback.
 
-collector -> runner -> dashboard -> probe. For each component: verify (manifest signature + sha256),
-safe-unpack, apt allowlist, service users, config + creds + TLS, unit rendering, restart only what
+collector -> runner -> speedtest -> dashboard -> probe. For each component: verify (manifest signature +
+sha256), safe-unpack, apt allowlist, service users, config + creds + TLS, unit rendering, restart only what
 changed, health check within 60 s, rollback on failure and never retry the same desired version.
 A failure in one component does not stop the others; the overall result is the worst of them.
 """
@@ -17,7 +17,7 @@ from typing import Any
 
 from exp_common.log import scrub
 
-from . import artifacts, creds, decommission, desired, install, selfupdate, tls, units
+from . import artifacts, assets, creds, decommission, desired, install, pingsys, selfupdate, tls, units
 from .context import Context
 from .errors import AgentError, AptError, Refused, Transient, Unauthorized, need
 from .health import wait_healthy
@@ -286,6 +286,8 @@ class Reconciler:
         if installed:
             st.event("info", f"installed exp-{c} {ver}")
 
+        if c == "speedtest":
+            self._speedtest_host_setup(comp)
         diff = self._diff(plan, rec)
         if not diff.any:
             self._record(plan, comp)
@@ -319,6 +321,15 @@ class Reconciler:
         install.prune_versions(fs, c, keep)
         st.event("info", f"{c} {ver} is healthy")
         return True
+
+    def _speedtest_host_setup(self, comp: dict[str, Any]) -> None:
+        """Host prerequisites of the speedtest box outside its tree: unprivileged ICMP for the group
+        `exp-speedtest` (scoped, reversible sysctl drop-in; no change when the range already covers it)
+        and the branding assets. Neither failure stops the box: it degrades (ping fallback / no logo)."""
+        ids = self.ctx.user_ids("exp-speedtest")
+        if ids is not None:
+            pingsys.ensure(self.ctx, ids[1])
+        assets.sync(self.ctx, list(comp.get("assets") or []))
 
     def _prune_after_rollback(self, c: str, rec: dict[str, Any] | None) -> None:
         """A version that was installed and then rolled back is removed. With a restored previous version

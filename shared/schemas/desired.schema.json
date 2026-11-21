@@ -336,10 +336,40 @@
               "$ref": "#/$defs/artifact"
             },
             "config": {
-              "type": "object"
+              "$ref": "speedtest.config.schema.json"
             },
             "creds": {
               "$ref": "#/$defs/creds"
+            },
+            "assets": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "enum": [
+                      "logo"
+                    ]
+                  },
+                  "content_type": {
+                    "enum": [
+                      "image/png",
+                      "image/svg+xml",
+                      "image/jpeg"
+                    ]
+                  },
+                  "artifact": {
+                    "$ref": "#/$defs/artifact"
+                  }
+                },
+                "required": [
+                  "name",
+                  "content_type",
+                  "artifact"
+                ]
+              },
+              "description": "Branding assets (CR-m6-contracts): the agent downloads each artifact like a component artifact (sha256-verified, referenced by this desired state so SR-6 holds) and installs it to /etc/exp/speedtest/assets/<name> (root 0644). branding.logo_artifact in the config names the same art_ id."
             }
           },
           "required": [
@@ -351,7 +381,7 @@
             "config",
             "creds"
           ],
-          "description": "speedtest (M6): config schema exp.speedtest.config/1 is added to shared/schemas at M6 start."
+          "description": "speedtest (M6): config schema exp.speedtest.config/1 (shared/schemas/speedtest.config.schema.json). Co-located with probe, collector and runner on one core/DC box in the all-in-one profile."
         }
       ]
     },

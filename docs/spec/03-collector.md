@@ -217,3 +217,9 @@ per-port catalog. The golden expectations come from `reference/exm/test/unit.py`
 6. Webhook text escaping: probe-controlled strings cannot produce links or mentions.
 7. Query guards: non-`exp_` metric, 31-day range, 1-s step, > 500 series — refused; SSE resume works.
 8. Load: 50 probes × 20 records/s for 30 min on 4 vCPU/8 GB: p95 ingest < 100 ms, no backlog, CPU < 60%.
+
+## 14. Speedtest analytics (M6)
+
+The collector also stores, diagnoses and serves speedtests (storage, the section 5.3 rules, the query API, VM aggregates,
+retention / scrub / purge). Normative: `12-speedtest-analytics.md`, `01-contracts.md` section 14 and
+`changes/CR-m6-collector.md`; implementation: `collector/exp_collector/speedtest/` (README section "Speedtest analytics").

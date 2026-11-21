@@ -1,0 +1,73 @@
+{
+  "schema": "exp.speedtest/1",
+  "id": "st_01M7R3X9G09KAC6CGTWF7G9681",
+  "site": "hall-b",
+  "zone": "hallb-row12",
+  "zone_source": "mist",
+  "started": "2026-11-18T14:02:11.120Z",
+  "ended": "2026-11-18T14:02:27.540Z",
+  "client": {
+    "ip": "10.60.14.77",
+    "ua": {
+      "os_family": "iOS",
+      "os_version": "18.1",
+      "browser": "Safari",
+      "device_class": "phone"
+    },
+    "connection_hint": "wifi"
+  },
+  "consent": {
+    "text_version": 3
+  },
+  "legs": {
+    "local": {
+      "status": "ok",
+      "down_mbps": 240.0,
+      "up_mbps": 95.0,
+      "idle_ms": 5.5,
+      "jitter_ms": 0.9,
+      "loaded_down_ms": 30.0,
+      "loaded_up_ms": 33.0,
+      "rpm": 1818,
+      "cv": 0.08,
+      "failures": 0,
+      "bytes": 180000000,
+      "server": "spd-core"
+    },
+    "internet": {
+      "status": "ok",
+      "down_mbps": 0.4,
+      "up_mbps": 0.2,
+      "idle_ms": 21.0,
+      "jitter_ms": 3.0,
+      "loaded_down_ms": 480.0,
+      "loaded_up_ms": 510.0,
+      "rpm": 117,
+      "cv": 0.62,
+      "failures": 40,
+      "bytes": 800000,
+      "server": "cloudflare:FRA"
+    },
+    "dns": {
+      "cold_ms": 36.0,
+      "warm_ms": 2.0,
+      "resolver_ip": "10.0.0.53",
+      "source": "browser"
+    }
+  },
+  "score": {
+    "total": 0,
+    "speed": 2,
+    "responsiveness": 0,
+    "stability": 0
+  },
+  "flags": [],
+  "observed": {
+    "received_at": "2026-11-18T14:02:27.900Z",
+    "server_id": "spd-core",
+    "local_bytes_down": 190000000,
+    "local_bytes_up": 61000000,
+    "session_ms": 16780
+  },
+  "comment": "Teams and speed.cloudflare.com won't load at my booth"
+}

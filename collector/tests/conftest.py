@@ -9,6 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from colhelpers import Env, FakeVM  # noqa: E402
+from sthelpers import StEnv, make_stenv  # noqa: E402
 
 from exp_collector.app import CollectorApp  # noqa: E402
 
@@ -56,3 +57,9 @@ def log_capture() -> Iterator[Callable[[], str]]:
     yield lambda: "\n".join(buf)
     root.removeHandler(h)
     root.setLevel(old)
+
+
+@pytest.fixture()
+def st(env: Env) -> StEnv:
+    """A collector with speedtest analytics enabled (site hall-b, box spd-core, runner run-core)."""
+    return make_stenv(env)

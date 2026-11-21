@@ -26,7 +26,7 @@ Options (`build.sh --help`): `--out DIR` (or `EXP_DIST_DIR`), `--repo DIR`, `--l
 `--min-agent-version`, `--notes-url`, `--unsigned`, `--no-fetch`. `SOURCE_DATE_EPOCH` overrides the
 HEAD-commit-time default.
 
-Components are those of `agent probe collector dashboard runner` that have code (`bin/` or `exp_<c>/`);
+Components are those of `agent probe collector dashboard runner speedtest` that have code (`bin/` or `exp_<c>/`);
 a directory with only a README is skipped with a note. A component that has code but violates the
 convention **fails the build** with the reason (missing `bin/exp-<c>`, not executable, shebang not
 `#!/usr/bin/python3`, no `exp_<c>/__init__.py`, no/foreign `systemd/exp-*.service|timer`, missing
@@ -173,3 +173,15 @@ Rotate (scheduled, or immediately on suspected exposure):
 * `SHA-256 MISMATCH … cache file` — the cache entry was modified/corrupted; inspect, then delete that file.
 * `no usable source` offline — pre-seed the cache, or use a host with GitHub or Docker Hub access.
 * `malformed component …` — fix the component to match the packaging convention; the message names the file.
+
+## M6 additions (`CR-m6-agent-packaging`)
+
+* `speedtest` is a `noarch` component. It imports dnspython (DNS-leg authority), so `vendor.lock` carries the SAME pinned
+  wheel for `component: speedtest` as for `probe` (the lock key is name + version + arch + component; one cache entry).
+  `pack.py assemble` fails if a component imports `dns` and `vendor/dns/` is absent.
+* **Page build hook.** If `speedtest/page/build.py` exists, `assemble` runs it twice (`python3 -I build.py --out DIR`,
+  fixed env: `SOURCE_DATE_EPOCH`, `PYTHONHASHSEED=0`, no network assumed, 300 s) and requires both outputs to be
+  byte-identical, then overlays DIR onto `lib/exp_speedtest/static/` (so `index.html`, `csp-hashes.json`, fonts under
+  `assets/` come from the build; regular files only, at most 64 files / 16 MiB). Without the script, the committed
+  `speedtest/exp_speedtest/static/` tree is shipped as it is.
+* `ready-components.sh`, `build.sh` (strict mode), `test/package` know both new components.

@@ -1,0 +1,14 @@
+{
+  "schema": "exp.evidence/1",
+  "test_id": "st_01M7R3X9G0RBGD0H1DC76AJK35",
+  "kind": "wifi",
+  "source": "mist",
+  "collected_at": "2026-11-18T14:03:40.000Z",
+  "window": {
+    "from": "2026-11-18T13:57:11.120Z",
+    "to": "2026-11-18T14:04:27.540Z"
+  },
+  "status": "unavailable",
+  "data": {},
+  "raw_refs": []
+}

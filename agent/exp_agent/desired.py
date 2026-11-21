@@ -8,7 +8,7 @@ from exp_common import config as exp_config
 
 from .errors import Refused
 
-ORDER = ("collector", "runner", "dashboard", "probe")
+ORDER = ("collector", "runner", "speedtest", "dashboard", "probe")
 SUPPORTED = frozenset(ORDER)
 
 
@@ -25,7 +25,7 @@ def validate(doc: Any) -> dict[str, Any]:
 
 
 def split_components(doc: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    """(supported components in collector -> runner -> dashboard -> probe order,
+    """(supported components in collector -> runner -> speedtest -> dashboard -> probe order,
     ignored [{type,id,reason}]). One component per type per host (they share /opt/exp/<type>)."""
     by_type: dict[str, dict[str, Any]] = {}
     ignored: list[dict[str, str]] = []

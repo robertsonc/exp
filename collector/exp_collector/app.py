@@ -18,6 +18,7 @@ from .health import Monitor
 from .ingest import Ingestor
 from .prune import Pruner
 from .server import MAX_CONNECTIONS, ExpHTTPServer, Router, build_ssl_context
+from .speedtest.service import SpeedtestService
 from .sse import Hub
 from .store import Store
 from .vmwriter import SelfTelemetry, VMWriter
@@ -49,6 +50,10 @@ class CollectorApp:
         self.hub = Hub(site_of=config.site_of, clock=clock)
         self.rules.subscribe(self.hub.publish)                # beat / state / incident events -> SSE
         self.drills = DrillRegistry()                         # M5 replaces this
+        self.speedtests = SpeedtestService(                   # M6: speedtest storage, diagnosis, query, purge
+            config, self.store, self.vm, clock=clock,
+            device_key_secret=lambda: self.creds.device_key_secret,
+            probe_state=lambda probe, at_ms: self.rules.state(probe, at_ms, "plain"))
         self.monitor = Monitor(self, interval_s=monitor_interval_s)
         self.pruner = Pruner(self.store, config.records_days)
         self.telemetry = SelfTelemetry(self.vm)
@@ -77,6 +82,7 @@ class CollectorApp:
             self.vm.start()
             self.webhooks.start()
             self.rules.start()
+            self.speedtests.start()
             self.server = ExpHTTPServer(self._listen, self, self.router, ctx,
                                         max_connections=self._max_connections,
                                         header_timeout=self._header_timeout)
@@ -105,6 +111,7 @@ class CollectorApp:
         incident engine's state is checkpointed on every tick, so a restart does not page twice."""
         self.started = False
         self.hub.close()                                  # releases every open SSE connection thread
+        self.speedtests.begin_stop()                      # long polls and speedtest streams end now
         if self.server is not None:
             if self._serve_thread is not None and self._serve_thread.is_alive():
                 self.server.shutdown()          # blocks forever if serve_forever never started
@@ -112,7 +119,7 @@ class CollectorApp:
             deadline = time.monotonic() + drain_s
             while self.server.active_connections > 0 and time.monotonic() < deadline:
                 time.sleep(0.05)                          # in-flight ingest requests finish storing
-        for part in (self.telemetry, self.pruner, self.rules, self.monitor, self.webhooks, self.creds):
+        for part in (self.telemetry, self.pruner, self.speedtests, self.rules, self.monitor, self.webhooks, self.creds):
             try:
                 part.stop()
             except Exception:  # noqa: BLE001
@@ -152,6 +159,9 @@ class CollectorApp:
         out.append(("exp_collector_vm_backlog_points", {}, float(self.vm.backlog_points)))
         out.append(("exp_collector_sse_clients", {}, float(self.sse_clients())))
         out.append(("exp_collector_rules_eval_ms", {}, float(self.rules_eval_ms())))
+        if self.speedtests.enabled:
+            out += [("exp_collector_speedtest_events_total", {"event": k}, float(v))
+                    for k, v in self.speedtests.stats.items()]
         for probe, off in list(self.ingestor.clock_offset_ms.items()):
             out.append(("exp_collector_probe_clock_offset_ms", {"probe": probe}, off))
         return out

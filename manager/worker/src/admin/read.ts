@@ -67,7 +67,7 @@ const HOST_SQL = `SELECT h.*, (SELECT group_concat(DISTINCT c.type) FROM compone
 
 export function hostOut(r: Record<string, unknown>) {
   const facts = parseJson<Record<string, unknown>>(r.facts_json, {});
-  const shapes = String(r.shape_list ?? "").split(",").filter((s) => ["probe", "collector", "dashboard", "runner"].includes(s)).sort();
+  const shapes = String(r.shape_list ?? "").split(",").filter((s) => ["probe", "collector", "dashboard", "runner", "speedtest"].includes(s)).sort();
   return {
     host_id: r.host_id,
     name: r.name,

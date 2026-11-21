@@ -37,6 +37,7 @@ SERVICE_USERS: dict[str, tuple[str, ...]] = {
     "collector": ("exp-collector", "exp-vm"),
     "dashboard": ("exp-dashboard",),
     "runner": ("exp-runner",),
+    "speedtest": ("exp-speedtest",),
     "probe": (),
 }
 _PKG_RE = re.compile(r"[a-z0-9][a-z0-9+.-]{1,63}\Z")

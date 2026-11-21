@@ -2,7 +2,7 @@
 // Token = prefix + base64url(32 random bytes) without padding (43 chars).
 import { bytesToB64url, bytesToHex, sha256Hex, constantTimeEqual } from "../util/encoding";
 
-export type TokenKind = "expe" | "expa" | "expi" | "expd" | "expn";
+export type TokenKind = "expe" | "expa" | "expi" | "expd" | "expn" | "exps" | "expr" | "expl" | "expk";
 
 export const TOKEN_RE: Record<TokenKind, RegExp> = {
   expe: /^expe_[A-Za-z0-9_-]{43}$/,
@@ -10,6 +10,11 @@ export const TOKEN_RE: Record<TokenKind, RegExp> = {
   expi: /^expi_[A-Za-z0-9_-]{43}$/,
   expd: /^expd_[A-Za-z0-9_-]{43}$/,
   expn: /^expn_[A-Za-z0-9_-]{43}$/,
+  // M6 (01-contracts.md section 14.2): speedtest->collector, runner->collector, runner->speedtest channel, device_key secret
+  exps: /^exps_[A-Za-z0-9_-]{43}$/,
+  expr: /^expr_[A-Za-z0-9_-]{43}$/,
+  expl: /^expl_[A-Za-z0-9_-]{43}$/,
+  expk: /^expk_[A-Za-z0-9_-]{43}$/,
 };
 
 export function randomBytes(n: number): Uint8Array {

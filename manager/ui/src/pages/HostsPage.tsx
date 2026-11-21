@@ -48,6 +48,7 @@ export function workText(r: FleetHostRow): string {
   if (r.shapes.includes('collector') && w.ingest_records_per_s != null) parts.push(`${formatCount(w.ingest_records_per_s)} rec/s`);
   if (r.shapes.includes('dashboard') && w.sessions_active != null) parts.push(`${w.sessions_active} sessions`);
   if (r.shapes.includes('runner') && w.drills_active != null) parts.push(`${w.drills_active} drills`);
+  if (r.shapes.includes('speedtest') && w.tests_per_hour != null) parts.push(`${w.tests_per_hour} tests/h`);
   return parts.length ? parts.join(' · ') : DASH;
 }
 
@@ -201,7 +202,7 @@ export function HostsPage({ site: lockSite, me }: { site?: string; me?: Me | und
         <FilterBar
           filters={[
             ...(lockSite ? [] : [{ id: 'site', label: 'Site', value: filters.site, options: sites }]),
-            { id: 'shape', label: 'Shape', value: filters.shape, options: ['probe', 'collector', 'dashboard', 'runner'].map((s) => ({ value: s, label: s })) },
+            { id: 'shape', label: 'Shape', value: filters.shape, options: ['probe', 'collector', 'dashboard', 'runner', 'speedtest'].map((s) => ({ value: s, label: s })) },
             { id: 'health', label: 'Health', value: filters.health, options: [{ value: 'ok', label: 'ok' }, { value: 'degraded', label: 'warn' }, { value: 'fail', label: 'fail' }, { value: 'unknown', label: 'unknown' }] },
             { id: 'version', label: 'Version', value: filters.version, options: versions.map((v) => ({ value: v, label: v })) },
             { id: 'state', label: 'State', value: filters.state, options: ['online', 'stale', 'offline', 'pending'].map((s) => ({ value: s, label: s })) },

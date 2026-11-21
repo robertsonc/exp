@@ -208,6 +208,8 @@ def build_router(app: CollectorApp) -> Router:
     r.add("GET", EXECUTOR_ROUTE, handle_drill_control, auth=AUTH_INGEST)       # registered before {run_id}
     r.add("GET", f"{BASE}/drills/{{run_id}}", handle_drill_report, auth=AUTH_DASHBOARD)
     r.add("POST", f"{BASE}/drills/{{run_id}}/abort", handle_drill_abort, auth=AUTH_DASHBOARD)
+    from .speedtest import api as speedtest_api  # M6: the `speedtests` operations (late: it imports this module)
+    speedtest_api.register(r, app)
     return r
 
 

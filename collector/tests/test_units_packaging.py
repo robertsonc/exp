@@ -50,7 +50,8 @@ def test_hardening_baseline(unit):
 
 def test_collector_unit_credentials_state_and_ordering():
     t = read("exp-collector.service")
-    for name in ("ingest_tokens.json", "dashboard_tokens.json", "webhooks.json"):
+    for name in ("ingest_tokens.json", "dashboard_tokens.json", "webhooks.json", "speedtest_tokens.json",
+                 "runner_tokens.json", "device_key_secret"):
         assert f"LoadCredential={name}:@CREDS@/{name}" in t
     assert "User=exp-collector" in t and "StateDirectory=exp/collector" in t and "RuntimeDirectory=exp/collector" in t
     assert "ExecStart=@PREFIX@/bin/exp-collector run --config @CONFIG@" in t

@@ -41,7 +41,7 @@ export function sameConfig(a: unknown, b: unknown): boolean {
 
 // ---- new components (add-host wizard) -----------------------------------------------------------------------------
 
-const PREFIX: Record<Shape, string> = { probe: 'probe', collector: 'col', dashboard: 'dash', runner: 'runner' };
+const PREFIX: Record<Shape, string> = { probe: 'probe', collector: 'col', dashboard: 'dash', runner: 'runner', speedtest: 'spd' };
 
 export function defaultComponentId(shape: Shape, hostSlug: string): string {
   const base = `${PREFIX[shape]}-${hostSlug}`.replace(/-+/g, '-').replace(/-$/, '');

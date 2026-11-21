@@ -35,7 +35,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vendor  # noqa: E402
 
-COMPONENTS = ("agent", "probe", "collector", "dashboard", "runner")
+COMPONENTS = ("agent", "probe", "collector", "dashboard", "runner", "speedtest")
 PER_ARCH_COMPONENTS = ("collector",)  # bundle a native binary (VictoriaMetrics)
 APT_ALLOWLIST = frozenset("""busybox busybox-static iproute2 iputils-ping iperf3 curl openssl
 ca-certificates ethtool iw wpasupplicant tcpdump""".split())
@@ -196,6 +196,82 @@ def _safe_unzip(whl: Path, dest: Path) -> list[str]:
     return names
 
 
+PAGE_BUILD_TIMEOUT = 300
+PAGE_MAX_FILES = 64
+PAGE_MAX_BYTES = 16 << 20
+_VENDORED_IMPORT = re.compile(rb"^\s*(?:import|from)\s+(dns)\b", re.M)
+
+
+def _run_page_build(script: Path, out: Path, epoch: int) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LC_ALL": "C.UTF-8", "SOURCE_DATE_EPOCH": str(epoch),
+           "PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1"}
+    try:
+        r = subprocess.run([sys.executable, "-I", str(script), "--out", str(out)], cwd=str(script.parent),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                           timeout=PAGE_BUILD_TIMEOUT, check=False)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise PackError("speedtest page build failed to run: %s" % e)
+    if r.returncode != 0:
+        raise PackError("speedtest page build failed (exit %d): %s" % (r.returncode, r.stderr.strip()[-400:]))
+
+
+def _tree_digest(root: Path) -> dict[str, bytes]:
+    got: dict[str, bytes] = {}
+    total = 0
+    for p in sorted(root.rglob("*")):
+        rel = p.relative_to(root).as_posix()
+        if p.is_symlink():
+            raise PackError("speedtest page build produced a symlink: %s" % rel)
+        if p.is_file():
+            data = p.read_bytes()
+            total += len(data)
+            got[rel] = data
+        elif not p.is_dir():
+            raise PackError("speedtest page build produced a non-regular file: %s" % rel)
+    if not got or len(got) > PAGE_MAX_FILES or total > PAGE_MAX_BYTES:
+        raise PackError("speedtest page build produced %d files / %d bytes (limits 1..%d files, %d bytes)"
+                        % (len(got), total, PAGE_MAX_FILES, PAGE_MAX_BYTES))
+    return got
+
+
+def build_speedtest_page(repo: Path, top: Path, epoch: int) -> int:
+    """If speedtest/page/build.py exists, run it (twice, in a scratch dir: the output must be byte-identical, the page
+    is part of a reproducible release) with `--out DIR` and overlay DIR onto lib/exp_speedtest/static/. The script owns
+    the whole static tree it writes (index.html, csp-hashes.json, fonts under assets/...); nothing else is touched.
+    Returns the number of files installed (0 when there is no build script: the committed static/ tree is shipped)."""
+    script = repo / "speedtest" / "page" / "build.py"
+    if not script.is_file() or script.is_symlink():
+        return 0
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="exp-page-") as td:
+        a, b = Path(td) / "a", Path(td) / "b"
+        _run_page_build(script, a, epoch)
+        _run_page_build(script, b, epoch)
+        first, second = _tree_digest(a), _tree_digest(b)
+        if first != second:
+            raise PackError("speedtest page build is not deterministic (two runs differ); the release must be reproducible")
+        dest = top / "lib" / "exp_speedtest" / "static"
+        for rel, data in sorted(first.items()):
+            parts = rel.split("/")
+            if ".." in parts or rel.startswith("/") or "\\" in rel:
+                raise PackError("speedtest page build wrote an unsafe path: %r" % rel)
+            target = dest / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            os.chmod(target, 0o644)
+        return len(first)
+
+
+def check_vendored_imports(top: Path, comp: str) -> None:
+    """A component that imports a third-party module must ship it: fail the build instead of failing at the venue."""
+    pkg = top / "lib" / ("exp_" + comp)
+    for p in sorted(pkg.rglob("*.py")):
+        if _VENDORED_IMPORT.search(p.read_bytes()) and not (top / "vendor" / "dns" / "__init__.py").is_file():
+            raise PackError("component %s imports 'dns' (%s) but vendor.lock vendors no dnspython for it"
+                            % (comp, p.relative_to(top)))
+
+
 def assemble(repo: Path, comp: str, version: str, arch: str, lock_path: Path, cache: Path,
              stage: Path, epoch: int) -> Path:
     if comp not in COMPONENTS:
@@ -278,6 +354,9 @@ def assemble(repo: Path, comp: str, version: str, arch: str, lock_path: Path, ca
                 os.chmod(top / "LICENSES" / ("%s-NOTICE.txt" % it["name"]), 0o644)
     except vendor.VendorError as e:
         raise PackError(str(e))
+    check_vendored_imports(top, comp)
+    if comp == "speedtest":
+        build_speedtest_page(repo, top, epoch)
     body = "Third-party components bundled in exp-%s-%s:\n" % (comp, version)
     body += "".join("  - " + t + "\n" for t in third) if third else "  (none)\n"
     (top / "LICENSES" / "THIRD-PARTY.txt").write_text(body, encoding="utf-8")

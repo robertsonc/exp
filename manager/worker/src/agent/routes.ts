@@ -384,6 +384,9 @@ const LATEST_COMPONENT_KEYS = [
   "ingest_records_per_s", "ingest_rejected_per_min", "ingest_duplicates_per_min", "probes_total", "probes_reporting",
   "vm_up", "vm_backlog_points", "vm_storage_gb", "records_db_gb", "storage_free_gb", "days_to_full", "open_incidents",
   "sessions_active", "requests_per_min", "collectors_total", "collectors_reachable", "login_failures_1h", "drills_active",
+  // M6 runner correlation + speedtest figures (01-contracts.md section 8.1)
+  "correlations_per_hour", "evidence_lag_s_p95", "syslog_lines_per_s", "syslog_dropped_per_min",
+  "tests_per_hour", "active_tests", "queue_depth", "internet_leg_paused", "local_leg_gbps_p95", "rejected_per_hour",
 ];
 
 function latestMetrics(m: Record<string, unknown> | undefined): Record<string, number> {

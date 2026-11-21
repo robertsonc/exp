@@ -1,0 +1,10 @@
+{
+  "schema": "exp.speedtest.submission/1",
+  "legs": {
+    "local": {
+      "down_mbps": 50.0,
+      "up_mbps": 20.0,
+      "idle_ms": 8.0
+    }
+  }
+}

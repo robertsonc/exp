@@ -184,6 +184,236 @@
         }
       },
       "description": "Cannot be raised above the contract limits (4 MiB, 1000 lines)."
+    },
+    "speedtests": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "speedtests": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "maxItems": 8,
+          "description": "Speedtest component ids allowed to hold an exps_ token (creds speedtest_tokens.json {speedtest_id: sha256})."
+        },
+        "runners": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "maxItems": 8,
+          "description": "Runner ids allowed to hold an expr_ token (creds runner_tokens.json {runner_id: sha256})."
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Tests, device metadata, evidence (default 30). VM aggregates are kept forever."
+        },
+        "scrub_after_diagnosis": {
+          "type": "boolean",
+          "description": "Drop raw IP/MAC/username/hostname after the final diagnosis, keep device_key (default false)."
+        },
+        "targets": {
+          "type": "object",
+          "properties": {
+            "down_mbps": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 100000
+            },
+            "up_mbps": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 100000
+            }
+          },
+          "additionalProperties": false,
+          "description": "Score targets (the collector recomputes scores; default 25 / 10)."
+        },
+        "max_evidence_kib": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 256,
+          "description": "Serialized evidence per test (default and maximum 256)."
+        },
+        "stream_replay_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600,
+          "description": "SSE replay window for speedtests/stream (default 300)."
+        },
+        "correlation_window": {
+          "type": "object",
+          "properties": {
+            "before_s": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600,
+              "description": "Evidence window before the test start (default 300; 12 section 5)."
+            },
+            "after_s": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600,
+              "description": "Evidence window after the test end (default 120)."
+            }
+          },
+          "additionalProperties": false,
+          "description": "The window the new-test feed hands the runner (must match runner.config correlation.window_*_s)."
+        },
+        "finalize_after_s": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 86400,
+          "description": "A test whose evidence was never marked final is finalized by the collector this long after `ended` (window + timeout; default 300). Tests with no evidence at all end as evidence_state unavailable."
+        },
+        "metric_label_limit": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 1000,
+          "description": "Distinct values per VictoriaMetrics label (zone, ssid, ap, os_family) before values collapse to 'other' (Principle 8; default 64)."
+        },
+        "diagnosis": {
+          "type": "object",
+          "properties": {
+            "none_score": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Score at or above which the cause is `none` (default 80)."
+            },
+            "wifi_rssi_dbm": {
+              "type": "number",
+              "minimum": -120,
+              "maximum": 0,
+              "description": "wifi_signal fires below this RSSI (default -72)."
+            },
+            "wifi_snr_db": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "wifi_signal fires below this SNR (default 20)."
+            },
+            "local_slow_pct": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "The on-network leg is 'slow' below this percentage of the band/width expectation (default 50)."
+            },
+            "wifi_expect_mbps": {
+              "type": "object",
+              "patternProperties": {
+                "^(24|5|6)/(20|40|80|160)$": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 100000,
+                  "description": "Realistic Mb/s for a 2x2 client on this band/width."
+                }
+              },
+              "additionalProperties": false,
+              "maxProperties": 16,
+              "description": "Band/width expectation table, keys like '5/80' (defaults 24/20 60, 24/40 100, 5/20 120, 5/40 240, 5/80 450, 5/160 800, 6/20 140, 6/40 280, 6/80 520, 6/160 900)."
+            },
+            "wifi_util_pct": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "wifi_congestion: AP channel utilization above this (default 70)."
+            },
+            "wifi_clients": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000,
+              "description": "wifi_congestion: AP client count above this (default 60)."
+            },
+            "roams": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "wifi_roaming: roams during the test at or above this (default 2)."
+            },
+            "roam_slack_s": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 600,
+              "description": "Roam/auth events within this many seconds before the test start / after its end count as 'during the test' (default 300: the whole evidence window)."
+            },
+            "wired_errors": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000,
+              "description": "wired_port: rx+tx port errors at or above this (default 100)."
+            },
+            "wired_speed_mbps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000,
+              "description": "wired_port: negotiated port speed at or below this is a fault (default 100)."
+            },
+            "wan_util_pct": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "wan_saturation: WAN utilization above this (default 85)."
+            },
+            "internet_loaded_ms": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 60000,
+              "description": "The internet leg counts as slow when its loaded latency exceeds this (default 250)."
+            },
+            "qos_limited_classes": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64,
+                "description": "EC traffic class"
+              },
+              "maxItems": 16,
+              "description": "qos_shaping: traffic classes treated as rate-limited (default 7, 8, 9, 10)."
+            },
+            "dns_slow_ms": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 60000,
+              "description": "dns: a resolver answer slower than this is slow (default 500)."
+            },
+            "dns_slow_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "dns: slow or failed lookups at or above this count (default 3)."
+            },
+            "dns_cold_ms": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 60000,
+              "description": "dns: browser-measured cold lookup above this (default 1000)."
+            },
+            "policy_min_events": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000,
+              "description": "policy_block: matching deny/drop/block/limit events at or above this (default 1)."
+            },
+            "network_wide_age_s": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 3600,
+              "description": "network_wide: the nearest probe's newest record must be younger than this at the test time (default 120)."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Diagnosis rule thresholds (12 section 5.3 defaults; CR-m6-collector)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "M6 speedtest storage, diagnosis and privacy (12 sections 5.3, 6, 9). Creds: speedtest_tokens.json, runner_tokens.json (sha256 maps, str or [current, previous] like the other token files), optional device_key_secret (expk_; lets the purge tool match a MAC against scrubbed rows)."
     }
   },
   "required": [

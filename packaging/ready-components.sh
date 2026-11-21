@@ -6,7 +6,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out=()
-for c in agent probe collector dashboard runner; do
+for c in agent probe collector dashboard runner speedtest; do
   d="$root/$c"
   [ -f "$d/bin/exp-$c" ] && [ -f "$d/exp_$c/__init__.py" ] && [ -f "$d/requirements.apt" ] || continue
   compgen -G "$d/systemd/exp-*.service" >/dev/null || compgen -G "$d/systemd/exp-*.timer" >/dev/null || continue

@@ -1,0 +1,47 @@
+{
+  "schema": "exp.speedtest.submission/1",
+  "legs": {
+    "local": {
+      "down_mbps": 205.0,
+      "up_mbps": 85.0,
+      "idle_ms": 6.0,
+      "jitter_ms": 1.0,
+      "loaded_down_ms": 40.0,
+      "loaded_up_ms": 52.0,
+      "rpm": 1150,
+      "cv": 0.12,
+      "failures": 0,
+      "bytes": 188000000
+    },
+    "internet": {
+      "down_mbps": 180.0,
+      "up_mbps": 60.0,
+      "idle_ms": 19.0,
+      "jitter_ms": 2.4,
+      "loaded_down_ms": 95.0,
+      "loaded_up_ms": 118.0,
+      "rpm": 520,
+      "cv": 0.2,
+      "failures": 0,
+      "bytes": 150000000,
+      "colo": "FRA"
+    },
+    "dns": {
+      "cold_ms": 38.0,
+      "warm_ms": 2.1,
+      "resolver_ip": "10.0.0.53",
+      "source": "browser"
+    }
+  },
+  "client": {
+    "connection_hint": "wifi"
+  },
+  "zone_hint": "hallb-row12",
+  "comment": "video calls freeze at my booth",
+  "started_offset_ms": 4100,
+  "duration_ms": 16400,
+  "observed": {
+    "received_at": "2026-11-18T14:02:27.900Z",
+    "server_id": "x"
+  }
+}

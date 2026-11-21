@@ -103,6 +103,25 @@ export interface WArtifact {
   size: number;
 }
 
+export type LogoContentType = "image/png" | "image/svg+xml" | "image/jpeg";
+
+/** Per-site speedtest intent (table speedtest_settings; 12-speedtest-analytics.md section 8). */
+export interface WSpeedtest {
+  /** validated SpeedtestSettingsPut minus consent */
+  settings: Record<string, unknown>;
+  consent: { text: string; version: number };
+  /** admin switch "Pause internet leg" */
+  paused: boolean;
+  /** logo artifact row (component speedtest-logo) + its content type; null = no logo */
+  logo: { artifact: WArtifact; content_type: LogoContentType } | null;
+}
+
+/** Connector settings of one integration (kind ec | mist) with its decrypted write-only credentials. */
+export interface WIntegration {
+  config: Record<string, unknown>;
+  credentials: Record<string, string>;
+}
+
 export interface World {
   org: { id: string; name: string };
   settings: { agent_poll_interval_s: number; agent_status_interval_s: number };
@@ -117,6 +136,10 @@ export interface World {
   noc_tokens: WNocToken[];
   webhooks: WWebhook[];
   artifacts: WArtifact[];
+  /** key: site slug; absent = the site never saved speedtest settings (defaults apply) */
+  speedtest?: Record<string, WSpeedtest>;
+  /** connectors (ec, mist) as stored by the integrations settings; credentials only ever flow into the runner's integrations.json */
+  integrations?: { ec?: WIntegration; mist?: WIntegration };
   /** ISO time used for token-expiry filtering */
   now: string;
 }
@@ -144,6 +167,8 @@ export interface DesiredComponent {
   artifact: { id: string; name: string; url: string; sha256: string; size: number };
   config: Record<string, unknown>;
   creds: Record<string, string>;
+  /** speedtest only (CR-m6-contracts): branding assets the agent installs next to the component */
+  assets?: Array<{ name: "logo"; content_type: string; artifact: { id: string; name: string; url: string; sha256: string; size: number } }>;
 }
 
 export interface CompileResult {

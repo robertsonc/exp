@@ -103,7 +103,8 @@ def load_lock(path: Path) -> dict[str, Any]:
                     raise VendorError("item %s: docker path must be absolute" % it["name"])
             else:
                 raise VendorError("item %s: unknown source type %r" % (it["name"], t))
-        key = (it["name"], it["version"], it["arch"])
+        # one file may be vendored for several components (dnspython: probe + speedtest): same pin, one cache entry
+        key = (it["name"], it["version"], it["arch"], it["component"])
         if key in seen:
             raise VendorError("duplicate lock item %r" % (key,))
         seen.add(key)
