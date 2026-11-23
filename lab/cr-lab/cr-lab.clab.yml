@@ -25,6 +25,16 @@ topology:
   kinds:
     linux:
       image: cr-lab/host:1
+  groups:
+    # Every node that runs systemd as PID 1 (the exp hosts, svc, isp). On a cgroup v2 host systemd needs the cgroup tree:
+    # the host cgroup namespace makes it see its own container scope (system.slice/docker-<id>.scope), and the rw bind
+    # lets it manage that subtree. Without both it exits at boot ("Cannot determine cgroup we are running in").
+    # Same recipe as jrei/systemd-ubuntu's README; lab-only, like the privileged mode.
+    systemd:
+      image: cr-lab/host:1
+      cgroupns-mode: host
+      binds:
+        - /sys/fs/cgroup:/sys/fs/cgroup:rw
   nodes:
     # ---------------------------------------------------------------- routing
     access:
@@ -53,6 +63,7 @@ topology:
         - ip route del default
         - vtysh -c "conf t" -c "no ip route 0.0.0.0/0 172.30.255.5" -c "ip route 0.0.0.0/0 172.30.255.5"
     isp:
+      group: systemd
       mgmt-ipv4: 172.31.250.4
       exec:
         - ip addr add 172.30.255.5/31 dev eth1
@@ -63,12 +74,14 @@ topology:
 
     # ---------------------------------------------------------------- exp servers (agents enrol over eth0)
     collector:
+      group: systemd
       mgmt-ipv4: 172.31.250.11
       exec:
         - ip addr add 172.30.1.1/31 dev eth1
         - ip link set eth1 up
         - ip route add 172.30.0.0/16 via 172.30.1.0
     box:
+      group: systemd
       # speedtest + runner: they must share a host (the runner reaches the speedtest over a loopback channel)
       mgmt-ipv4: 172.31.250.12
       exec:
@@ -76,6 +89,7 @@ topology:
         - ip link set eth1 up
         - ip route add 172.30.0.0/16 via 172.30.1.2
     dash:
+      group: systemd
       mgmt-ipv4: 172.31.250.13
       ports:
         - 8443:443     # dashboard from your laptop: https://<lab host>:8443/
@@ -84,6 +98,7 @@ topology:
         - ip link set eth1 up
         - ip route add 172.30.0.0/16 via 172.30.1.4
     svc:
+      group: systemd
       mgmt-ipv4: 172.31.250.14
       binds:
         - configs/svc/kea-dhcp4.conf:/etc/kea/kea-dhcp4.conf:ro
@@ -97,10 +112,13 @@ topology:
 
     # ---------------------------------------------------------------- probes: eth0 = mgmt, eth1 = test port (assign in the manager)
     probe-a:
+      group: systemd
       mgmt-ipv4: 172.31.250.21
     probe-b:
+      group: systemd
       mgmt-ipv4: 172.31.250.22
     probe-c:
+      group: systemd
       mgmt-ipv4: 172.31.250.23
 
     # ---------------------------------------------------------------- attendee clients (no agent; scripts/net-up.sh runs DHCP on eth1)

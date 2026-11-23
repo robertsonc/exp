@@ -37,8 +37,8 @@ management port would. Attendee traffic, including every speed test, takes the v
 so the speedtest box sees real, un-NAT'd client addresses, as it must.
 
 **Hosts.** Lab hosts are Ubuntu 24.04 containers running systemd (`images/host`), so the manager's own `install.sh` runs
-unchanged. They are privileged (containerlab's default for linux nodes): systemd, network namespaces, raw DHCP sockets
-and NAT need it. That is acceptable on a lab host and nowhere else.
+unchanged. They are privileged (containerlab's default for linux nodes) and use the host cgroup namespace with
+`/sys/fs/cgroup` mounted read-write (the `systemd` group): systemd, network namespaces, raw DHCP sockets and NAT need it. That is acceptable on a lab host and nowhere else.
 
 ## Requirements (lab host)
 
@@ -144,7 +144,7 @@ If a line was rejected, fix it there and copy the working config back into `conf
 | `net-up.sh` keeps retrying DHCP | Is the switch booted (`docker logs clab-cr-lab-access`)? `show dhcp-relay`; on svc: `journalctl -u kea-dhcp4-server`, `tcpdump -ni eth1 port 67` |
 | Client has a lease, no internet | `docker exec clab-cr-lab-isp iptables -t nat -L -v`; `docker exec clab-cr-lab-core ip route` |
 | Enrol fails at "cannot reach ... over HTTPS" | Proxy: `export HTTPS_PROXY=...` before `scripts/enrol.sh`; or the lab host's outbound policy |
-| A host node (collector, box, svc...) exits right after deploy | systemd could not start. Check `stat -fc %T /sys/fs/cgroup` on the lab host: `cgroup2fs` is expected. On cgroup v1, add `- /sys/fs/cgroup:/sys/fs/cgroup:rw` to that node's `binds` |
+| A host node exits at boot ("Cannot determine cgroup we are running in") | The `systemd` group in the topology (host cgroup namespace + `/sys/fs/cgroup` rw bind) is missing or ignored. `deploy` failing on `cgroupns-mode` means containerlab is too old for it: `sudo containerlab version upgrade` |
 | Speed test `ok:false` | Is the page up (`check.sh`)? Then `docker exec clab-cr-lab-box journalctl -u exp-speedtest -n 50` |
 | No DHCP identity on tests | Runner *Accept from* includes 172.30.1.7/32? On svc: `journalctl -u rsyslog`; on box: `tcpdump -ni eth1 udp port 5514` |
 
