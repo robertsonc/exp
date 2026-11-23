@@ -2,6 +2,7 @@
 # One-screen health check of the lab: routing, DHCP/DNS, the speed-check page from each client, exp services per node.
 source "$(dirname "$0")/common.sh"
 ok() { printf '  %-44s %s\n' "$1" "$2"; }
+# HTTP lines print the status code: 000 = no answer; curl may exit non-zero on a slow body after a 200
 t() { if "$@" >/dev/null 2>&1; then echo ok; else echo FAIL; fi; }
 say "routing / services"
 ok "core -> edge -> isp (ping 172.30.255.5)" "$(t dx core ping -c1 -W2 172.30.255.5)"
@@ -17,8 +18,8 @@ for n in "${CLIENTS[@]}"; do
   fi
   ok "gateway (SVI)" "$(t dx "$n" sh -c 'ping -c1 -W2 $(ip route show default | awk "{print \$3}")')"
   ok "DNS speed.cr-lab.test" "$(dx "$n" dig +short +time=2 +tries=1 speed.cr-lab.test 2>/dev/null | head -1 || true)"
-  ok "page http://speed.cr-lab.test/" "$(dx "$n" curl -s -o /dev/null -m 5 -w '%{http_code}' http://speed.cr-lab.test/ 2>/dev/null || echo FAIL)"
-  ok "internet (https://www.cloudflare.com)" "$(dx "$n" curl -s -o /dev/null -m 8 -w '%{http_code}' https://www.cloudflare.com/ 2>/dev/null || echo FAIL)"
+  ok "page http://speed.cr-lab.test/" "$(dx "$n" curl -s -o /dev/null -m 5 -w '%{http_code}' http://speed.cr-lab.test/ 2>/dev/null || true)"
+  ok "internet (https://www.cloudflare.com)" "$(dx "$n" curl -s -o /dev/null -m 15 -w '%{http_code}' https://www.cloudflare.com/ 2>/dev/null || true)"
 done
 for n in "${AGENT_NODES[@]}"; do
   say "$n"

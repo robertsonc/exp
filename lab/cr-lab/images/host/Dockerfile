@@ -11,7 +11,9 @@ RUN apt-get update -qq \
  && rm -rf /var/lib/apt/lists/*
 # dnsmasq and Kea only run on svc (the topology enables them there); elsewhere dnsmasq would take :53 from the
 # speedtest DNS leg. getty/logind/resolved have no job in a container and resolved would also want :53.
+COPY cr-lab-rshared.service /etc/systemd/system/cr-lab-rshared.service
 RUN systemctl disable dnsmasq kea-dhcp4-server iperf3 \
- && systemctl mask getty@tty1.service systemd-logind.service systemd-resolved.service
+ && systemctl mask getty@tty1.service systemd-logind.service systemd-resolved.service \
+ && systemctl enable cr-lab-rshared.service
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
