@@ -1,0 +1,128 @@
+# cr-lab: a self-contained exp site (every role) behind a routed core.
+#
+#   probes x3 (VLAN 10/20/30) ─┐
+#   clients x5 (VLAN 10/20/30) ─┴─ access (AOS-CX, SVIs + DHCP relay) ── core (FRR) ── edge (FRR) ── isp (NAT) ── internet
+#                                                                          │
+#                               collector · box (speedtest + runner) · dash · svc (Kea DHCP, dnsmasq DNS, syslog)
+#
+# Data plane: 172.30.0.0/16 (VLANs 172.30.{10,20,30}.0/24, DC /31s in 172.30.1.0/24, transit /31s in 172.30.255.0/24).
+# Management: every node's eth0 is on cr-lab-mgmt (172.31.250.0/24), the out-of-band path the agents use to reach the
+# manager and each other (collector listen, probe/speedtest -> collector, dashboard -> collector). Clients have no agent:
+# their default route is the VLAN, so their traffic takes the attendee path (SVI -> core -> edge -> isp NAT).
+#
+# Nodes run privileged (containerlab's default for linux nodes). Justified for this lab only: systemd as PID 1 (the exp
+# installer requires it), the probe moving its test port into a network namespace, raw-socket DHCP, and iptables NAT
+# on isp. Do not reuse these node definitions outside a lab host.
+name: cr-lab
+
+mgmt:
+  network: cr-lab-mgmt
+  ipv4-subnet: 172.31.250.0/24
+
+topology:
+  defaults:
+    kind: linux
+  kinds:
+    linux:
+      image: cr-lab/host:1
+  nodes:
+    # ---------------------------------------------------------------- routing
+    access:
+      kind: aruba_aoscx
+      image: vrnetlab/aruba_arubaos-cx:20250822141147
+      startup-config: configs/access.cfg
+      mgmt-ipv4: 172.31.250.5
+    core:
+      image: quay.io/frrouting/frr:9.1.0
+      mgmt-ipv4: 172.31.250.2
+      binds:
+        - configs/frr/daemons:/etc/frr/daemons:ro
+        - configs/frr/core/frr.conf:/etc/frr/frr.conf:ro
+      exec:
+        - sysctl -qw net.ipv4.ip_forward=1
+        - ip route del default
+        - vtysh -c "conf t" -c "no ip route 0.0.0.0/0 172.30.255.3" -c "ip route 0.0.0.0/0 172.30.255.3"
+    edge:
+      image: quay.io/frrouting/frr:9.1.0
+      mgmt-ipv4: 172.31.250.3
+      binds:
+        - configs/frr/daemons:/etc/frr/daemons:ro
+        - configs/frr/edge/frr.conf:/etc/frr/frr.conf:ro
+      exec:
+        - sysctl -qw net.ipv4.ip_forward=1
+        - ip route del default
+        - vtysh -c "conf t" -c "no ip route 0.0.0.0/0 172.30.255.5" -c "ip route 0.0.0.0/0 172.30.255.5"
+    isp:
+      mgmt-ipv4: 172.31.250.4
+      exec:
+        - ip addr add 172.30.255.5/31 dev eth1
+        - ip link set eth1 up
+        - ip route add 172.30.0.0/16 via 172.30.255.4
+        - sysctl -qw net.ipv4.ip_forward=1
+        - iptables -t nat -A POSTROUTING -s 172.30.0.0/16 -o eth0 -j MASQUERADE
+
+    # ---------------------------------------------------------------- exp servers (agents enrol over eth0)
+    collector:
+      mgmt-ipv4: 172.31.250.11
+      exec:
+        - ip addr add 172.30.1.1/31 dev eth1
+        - ip link set eth1 up
+        - ip route add 172.30.0.0/16 via 172.30.1.0
+    box:
+      # speedtest + runner: they must share a host (the runner reaches the speedtest over a loopback channel)
+      mgmt-ipv4: 172.31.250.12
+      exec:
+        - ip addr add 172.30.1.3/31 dev eth1
+        - ip link set eth1 up
+        - ip route add 172.30.0.0/16 via 172.30.1.2
+    dash:
+      mgmt-ipv4: 172.31.250.13
+      ports:
+        - 8443:443     # dashboard from your laptop: https://<lab host>:8443/
+      exec:
+        - ip addr add 172.30.1.5/31 dev eth1
+        - ip link set eth1 up
+        - ip route add 172.30.0.0/16 via 172.30.1.4
+    svc:
+      mgmt-ipv4: 172.31.250.14
+      binds:
+        - configs/svc/kea-dhcp4.conf:/etc/kea/kea-dhcp4.conf:ro
+        - configs/svc/dnsmasq.conf:/etc/dnsmasq.conf:ro
+        - configs/svc/rsyslog-runner.conf:/etc/rsyslog.d/50-runner.conf:ro
+      exec:
+        - ip addr add 172.30.1.7/31 dev eth1
+        - ip link set eth1 up
+        - ip route add 172.30.0.0/16 via 172.30.1.6
+        - bash -c "systemctl is-system-running --wait >/dev/null; systemctl restart rsyslog; systemctl enable --now dnsmasq kea-dhcp4-server"
+
+    # ---------------------------------------------------------------- probes: eth0 = mgmt, eth1 = test port (assign in the manager)
+    probe-a:
+      mgmt-ipv4: 172.31.250.21
+    probe-b:
+      mgmt-ipv4: 172.31.250.22
+    probe-c:
+      mgmt-ipv4: 172.31.250.23
+
+    # ---------------------------------------------------------------- attendee clients (no agent; scripts/net-up.sh runs DHCP on eth1)
+    client1: {image: cr-lab/client:1, mgmt-ipv4: 172.31.250.31, env: {LAB_ZONE: hall-a}}
+    client2: {image: cr-lab/client:1, mgmt-ipv4: 172.31.250.32, env: {LAB_ZONE: hall-a}}
+    client3: {image: cr-lab/client:1, mgmt-ipv4: 172.31.250.33, env: {LAB_ZONE: hall-b}}
+    client4: {image: cr-lab/client:1, mgmt-ipv4: 172.31.250.34, env: {LAB_ZONE: hall-b}}
+    client5: {image: cr-lab/client:1, mgmt-ipv4: 172.31.250.35, env: {LAB_ZONE: hall-c}}
+
+  links:
+    - endpoints: ["access:eth1", "core:eth1"]
+    - endpoints: ["core:eth2", "edge:eth1"]
+    - endpoints: ["edge:eth2", "isp:eth1"]
+    - endpoints: ["core:eth3", "collector:eth1"]
+    - endpoints: ["core:eth4", "box:eth1"]
+    - endpoints: ["core:eth5", "dash:eth1"]
+    - endpoints: ["core:eth6", "svc:eth1"]
+    - endpoints: ["access:eth2", "probe-a:eth1"]
+    - endpoints: ["access:eth3", "probe-b:eth1"]
+    - endpoints: ["access:eth4", "probe-c:eth1"]
+    - endpoints: ["access:eth5", "client1:eth1"]
+    - endpoints: ["access:eth6", "client2:eth1"]
+    - endpoints: ["access:eth7", "client3:eth1"]
+    - endpoints: ["access:eth8", "client4:eth1"]
+    - endpoints: ["access:eth9", "client5:eth1"]
