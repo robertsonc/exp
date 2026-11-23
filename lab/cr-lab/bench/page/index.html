@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Multigig browser bench</title>
+<style>
+ body{font:15px/1.4 system-ui,sans-serif;margin:16px;max-width:760px;background:#fff;color:#111}
+ label{display:inline-block;margin:4px 12px 4px 0} input{width:7em} pre{background:#f3f3f3;padding:8px;overflow:auto}
+ @media (prefers-color-scheme: dark){body{background:#111;color:#eee}pre{background:#222}}
+</style></head><body>
+<h1>Multigig browser bench</h1>
+<p>Measures what this browser can move to a reference server over plain HTTP/1.1. Not an exp speed test.</p>
+<form id="f">
+ <label>Direction <select name="dir"><option>down</option><option>up</option></select></label>
+ <label>Streams <input name="streams" type="number" min="1" max="32" value="6"></label>
+ <label>Host names <input name="hosts" value="" placeholder="this host"></label>
+ <label>Seconds <input name="secs" type="number" min="3" max="30" value="10"></label>
+ <label>Chunk (MB) <input name="chunk" type="number" min="1" max="100" value="25"></label>
+ <button>Run</button>
+</form>
+<p>Host names: comma-separated (e.g. <code>m1.speed.lab,m2.speed.lab</code>), all pointing at the reference server. Chrome opens
+at most 6 connections per host name, so more than 6 streams need more names.</p>
+<pre id="out">ready</pre>
+<script src="/page/bench.js"></script>
+</body></html>
