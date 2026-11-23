@@ -43,14 +43,14 @@ and NAT need it. That is acceptable on a lab host and nowhere else.
 ## Requirements (lab host)
 
 containerlab, Docker, and these local images: `vrnetlab/aruba_arubaos-cx:20250822141147`, `quay.io/frrouting/frr:9.1.0`,
-`jrei/systemd-ubuntu:24.04`, `ubuntu:24.04` (the last two are build bases). About 10 GB RAM (the AOS-CX VM takes ~4-8 GB),
-4+ vCPU, outbound HTTPS to the manager, Ubuntu/npm mirrors and the Playwright CDN (the client image build).
+`jrei/systemd-ubuntu:24.04` and `mcr.microsoft.com/playwright:v1.63.0-noble` (build bases, pulled on first build). About 10 GB RAM (the AOS-CX VM takes ~4-8 GB),
+4+ vCPU, outbound HTTPS to the manager, Ubuntu and npm mirrors, and mcr.microsoft.com (the client image build).
 
 ## 1. Build and deploy
 
 ```bash
 cd lab/cr-lab
-scripts/build-images.sh     # cr-lab/host:1 and cr-lab/client:1 (client: ~5 min, downloads Chromium)
+scripts/build-images.sh     # cr-lab/host:1 and cr-lab/client:1 (the client base image is ~1 GB on first pull)
 scripts/deploy.sh           # containerlab deploy, waits for the AOS-CX, DHCP on the clients
 scripts/check.sh            # routing, DHCP, DNS, page and internet from each client
 ```
@@ -144,6 +144,7 @@ If a line was rejected, fix it there and copy the working config back into `conf
 | `net-up.sh` keeps retrying DHCP | Is the switch booted (`docker logs clab-cr-lab-access`)? `show dhcp-relay`; on svc: `journalctl -u kea-dhcp4-server`, `tcpdump -ni eth1 port 67` |
 | Client has a lease, no internet | `docker exec clab-cr-lab-isp iptables -t nat -L -v`; `docker exec clab-cr-lab-core ip route` |
 | Enrol fails at "cannot reach ... over HTTPS" | Proxy: `export HTTPS_PROXY=...` before `scripts/enrol.sh`; or the lab host's outbound policy |
+| A host node (collector, box, svc...) exits right after deploy | systemd could not start. Check `stat -fc %T /sys/fs/cgroup` on the lab host: `cgroup2fs` is expected. On cgroup v1, add `- /sys/fs/cgroup:/sys/fs/cgroup:rw` to that node's `binds` |
 | Speed test `ok:false` | Is the page up (`check.sh`)? Then `docker exec clab-cr-lab-box journalctl -u exp-speedtest -n 50` |
 | No DHCP identity on tests | Runner *Accept from* includes 172.30.1.7/32? On svc: `journalctl -u rsyslog`; on box: `tcpdump -ni eth1 udp port 5514` |
 
