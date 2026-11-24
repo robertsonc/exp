@@ -28,28 +28,41 @@ TICKS = os.sysconf("SC_CLK_TCK")
 
 class Server:
     def __init__(self, tmp: Path) -> None:
-        self.port = free_port()
-        doc = base_config("https://127.0.0.1:9", "AA:" * 31 + "AA", self.port, free_port(udp_too=True), free_port(),
-                          limits={"tests_per_10min_per_ip": 1000, "max_concurrent_per_ip": 100, "max_concurrent_tests": 100,
-                                  "bytes_local": 10_000_000_000, "leg_token_ttl_s": 300},
-                          dns_leg={"enabled": False})
         self.tmp = tmp
         self.run_dir, self.state, creds = tmp / "run", tmp / "state", tmp / "creds"
         creds.mkdir()
         (creds / "collector_token").write_text(ids.new_token("exps"))
         (creds / "runner_channel_token_sha256").write_text("0" * 64)
-        (tmp / "config.json").write_text(json.dumps(doc))
-        self.proc = subprocess.Popen([sys.executable, str(BIN), "run", "--config", str(tmp / "config.json"), "--creds-dir", str(creds),  # noqa: S603
-                                      "--state-dir", str(self.state), "--run-dir", str(self.run_dir), "--assets-dir", str(tmp / "a")],
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={**os.environ, "PYTHONPATH": ""})
-        assert wait_for(self._up, 20), "server did not start"
+        why = ""
+        for attempt in range(5):
+            self.port = free_port()
+            doc = base_config("https://127.0.0.1:9", "AA:" * 31 + "AA", self.port, free_port(udp_too=True), free_port(),
+                              limits={"tests_per_10min_per_ip": 1000, "max_concurrent_per_ip": 100, "max_concurrent_tests": 100,
+                                      "bytes_local": 10_000_000_000, "leg_token_ttl_s": 300},
+                              dns_leg={"enabled": False})
+            (tmp / "config.json").write_text(json.dumps(doc))
+            log = tmp / f"server-{attempt}.log"
+            with log.open("wb") as fh:
+                self.proc = subprocess.Popen([sys.executable, str(BIN), "run", "--config", str(tmp / "config.json"),  # noqa: S603
+                                              "--creds-dir", str(creds), "--state-dir", str(self.state), "--run-dir",
+                                              str(self.run_dir), "--assets-dir", str(tmp / "a")],
+                                             stdout=fh, stderr=subprocess.STDOUT, env={**os.environ, "PYTHONPATH": ""})
+            # Ready = OUR process reports it is listening on OUR port. A bare connect() is not enough: if this port was
+            # taken in the meantime, the server exits on bind and whatever holds the port would answer the benchmark.
+            if wait_for(self._up, 20) and self.proc.poll() is None:
+                return
+            why = log.read_text(errors="replace")[-400:]
+            self.stop()
+        raise AssertionError(f"server did not start after 5 attempts; last log: {why}")
 
     def _up(self) -> bool:
+        if self.proc.poll() is not None:
+            return True                                     # exited: stop waiting, the caller sees it is not ours
         try:
-            socket.create_connection(("127.0.0.1", self.port), timeout=0.5).close()
-            return True
-        except OSError:
+            doc = json.loads((self.run_dir / "status.json").read_text())
+        except (OSError, ValueError):
             return False
+        return bool((doc.get("listening") or {}).get("http")) and (doc.get("listening") or {}).get("port") == self.port
 
     def cpu_s(self) -> float:
         f = Path(f"/proc/{self.proc.pid}/stat").read_text().rsplit(")", 1)[1].split()
