@@ -1,0 +1,16 @@
+# cr-lab: give / shared mount propagation at boot. systemd does this itself on a real host but skips it inside a
+# container; without it, credentials from LoadCredential= (every exp component) never reach the service
+# ("credentials directory /run/credentials/<unit> is not usable").
+[Unit]
+Description=cr-lab: shared mount propagation on / (LoadCredential needs it in a container)
+DefaultDependencies=no
+Before=sysinit.target local-fs.target
+ConditionVirtualization=container
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/mount --make-rshared /
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

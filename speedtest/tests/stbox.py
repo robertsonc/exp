@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import os
 import socket
 import ssl
 import threading
@@ -68,16 +69,35 @@ def shared_tls() -> tuple[Path, Path, str]:
 _PORTS: set[int] = set()
 
 
+def _ephemeral_floor() -> int:
+    try:
+        return int(Path("/proc/sys/net/ipv4/ip_local_port_range").read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return 32768
+
+
 def free_port(udp_too: bool = False) -> int:
-    """A currently free loopback port, never handed out twice in this process (the kernel likes to reuse them)."""
-    for _ in range(200):
-        s = socket.socket()
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-        s.close()
+    """A currently free loopback port, never handed out twice in this process.
+
+    Ports come from BELOW the kernel's ephemeral range: a port picked by binding to 0 is itself ephemeral, and once
+    released the kernel can hand it to the next bind-to-0 (the fake collector) or outgoing connection before the daemon
+    under test binds it (EADDRINUSE). The pid offset keeps parallel test processes apart.
+    """
+    hi = _ephemeral_floor() - 1
+    lo = max(10_000, hi - 12_000)
+    span = hi - lo + 1
+    start = lo + (os.getpid() * 97) % span
+    for i in range(span):
+        port = lo + (start - lo + i * 7) % span
         if port in _PORTS:
             continue
-        _PORTS.add(port)
+        s = socket.socket()
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            continue
+        finally:
+            s.close()
         if udp_too:
             u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             try:
@@ -86,8 +106,9 @@ def free_port(udp_too: bool = False) -> int:
                 continue
             finally:
                 u.close()
+        _PORTS.add(port)
         return port
-    raise RuntimeError("no free port")
+    raise RuntimeError("no free port below the ephemeral range")
 
 
 def base_config(collector_url: str, fingerprint: str, http_port: int, dns_port: int, chan_port: int, **over: Any) -> dict[str, Any]:
