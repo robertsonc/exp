@@ -3310,6 +3310,44 @@
   },
   "type": "object"
  },
+ "SiteProbeHeartbeat": {
+  "additionalProperties": false,
+  "description": "Set heartbeat.interval_s on every probe component of a site in one batch (CR-heartbeat-cadence). Each probe stays editable on its own afterwards.",
+  "properties": {
+   "interval_s": {
+    "description": "Heartbeat interval for every probe of the site. 10 is the default; 5 is fast detection (about double the probe traffic and records).",
+    "maximum": 60,
+    "minimum": 5,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "interval_s"
+  ],
+  "type": "object"
+ },
+ "SiteProbeHeartbeatResult": {
+  "additionalProperties": false,
+  "properties": {
+   "interval_s": {
+    "type": "integer"
+   },
+   "site": {
+    "$ref": "common.schema.json#/$defs/slug"
+   },
+   "updated": {
+    "description": "Probe components whose interval changed (already at the value are left alone).",
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "site",
+   "interval_s",
+   "updated"
+  ],
+  "type": "object"
+ },
  "SiteRelease": {
   "additionalProperties": false,
   "description": "Set the target release for a site. The canary host (if any) compiles first and is promoted after 10 healthy minutes. Rollback = set a previous version.",
