@@ -128,19 +128,37 @@ topology:
     client4: {image: cr-lab/client:1, mgmt-ipv4: 172.31.250.34, env: {LAB_ZONE: hall-b}}
     client5: {image: cr-lab/client:1, mgmt-ipv4: 172.31.250.35, env: {LAB_ZONE: hall-c}}
 
+  # Every data-plane link at 1500: containerlab defaults veths to 9500, the AOS-CX routes at 1500 and drops larger
+  # frames silently, so a client and the box (both 9500, MSS ~9460) black-hole any reply bigger than one 1500-byte
+  # packet (small API answers work, the page hangs).
   links:
     - endpoints: ["access:eth1", "core:eth1"]
+      mtu: 1500
     - endpoints: ["core:eth2", "edge:eth1"]
+      mtu: 1500
     - endpoints: ["edge:eth2", "isp:eth1"]
+      mtu: 1500
     - endpoints: ["core:eth3", "collector:eth1"]
+      mtu: 1500
     - endpoints: ["core:eth4", "box:eth1"]
+      mtu: 1500
     - endpoints: ["core:eth5", "dash:eth1"]
+      mtu: 1500
     - endpoints: ["core:eth6", "svc:eth1"]
+      mtu: 1500
     - endpoints: ["access:eth2", "probe-a:eth1"]
+      mtu: 1500
     - endpoints: ["access:eth3", "probe-b:eth1"]
+      mtu: 1500
     - endpoints: ["access:eth4", "probe-c:eth1"]
+      mtu: 1500
     - endpoints: ["access:eth5", "client1:eth1"]
+      mtu: 1500
     - endpoints: ["access:eth6", "client2:eth1"]
+      mtu: 1500
     - endpoints: ["access:eth7", "client3:eth1"]
+      mtu: 1500
     - endpoints: ["access:eth8", "client4:eth1"]
+      mtu: 1500
     - endpoints: ["access:eth9", "client5:eth1"]
+      mtu: 1500

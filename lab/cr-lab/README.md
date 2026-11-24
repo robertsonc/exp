@@ -76,8 +76,8 @@ this one). If you do reuse it, decommission the old collector host first.
    |---|---|---|
    | collector | collector | iperf3 **on** (port 5201). Listen is auto-detected as 172.31.250.11:8443 (the default-route interface). |
    | box | speedtest **and** runner | see 3 and 4 |
-   | dash | dashboard | *Address operators use*: `https://<lab host IP>:8443` |
-   | probe-a/b/c | probe | mode netns; test port **eth1**, role *client* (DHCP); throughput: *iperf3 (collector)* on. Never assign eth0, which is the management port. |
+   | dash | dashboard | *Address operators use*: `https://<lab host IP>:8443`. Required: sign-in returns you to this address, and without it the manager sends you to the unreachable mgmt IP |
+   | probe-a/b/c | probe | mode netns; test port **eth1**, role *client* (DHCP). Ports are set only in the Add host wizard, step 3: reopen it at `/hosts/new?host=<host id>`. Never assign eth0, the management port. (The *iperf3 (collector)* throughput toggle has no probe support in 0.2.0 yet.) |
 
 3. **Speedtest -> site -> Speedtest settings**
 
@@ -96,6 +96,10 @@ this one). If you do reuse it, decommission the old collector host first.
 4. **Runner component (box)**: *Correlate speedtests* on; Syslog *Accept from (CIDR)*:
    `172.30.1.7/32, 172.30.255.1/32` (svc's Kea and dnsmasq lines, and the AOS-CX). Leave Mist and EdgeConnect empty:
    identity then comes from the DHCP syslog fallback (Kea `DHCP4_LEASE_ALLOC` lines).
+
+Before the first enrolment, set the site's **release** (e.g. 0.2.0): with none, `install.sh` stops with "the desired state is missing the agent or release section". The host is enrolled by then (the token is spent), so re-run the installer without a token to finish: `docker exec clab-cr-lab-<node> bash -c 'curl -fsSL <manager>/install.sh | bash'`.
+
+Open the dashboard through **Manager → Dashboards → Open** (SSO); there are no local users until you add one.
 
 Wait for every component to read *running* in the manager, then run `scripts/check.sh` again: the page check should read
 `200` from every client.
@@ -145,8 +149,24 @@ If a line was rejected, fix it there and copy the working config back into `conf
 | Client has a lease, no internet | `docker exec clab-cr-lab-isp iptables -t nat -L -v`; `docker exec clab-cr-lab-core ip route` |
 | Enrol fails at "cannot reach ... over HTTPS" | Proxy: `export HTTPS_PROXY=...` before `scripts/enrol.sh`; or the lab host's outbound policy |
 | A host node exits at boot ("Cannot determine cgroup we are running in") | The `systemd` group in the topology (host cgroup namespace + `/sys/fs/cgroup` rw bind) is missing or ignored. `deploy` failing on `cgroupns-mode` means containerlab is too old for it: `sudo containerlab version upgrade` |
+| A component rolled back ("health check failed after 60s") | Fix the cause, then **host page → Restart component**: it publishes a new desired version. The agent never retries a version it rolled back, so nothing happens until you do |
+| "credentials directory /run/credentials/... is not usable", or a probe "port c01 (eth1) is not present in exp-c01" while `ip netns list` shows it | `/` lacks shared mount propagation (nodes from an image built before `cr-lab-rshared.service`). On each systemd node: `mount --make-rshared /`, then `systemctl restart exp-agent` (its own mount namespace predates the fix), then Restart component |
+| The page (or any large reply) hangs from a client while small API answers work | MTU black hole: links must be 1500 (`mtu: 1500` in the topology). Live fix: see "MTU" below |
 | Speed test `ok:false` | Is the page up (`check.sh`)? Then `docker exec clab-cr-lab-box journalctl -u exp-speedtest -n 50` |
 | No DHCP identity on tests | Runner *Accept from* includes 172.30.1.7/32? On svc: `journalctl -u rsyslog`; on box: `tcpdump -ni eth1 udp port 5514` |
+
+## MTU
+
+Every data-plane link is 1500 in the topology. containerlab's default veth MTU is 9500, and the AOS-CX VM routes at
+1500 and drops larger frames without telling the sender, so a client and the box (both 9500) black-hole every reply
+bigger than one packet. Fix a lab deployed before that change without redeploying:
+
+```bash
+for n in core edge isp collector box dash svc client1 client2 client3 client4 client5; do
+  docker exec clab-cr-lab-$n sh -c 'for i in $(ls /sys/class/net | grep -E "^eth[1-9]"); do ip link set "$i" mtu 1500; done'
+done
+for n in probe-a probe-b probe-c; do docker exec clab-cr-lab-$n ip netns exec exp-c01 ip link set eth1 mtu 1500; done
+```
 
 ## Teardown
 
