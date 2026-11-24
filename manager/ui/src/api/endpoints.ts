@@ -41,6 +41,7 @@ export const ep = {
   releaseImport: `${API}/releases/import`,
   releaseUpload: `${API}/releases/upload`,
   siteRelease: (slug: string) => `${API}/sites/${encodeURIComponent(slug)}/release`,
+  siteProbeHeartbeat: (slug: string) => `${API}/sites/${encodeURIComponent(slug)}/probe-heartbeat`,
   siteAlerts: (slug: string) => `${API}/sites/${encodeURIComponent(slug)}/alerts`,
   siteAlertsTest: (slug: string) => `${API}/sites/${encodeURIComponent(slug)}/alerts/test`,
   dashUsers: (dash: string) => `${API}/dashboards/${encodeURIComponent(dash)}/users`,

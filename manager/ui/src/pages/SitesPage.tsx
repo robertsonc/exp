@@ -8,7 +8,7 @@ import { canAdmin } from '../components/Issues';
 import { HealthBar, Link } from '../components/viz';
 import { Loadable, PageHeader } from './common';
 import { HostsPage } from './HostsPage';
-import { DeleteSiteButton, SiteAlertsPanel, SiteDialog, SiteReleasePanel } from './SiteAdmin';
+import { DeleteSiteButton, SiteAlertsPanel, SiteDialog, SiteHeartbeatPanel, SiteReleasePanel } from './SiteAdmin';
 import { DASH, formatAbsolute, formatRate } from '../lib/format';
 
 function SiteRollup({ s }: { s: FleetSite }): JSX.Element {
@@ -95,6 +95,7 @@ export function SitePage({ slug, me }: { slug: string; me: Me | undefined }): JS
       </Panel>
       <div class="grid-2">
         <SiteReleasePanel site={s} me={me} />
+        <SiteHeartbeatPanel site={s} me={me} />
         <SiteAlertsPanel slug={slug} me={me} />
       </div>
       <HostsPage site={slug} />

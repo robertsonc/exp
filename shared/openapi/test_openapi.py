@@ -107,6 +107,7 @@ _TABLE = {
         POST /releases/import
         POST /releases/upload
         PATCH /sites/{site}/release
+        POST /sites/{site}/probe-heartbeat
         POST /components/{component_id}/rotate
         POST /hosts/{id}/rotate-agent
         GET /dashboards/{dashboard_id}/users

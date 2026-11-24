@@ -44,6 +44,12 @@ class Raw(str):
 
 
 # ------------------------------------------------------------------------------------------ text tools
+def _win(ev: Evaluation, key: str) -> int:
+    """The window the line's state was judged on (CR-heartbeat-cadence), so the words match the state."""
+    le = ev.lines.get(key)
+    return le.window_ms if le is not None and le.window_ms else LINE_SPECS[key].window_ms
+
+
 def clean(v: object, limit: int = 80) -> str:
     """Make one probe-supplied value safe to put inside a sentence: printable characters only, one-space
     separation, no punctuation runs, no trailing sentence punctuation, bounded length."""
@@ -381,7 +387,7 @@ def trace_fact(t: Mapping[str, Any] | None, ev: Evaluation | None = None) -> str
 
 def _last_error(ev: Evaluation, key: str, *, within: int | None = None) -> str | None:
     """Newest error text of a non-ok record of the line within the window (prefers heartbeats)."""
-    span = within if within is not None else max(LINE_SPECS[key].window_ms, 60_000)
+    span = within if within is not None else max(_win(ev, key), 60_000)
     best: tuple[int, int, str] | None = None
     for s in LINE_SPECS[key].streams:
         for g in reversed(ev.store.groups(s)):
@@ -410,7 +416,7 @@ def what_of(ev: Evaluation, key: str) -> str | None:
     if e:
         return clip(re.sub(r"\s+", " ", e), 200).rstrip(". ")
     if le.n:
-        return f"{le.f} of {le.n} checks failed in the last {LINE_SPECS[key].window_ms // 1000} s"
+        return f"{le.f} of {le.n} checks failed in the last {_win(ev, key) // 1000} s"
     return None
 
 
@@ -439,7 +445,7 @@ def _items(ev: Evaluation, key: str) -> tuple[int, int, int]:
         for g in reversed(ev.store.groups(s)):
             if g.t > ev.at:
                 continue
-            if ev.at - g.t > LINE_SPECS[key].window_ms:
+            if ev.at - g.t > _win(ev, key):
                 break
             for r in g.recs:
                 if r.ts <= ev.at and r.outcome != "error":
@@ -616,7 +622,7 @@ def _compose(ev: Evaluation, plain: bool, tz: str) -> _V:
     if net == "warn":
         bad: set[str] = set()
         for grp in ev.store.groups("gateway"):
-            if grp.t <= t and t - grp.t <= LINE_SPECS["network"].window_ms:
+            if grp.t <= t and t - grp.t <= _win(ev, "network"):
                 bad.update(r.port for r in grp.recs if r.outcome == "fail" or r.metrics.get("link_up") == 0)
         ports = sorted(p for p in bad if p)
         names = join_words([clean(p, 16) for p in ports])

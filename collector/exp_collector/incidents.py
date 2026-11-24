@@ -149,7 +149,7 @@ class ProbeIncidents:
                           for p in parents.get(key, ()))
             also = [k for k in self.lanes if bad[k] and key in parents.get(k, ())]
             self._step(key, bad[key], good, t, lambda key=key, also=also: self._facts(ev, key, also), ev,
-                       blocked, _window(key), parents.get(key, ()))
+                       blocked, _window(key, ev), parents.get(key, ()))
         self._save()
 
     def _facts(self, ev: Evaluation, key: str, also: list[str]) -> dict[str, Any]:
@@ -283,9 +283,11 @@ def iso_ms(ms: int | float) -> str:
             .isoformat(timespec="milliseconds").replace("+00:00", "Z"))
 
 
-def _window(key: str) -> int:
+def _window(key: str, ev: Evaluation | None = None) -> int:
+    """The line's state window: as evaluated (widened for a slow heartbeat), else the spec window."""
     from .rules import LINE_SPECS
-    return LINE_SPECS[key].window_ms
+    le = ev.lines.get(key) if ev is not None else None
+    return le.window_ms if le is not None and le.window_ms else LINE_SPECS[key].window_ms
 
 
 # ---------------------------------------------------------------------------------------- documents

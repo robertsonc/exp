@@ -99,6 +99,19 @@
         ]
       },
       "maxItems": 16
+    },
+    "cadence_s": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3600
+        }
+      ],
+      "description": "The probe's measured heartbeat cadence (median spacing of its heartbeat beats), null while too few beats (CR-heartbeat-cadence). Clients size beats and staleness from it instead of assuming 10 s."
     }
   },
   "required": [
@@ -177,6 +190,12 @@
         "flaps": {
           "type": "integer",
           "minimum": 0
+        },
+        "window_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "description": "The window the state was judged on: the line's spec window, widened to 2.5 beats of a slow heartbeat (capped at 180 s)."
         }
       },
       "required": [

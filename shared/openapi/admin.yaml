@@ -422,6 +422,36 @@ components:
           $ref: '#/components/schemas/Retention'
       additionalProperties: false
       minProperties: 1
+    SiteProbeHeartbeat:
+      type: object
+      properties:
+        interval_s:
+          type: integer
+          minimum: 5
+          maximum: 60
+          description: Heartbeat interval for every probe of the site. 10 is the default; 5 is fast detection (about
+            double the probe traffic and records).
+      required:
+      - interval_s
+      additionalProperties: false
+      description: Set heartbeat.interval_s on every probe component of a site in one batch (CR-heartbeat-cadence).
+        Each probe stays editable on its own afterwards.
+    SiteProbeHeartbeatResult:
+      type: object
+      properties:
+        site:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+        interval_s:
+          type: integer
+        updated:
+          type: integer
+          minimum: 0
+          description: Probe components whose interval changed (already at the value are left alone).
+      required:
+      - site
+      - interval_s
+      - updated
+      additionalProperties: false
     SiteRelease:
       type: object
       properties:
@@ -3750,6 +3780,37 @@ paths:
                       code: manifest_invalid
                       message: manifest invalid
                       details: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/probe-heartbeat:
+    post:
+      operationId: setSiteProbeHeartbeat
+      summary: Set the heartbeat interval of every probe in a site
+      tags:
+      - sites
+      parameters:
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteProbeHeartbeat'
+      x-exp-min-role: admin
+      x-exp-audited: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteProbeHeartbeatResult'
+        '400': *id003
+        '404': *id005
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

@@ -37,6 +37,8 @@ LAST_OUTAGE_MS = 900_000    # "just recovered" lookback: 15 minutes
 HISTORY_MS = 70 * 60_000    # how much history one evaluation looks at (EXM alert.py HISTORY_MS)
 
 LINE_KEYS: tuple[str, ...] = ("network", "dhcp", "dns", "internet", "apps", "wifi", "path")
+# lines that beat every heartbeat; internet/apps/path also run on their own test intervals
+HEARTBEAT_LINES: tuple[str, ...] = ("network", "dhcp", "dns", "wifi")
 LABELS: dict[str, str] = {"network": "Network", "dhcp": "DHCP", "dns": "DNS", "internet": "Internet",
                           "apps": "Apps", "wifi": "Wi-Fi", "path": "Path"}
 
@@ -66,6 +68,13 @@ LINE_SPECS: dict[str, LineSpec] = {
 MAX_WINDOW_MS = max(s.window_ms for s in LINE_SPECS.values())
 
 
+# Heartbeat cadence (CR-heartbeat-cadence): probes beat every 5-60 s (heartbeat.interval_s, default 10). A line's
+# state window must hold at least WINDOW_BEATS beats at the probe's real cadence, or a 30 s window over a 60 s heartbeat
+# reads "unknown" between beats. The cadence is measured from the probe's own beats, never assumed.
+CADENCE_SAMPLES = 9         # newest beat gaps the median is taken over
+CADENCE_GAP_MAX_MS = 120_000  # a longer gap is an outage or a restart, not the cadence
+WINDOW_BEATS = 2.5
+WINDOW_CAP_MS = 180_000
 CHAIN_SPAN_MS = 60_000      # a per-port run is cut after this: no endless beat from a client testing back to back
 
 
@@ -355,6 +364,29 @@ def beats(records: Iterable[Rec | Mapping[str, Any]], line: str) -> list[Beat]:
 
 
 # ------------------------------------------------------------------------------------ line functions
+def cadence_ms(ts: Sequence[int], at: int) -> int | None:
+    """Median gap between the newest distinct beat times at or before `at` (None with fewer than 3 usable gaps)."""
+    hi = bisect.bisect_right(ts, at)
+    times: list[int] = []
+    for t in reversed(ts[max(0, hi - 4 * (CADENCE_SAMPLES + 1)):hi]):
+        if not times or t != times[-1]:
+            times.append(t)
+            if len(times) > CADENCE_SAMPLES:
+                break
+    gaps = sorted(a - b for a, b in zip(times, times[1:], strict=False) if 0 < a - b <= CADENCE_GAP_MAX_MS)
+    if len(gaps) < 3:
+        return None
+    return gaps[len(gaps) // 2]
+
+
+def window_for(line: str, cadence: int | None) -> int:
+    """The line's state window: its spec window, widened to WINDOW_BEATS beats of the measured cadence (capped)."""
+    w = LINE_SPECS[line].window_ms
+    if cadence is None:
+        return w
+    return max(w, min(WINDOW_CAP_MS, int(WINDOW_BEATS * cadence)))
+
+
 class LineState(NamedTuple):
     s: str          # ok | warn | fail | unknown
     n: int          # beats in the window (unknown beats excluded)
@@ -421,12 +453,14 @@ def since_of(bs: Sequence[Beat], fails_only: bool, hi: int | None = None) -> Sin
     return Since(earliest, earliest is not None and not found)
 
 
-def _series(bs: Sequence[Beat], ts: Sequence[int], line: str, start: int, t: int) -> list[tuple[int, int, str]]:
+def _series(bs: Sequence[Beat], ts: Sequence[int], line: str, start: int, t: int,
+            window_ms: int | None = None) -> list[tuple[int, int, str]]:
     """(index, t, state) of the line at each of its valid beats in [start, t]; sliding window, O(n).
     Beats with the same timestamp all count in each other's window (as state_of(bs, line, b.t) does)."""
     spec = LINE_SPECS[line]
+    window = spec.window_ms if window_ms is None else window_ms
     out: list[tuple[int, int, str]] = []
-    j = bisect.bisect_left(ts, start - spec.window_ms)
+    j = bisect.bisect_left(ts, start - window)
     hi = bisect.bisect_right(ts, t)
     f = d = n = 0
     lo = k = j
@@ -439,7 +473,7 @@ def _series(bs: Sequence[Beat], ts: Sequence[int], line: str, start: int, t: int
                 f += b.v == BEAT_FAIL
                 d += b.v == BEAT_WARN
             k += 1
-        while bs[lo].t < bt - spec.window_ms:
+        while bs[lo].t < bt - window:
             o = bs[lo]
             if o.v != BEAT_UNKNOWN:
                 n -= 1
@@ -722,6 +756,8 @@ class LineEval:
     since_open: bool = False
     last_outage: Outage | None = None
     flaps: int = 0
+    window_ms: int = 0                      # the window the state was judged on (spec window widened by the cadence)
+    cadence_ms: int | None = None           # measured beat spacing of this line, None while too few beats
     beats: list[Beat] = field(default_factory=list, repr=False)
     ts: list[int] = field(default_factory=list, repr=False)
 
@@ -742,6 +778,12 @@ class Evaluation:
         return {k: v.state for k, v in self.lines.items()}
 
     @property
+    def cadence_ms(self) -> int | None:
+        """The probe's heartbeat cadence: the fastest measured heartbeat line (the app/path tests run slower)."""
+        hb = [le.cadence_ms for k, le in self.lines.items() if k in HEARTBEAT_LINES and le.cadence_ms]
+        return min(hb) if hb else None
+
+    @property
     def newest_s(self) -> float | None:
         return None if self.newest is None else max(0.0, (self.at - self.newest) / 1000.0)
 
@@ -752,13 +794,15 @@ def evaluate(store: BeatStore, at: int, *, probe: str = "", site: str = "",
     out: dict[str, LineEval] = {}
     for key in lines:
         bs, ts = store.line(key)
-        stt = state_of(bs, key, at, ts)
-        le = LineEval(key, stt.s, stt.n, stt.f, stt.d, beats=bs, ts=ts)
+        cad = cadence_ms(ts, at)
+        win = window_for(key, cad)
+        stt = state_of(bs, key, at, ts, window_ms=win)
+        le = LineEval(key, stt.s, stt.n, stt.f, stt.d, window_ms=win, cadence_ms=cad, beats=bs, ts=ts)
         hi = bisect.bisect_right(ts, at)
         if stt.s in (FAIL, WARN):
             s = since_of(bs, stt.s == FAIL, hi=hi)
             le.since, le.since_open = s.t, s.open
-        ser = _series(bs, ts, key, at - LAST_OUTAGE_MS, at)
+        ser = _series(bs, ts, key, at - LAST_OUTAGE_MS, at, win)
         le.last_outage = _last_outage(bs, ts, ser)
         le.flaps = _flaps(ser, at - FLAP_SPAN_MS)
         out[key] = le

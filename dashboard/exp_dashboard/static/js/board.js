@@ -4,11 +4,10 @@
 import { api, qs, ApiError } from "./api.js";
 import { h, clear, icon, normState, STATE_ICON, isSlug } from "./dom.js";
 import { Live } from "./stream.js";
-import { drawStrip, describe, BEAT_MS } from "./trace.js";
-import { fmtHMS, fmtDateTime, parseTs, toIso, dur, lineLabel, lineIcon, debounce, pref, titleCase, LINE_ORDER } from "./util.js";
+import { drawStrip, describe } from "./trace.js";
+import { fmtHMS, fmtDateTime, parseTs, toIso, dur, lineLabel, lineIcon, debounce, pref, titleCase, LINE_ORDER, beatMs, staleAfterS } from "./util.js";
 
 const WINDOW_MS = 15 * 60 * 1000;
-const STALE_S = 30;                // spec 04 section 4: the newest result is older than this -> not current
 const CONN_GRACE_MS = 10000;       // stream down for this long -> not current
 const REFRESH_MS = 20000;
 const REWIND_AHEAD_MS = 150000;
@@ -22,7 +21,7 @@ export function mountBoard(root, opts) {
   const kiosk = !!opts.kiosk;
   const staticMode = !!opts.static;
   const st = {
-    state: null, beats: {}, markers: [], incidents: [], summary: null,
+    state: null, cadenceS: null, beats: {}, markers: [], incidents: [], summary: null,
     offset: 0, newestMs: null, label: "", site: "", collectorId: "", streamUp: staticMode ? true : null, downSince: null,
     at: null, rwin: null, error: "", seq: 0, voice: opts.voice || pref("voice") || "", dead: false, collectorDown: false,
   };
@@ -80,7 +79,7 @@ export function mountBoard(root, opts) {
     if (!st.state) return null;
     if (st.newestMs === null) return "The probe has not reported any results yet.";
     const age = (serverNow() - st.newestMs) / 1000;
-    if (age > STALE_S) return "No result from the probe for " + dur(age) + " (last at " + fmtHMS(st.newestMs) + ").";
+    if (age > staleAfterS(st.cadenceS)) return "No result from the probe for " + dur(age) + " (last at " + fmtHMS(st.newestMs) + ").";
     if (st.collectorDown) return "The collector for this probe is unreachable.";
     if (st.streamUp === false && st.downSince !== null && Date.now() - st.downSince > CONN_GRACE_MS) return "The live connection to the dashboard is down; reconnecting.";
     return null;
@@ -115,6 +114,7 @@ export function mountBoard(root, opts) {
     const [state, beats, summary, incs] = res;
     st.state = state;
     st.site = String(state.site || "");
+    st.cadenceS = typeof state.cadence_s === "number" ? state.cadence_s : null;   // measured by the collector
     if (!rewinding) {
       const at0 = parseTs(state.at);
       if (Number.isFinite(at0)) st.offset = Date.now() - at0;
@@ -238,7 +238,7 @@ export function mountBoard(root, opts) {
     for (const svg of el.lines.querySelectorAll("svg.strip")) {
       const k = svg.dataset.line;
       const pts = st.beats[k] || [];
-      drawStrip(svg, pts, w, ph);
+      drawStrip(svg, pts, w, ph, beatMs(st.cadenceS));
       svg.setAttribute("aria-label", describe(lineLabel(k), pts, w));
     }
   }
@@ -404,7 +404,7 @@ export function mountBoard(root, opts) {
   if (!kiosk) {
     attachScrub(el.scrub);
     el.scrub.addEventListener("keydown", (ev) => {
-      const step = ev.shiftKey ? 60000 : BEAT_MS;
+      const step = ev.shiftKey ? 60000 : beatMs(st.cadenceS);
       if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
         ev.preventDefault();
         const cur = live() ? win().end : st.at;
