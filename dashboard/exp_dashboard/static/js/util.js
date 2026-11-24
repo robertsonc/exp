@@ -46,6 +46,14 @@ export function titleCase(slug) {
 }
 
 export const LINE_LABEL = { network: "Network", dhcp: "DHCP", dns: "DNS", internet: "Internet", apps: "Apps", wifi: "Wi-Fi", path: "Path", probe: "Probe" };
+// Heartbeat cadence (CR-heartbeat-cadence): the collector measures each probe's beat spacing (state/probe-list
+// `cadence_s`). Nothing here assumes the 10 s default: a beat is one cadence wide and a probe is stale after three
+// missed beats, never sooner than the 30 s of spec 04 section 4.
+export const DEFAULT_BEAT_MS = 10000;
+export const STALE_MIN_S = 30;
+export function beatMs(cadenceS) { return typeof cadenceS === "number" && cadenceS > 0 ? cadenceS * 1000 : DEFAULT_BEAT_MS; }
+export function staleAfterS(cadenceS) { return Math.max(STALE_MIN_S, 3 * beatMs(cadenceS) / 1000); }
+
 export const LINE_ORDER = ["network", "dhcp", "dns", "internet", "apps", "wifi", "path"];
 // Incident.line additionally allows "probe" (silent-probe incident, CR-wp2-incident-line-probe); it is not a State line.
 export const INCIDENT_LINE_ORDER = [...LINE_ORDER, "probe"];

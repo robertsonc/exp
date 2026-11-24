@@ -362,6 +362,13 @@ components:
           - warn
           - fail
           - unknown
+        cadence_s:
+          description: The probe's measured heartbeat cadence in seconds, null while too few beats
+            (CR-heartbeat-cadence). Clients derive staleness from it instead of assuming a 10 s heartbeat.
+          anyOf:
+          - type: 'null'
+          - type: number
+            minimum: 0
       required:
       - probe
       - site

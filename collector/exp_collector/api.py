@@ -254,6 +254,7 @@ def handle_probes(req: Handler) -> None:
             "newest_s": round(max(0.0, now - newest / 1000.0), 1) if newest is not None else None,
             "version": app.ingestor.last_agent_ver.get(e.probe_id),
             "state": app.rules.severity(e.probe_id),
+            "cadence_s": app.rules.cadence_s(e.probe_id),
         })
     nxt = encode_cursor({"o": offset + limit}) if offset + limit < len(entries) else None
     req.send_json(200, {"items": items, "next_cursor": nxt})

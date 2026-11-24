@@ -4,9 +4,8 @@
 import { api, qs, ApiError } from "./api.js";
 import { h, clear, icon, normState, STATE_ICON, STATE_WORD, isSlug } from "./dom.js";
 import { Live } from "./stream.js";
-import { titleCase, dur, parseTs, lineLabel, lineIcon, LINE_ORDER, SEV_RANK } from "./util.js";
+import { titleCase, dur, parseTs, lineLabel, lineIcon, LINE_ORDER, SEV_RANK, staleAfterS } from "./util.js";
 
-const STALE_S = 30;
 const POLL_MS = 8000;
 
 export function mountOverview(root, opts) {
@@ -32,7 +31,7 @@ export function mountOverview(root, opts) {
     for (const [id, lite] of st.states) {
       const p = st.probes.get(id) || {};
       const age = ageOf(id);
-      const stale = age === null || age > STALE_S;
+      const stale = age === null || age > staleAfterS(p.cadence_s);
       out.push({ id, lite, label: String(p.label || id), site: String(lite.site || p.site || ""), age, stale,
         sev: stale ? "unknown" : normState(lite.severity) });
     }

@@ -78,17 +78,19 @@ def state_doc(ev: Evaluation, *, voice: str = "sysadmin", tz: str = "UTC", edge_
             "detail": vt.line_detail(ev, k)[:512],
             "last_outage": ({"start": iso_ms(lo.start), "end": iso_ms(lo.end), "open": bool(lo.open)}
                             if lo and lo.start is not None else None),
-            "flaps": le.flaps})
+            "flaps": le.flaps, "window_s": (le.window_ms or LINE_SPECS[k].window_ms) // 1000})
         if le.state in ("fail", "warn"):
             items = failing_items(ev, k)
             if not items:           # never "no error text" next to a failing line: say what the counts say
                 n_what = "failed" if le.state == "fail" else "were slow"
                 n = le.f if le.state == "fail" else le.d
-                items = [{"text": f"{n} of {le.n} checks {n_what} in the last {LINE_SPECS[k].window_ms // 1000} s",
+                win_s = (le.window_ms or LINE_SPECS[k].window_ms) // 1000
+                items = [{"text": f"{n} of {le.n} checks {n_what} in the last {win_s} s",
                           "count": n, "ports": [], "tests": []}]
             failing.append({"line": k, "items": [dict(i, text=str(i["text"])[:512]) for i in items]})
     return {"schema": "exp.state/1", "probe": ev.probe, "site": ev.site, "at": iso_ms(ev.at), "live": live,
             "newest_s": None if ev.newest_s is None else round(ev.newest_s, 1),
+            "cadence_s": None if ev.cadence_ms is None else round(ev.cadence_ms / 1000, 1),
             "verdict": v, "lines": out_lines, "failing": failing}
 
 
@@ -450,6 +452,12 @@ class RulesEngine:
             if doc is not None:
                 out.append(state_lite(doc))
         return out
+
+    def cadence_s(self, probe: str) -> float | None:
+        """The probe's measured heartbeat cadence (CR-heartbeat-cadence), None while unknown."""
+        doc = self.state(probe)
+        v = doc.get("cadence_s") if doc else None
+        return float(v) if isinstance(v, (int, float)) else None
 
     def severity(self, probe: str) -> str:
         """ok | warn | fail | unknown for the probe list."""

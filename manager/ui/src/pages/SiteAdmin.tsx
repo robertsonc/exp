@@ -151,6 +151,46 @@ export function SiteReleasePanel({ site, me }: { site: Site; me: Me | undefined 
   );
 }
 
+// ---- probe heartbeat (CR-heartbeat-cadence) ------------------------------------------------------------------------
+
+const HEARTBEATS = [
+  { value: '10', label: 'Standard: every 10 s (default)' },
+  { value: '5', label: 'Fast detection: every 5 s (about double the probe traffic)' },
+];
+
+export function SiteHeartbeatPanel({ site, me }: { site: Site; me: Me | undefined }): JSX.Element {
+  const allowed = canAdmin(me);
+  const [value, setValue] = useState('10');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const apply = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await mutate<{ updated: number; interval_s: number }>('POST', ep.siteProbeHeartbeat(site.site), { interval_s: Number(value) });
+      notify('ok', r.updated === 0 ? `Every probe in ${site.name} already beats every ${r.interval_s} s.`
+        : `${r.updated} probe${r.updated === 1 ? '' : 's'} in ${site.name} now beat every ${r.interval_s} s; hosts apply it on their next poll.`);
+    } catch (e) {
+      setError(failText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel title="Probe heartbeat" id="sh">
+      <p class="dim">How often every probe in this site checks the gateway, DHCP, DNS and internet. Faster beats find a fault
+        sooner but send and store about twice as many results. The board's state changes follow the collector's rules
+        in seconds, so a faster heartbeat sharpens them; it never makes the board react faster than the data.
+        A single probe can still be set on its own page (5 to 60 s).</p>
+      <SelectField label="Heartbeat for every probe in this site" value={value} onChange={setValue} options={HEARTBEATS} disabled={!allowed || busy} />
+      <FormError error={error} />
+      <div class="dialog-actions">
+        <Button variant="primary" disabled={!allowed || busy} onClick={() => void apply()}>{busy ? 'Applying…' : 'Apply to all probes'}</Button>
+      </div>
+    </Panel>
+  );
+}
+
 // ---- alerts -------------------------------------------------------------------------------------------------------
 
 interface HookRow { id?: string; format: 'slack' | 'teams' | 'json'; url: string; state?: SecretState }

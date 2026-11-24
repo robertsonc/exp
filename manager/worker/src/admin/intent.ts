@@ -153,6 +153,38 @@ export async function updateSite(env: Env, actor: Actor, site: string, p: { name
   await recompile(env, { sites: [site] });
 }
 
+/** Probe heartbeat for a whole site (CR-heartbeat-cadence): sets `heartbeat.interval_s` on every probe component of
+ * the site in one batch, with one audit entry. 10 s is the default; 5 s is "fast detection" for sites worth the extra
+ * probe traffic (about double). Each probe stays editable on its own afterwards. */
+export const HEARTBEAT_MIN_S = 5;
+export const HEARTBEAT_MAX_S = 60;
+export async function setSiteProbeHeartbeat(env: Env, actor: Actor, site: string, intervalS: number): Promise<{ site: string; interval_s: number; updated: number }> {
+  if (!Number.isInteger(intervalS) || intervalS < HEARTBEAT_MIN_S || intervalS > HEARTBEAT_MAX_S) {
+    throw invalidRequest(`interval_s must be an integer from ${HEARTBEAT_MIN_S} to ${HEARTBEAT_MAX_S}`);
+  }
+  const row = await env.DB.prepare("SELECT site FROM sites WHERE site = ?1").bind(site).first();
+  if (!row) throw notFound("no such site");
+  const { results } = await env.DB.prepare(
+    "SELECT c.component_id, c.config_json FROM components c JOIN hosts h ON h.host_id = c.host_id " +
+    "WHERE c.type = 'probe' AND h.site = ?1 AND h.state != 'removed' ORDER BY c.component_id",
+  ).bind(site).all<{ component_id: string; config_json: string }>();
+  const now = isoNow();
+  const stmts = [];
+  let updated = 0;
+  for (const r of results ?? []) {
+    const cfg = parseJson<Record<string, unknown>>(r.config_json, {});
+    const hb = cfg.heartbeat && typeof cfg.heartbeat === "object" && !Array.isArray(cfg.heartbeat) ? (cfg.heartbeat as Record<string, unknown>) : {};
+    if (hb.interval_s === intervalS) continue;
+    cfg.heartbeat = { ...hb, interval_s: intervalS };
+    stmts.push(env.DB.prepare("UPDATE components SET config_json = ?2, updated_at = ?3 WHERE component_id = ?1").bind(r.component_id, JSON.stringify(cfg), now));
+    updated++;
+  }
+  stmts.push(auditStmt(env.DB, { actor: actor.email, action: "site.probe_heartbeat", resource: `site:${site}`, details: { interval_s: intervalS, probes: updated }, ip: actor.ip }));
+  await env.DB.batch(stmts);
+  if (updated > 0) await recompile(env, { sites: [site] });
+  return { site, interval_s: intervalS, updated };
+}
+
 export async function deleteSite(env: Env, actor: Actor, site: string): Promise<void> {
   const row = await env.DB.prepare("SELECT site FROM sites WHERE site = ?1").bind(site).first();
   if (!row) throw notFound("no such site");

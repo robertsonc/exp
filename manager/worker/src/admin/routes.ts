@@ -72,6 +72,7 @@ const HostCreate = z.object({ name: z.string().min(1).max(128), site: slugS, sha
 const HostPatch = z.object({ name: z.string().min(1).max(128), site: slugS }).partial().strict();
 const ComponentCreate = z.object({ type: z.enum(["probe", "collector", "dashboard", "runner", "speedtest"]), id: slugS, config: z.record(z.string(), z.unknown()) }).strict();
 const ComponentPatch = z.object({ config: z.record(z.string(), z.unknown()), enabled: z.boolean() }).partial().strict();
+const SiteProbeHeartbeat = z.object({ interval_s: z.number().int() }).strict();
 const SiteRelease = z.object({ version: z.string().regex(SEMVER_RE).max(64), canary_host_id: z.string().regex(HOST_ID_RE).nullable().optional() }).strict();
 const ReleaseImport = z.object({ version: z.string().regex(SEMVER_RE).max(64), source: z.enum(["github", "upload"]) }).strict();
 const UserCreate = z.object({ username: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/), role: z.enum(["viewer", "operator", "admin"]), hash: z.string().max(512) }).strict();
@@ -108,6 +109,8 @@ adminRoutes.patch("/sites/:site/release", requireRole("admin"), async (c) => {
   await svc.setSiteRelease(c.env, actorOf(c), site, { version: b.version, canary_host_id: b.canary_host_id ?? null });
   return c.json(await read.getSite(c.env, site));
 });
+adminRoutes.post("/sites/:site/probe-heartbeat", requireRole("admin"), async (c) =>
+  c.json(await intent.setSiteProbeHeartbeat(c.env, actorOf(c), c.req.param("site"), (await bodyOf(c, SiteProbeHeartbeat)).interval_s)));
 adminRoutes.get("/sites/:site/alerts", requireRole("viewer"), async (c) => c.json(await intent.getSiteAlerts(c.env, c.req.param("site"))));
 adminRoutes.put("/sites/:site/alerts", requireRole("admin"), async (c) => {
   const raw = await readJson(c.req.raw, MAX_BODY);

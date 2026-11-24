@@ -8,7 +8,7 @@ const W = 900;
 const H = 44;
 const HEIGHT = [14, 28, 44, 44];
 const NAME = ["ok", "warn", "fail", "unknown"];
-export const BEAT_MS = 10000;
+export const BEAT_MS = 10000;   // default only: callers pass the probe's measured cadence (beatMs in util.js)
 
 export function tally(points, win) {
   const n = [0, 0, 0, 0];
@@ -27,12 +27,12 @@ export function xOf(t, win) {
   return ((t - win.start) / (win.end - win.start)) * W;
 }
 
-export function drawStrip(svg, points, win, playheadMs) {
+export function drawStrip(svg, points, win, playheadMs, beat = BEAT_MS) {
   svg.replaceChildren();
   svg.setAttribute("viewBox", "0 0 " + W + " " + H);
   svg.setAttribute("preserveAspectRatio", "none");
   svg.appendChild(s("line", { class: "base", x1: 0, y1: H - 0.5, x2: W, y2: H - 0.5 }));
-  const bw = Math.max(2, (W * BEAT_MS) / (win.end - win.start) * 0.7);
+  const bw = Math.max(2, (W * beat) / (win.end - win.start) * 0.7);
   let any = false;
   for (const p of points) {
     const t = p[0];
