@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from exp_common import ids
@@ -23,6 +25,7 @@ from stbox import SENTINEL_ID, base_config, free_port, wait_for
 
 BIN = Path(__file__).resolve().parents[1] / "bin" / "exp-speedtest"
 CHUNK = 25_000_000
+STOPS: list[str] = []          # why a download stream ended early (budget), for the assertions' messages
 TICKS = os.sysconf("SC_CLK_TCK")
 
 
@@ -112,25 +115,43 @@ def download(port: int, token: str, stop_at: float, out: list[int]) -> None:
     mv = memoryview(buf)
     total = 0
     req = f"GET /st/down?bytes={CHUNK} HTTP/1.1\r\nHost: x\r\nX-Exp-Leg-Token: {token}\r\n\r\n".encode()
-    while time.monotonic() < stop_at:
-        s.sendall(req)
-        head = b""
-        while b"\r\n\r\n" not in head:
-            head += s.recv(4096)
-        head, _, rest = head.partition(b"\r\n\r\n")
-        assert head.startswith(b"HTTP/1.1 200"), head[:80]
-        got = len(rest)
-        while got < CHUNK:
-            n = s.recv_into(mv)
-            if n == 0:
-                raise RuntimeError("short body")
-            got += n
-        total += CHUNK
-    s.close()
-    out.append(total)
+    try:
+        while time.monotonic() < stop_at:
+            s.sendall(req)
+            head = b""
+            while b"\r\n\r\n" not in head:
+                chunk = s.recv(4096)
+                if not chunk:
+                    raise RuntimeError(f"server closed the connection after {total} bytes")
+                head += chunk
+            head, _, rest = head.partition(b"\r\n\r\n")
+            if not head.startswith(b"HTTP/1.1 200"):
+                # The session's byte budget running out ends this stream (on a fast runner 10 GB, the schema maximum,
+                # goes in seconds); keep what moved and record the server's answer so a wrong cap stays visible.
+                m = re.search(rb"content-length: *(\d+)", head, re.I)
+                body = rest
+                while m and len(body) < int(m.group(1)):
+                    more = s.recv(4096)
+                    if not more:
+                        break
+                    body += more
+                status = head.split(b"\r\n", 1)[0].decode(errors="replace")
+                STOPS.append(f"{status} after {total} bytes: {body[:200].decode(errors='replace')}")
+                break
+            got = len(rest)
+            while got < CHUNK:
+                n = s.recv_into(mv)
+                if n == 0:
+                    raise RuntimeError("short body")
+                got += n
+            total += CHUNK
+    finally:
+        s.close()
+        out.append(total)
 
 
-def measure(seconds: float, streams: int, tmp: Path) -> dict[str, float]:
+def measure(seconds: float, streams: int, tmp: Path) -> dict[str, Any]:
+    STOPS.clear()
     srv = Server(tmp)
     try:
         tokens = [new_session(srv.port) for _ in range(streams)]
@@ -149,7 +170,8 @@ def measure(seconds: float, streams: int, tmp: Path) -> dict[str, float]:
         gbps = client_bytes * 8 / wall / 1e9
         return {"gbps": gbps, "cpu_cores": cpu / wall, "cores_per_gbps": (cpu / wall) / gbps if gbps else 99.0,
                 "client_bytes": client_bytes, "server_bytes": server_bytes,
-                "disagreement": abs(client_bytes - server_bytes) / max(client_bytes, 1), "wall": wall}
+                "disagreement": abs(client_bytes - server_bytes) / max(client_bytes, 1), "wall": wall,
+                "stops": list(STOPS)}
     finally:
         srv.stop()
 
