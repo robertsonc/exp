@@ -298,6 +298,30 @@ def test_desired_parsing(tmp_path):
         assert helper("desired", str(f)).returncode == 1
 
 
+def test_a_site_without_a_release_is_named_with_the_repair_command(tmp_path):
+    """CR-wp6 follow-up: an enrolled host whose site has no release gets the manager's bare desired document. Say
+    so, name the site, and give the no-token command that finishes the install once a release is set."""
+    bare = {k: v for k, v in desired().items() if k not in ("agent", "release")}
+    f = tmp_path / "d.json"
+    f.write_text(json.dumps(bare))
+    r = helper("desired", str(f), "https://manager.example.test")
+    assert r.returncode == 1
+    assert "site 'Hall B' has no release set in the manager yet" in r.stderr
+    assert "curl -fsSL https://manager.example.test/install.sh | sudo bash" in r.stderr
+    assert "missing the agent or release section" not in r.stderr
+    # a document with only one of the two sections is still malformed, not "no release yet"
+    f.write_text(json.dumps({k: v for k, v in desired().items() if k != "release"}))
+    r = helper("desired", str(f), "https://manager.example.test")
+    assert r.returncode == 1 and "missing the agent or release section" in r.stderr
+
+
+def test_a_failing_desired_check_is_reported_once():
+    """The helper prints its own reason; the script must stop there instead of adding "not usable" after it."""
+    text = SCRIPT.read_text()
+    assert 'desired_tsv="$(py desired "$TMP/desired.json" "$MANAGER_URL")" || exit 1' in text
+    assert '<<<"$(py desired' not in text
+
+
 def manifest(tmp_path, **over):
     m = {
         "schema": "exp.manifest/1",

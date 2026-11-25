@@ -355,6 +355,26 @@
               "enabled": false
             }
           },
+          "network": {
+            "require_real_client_ip": true,
+            "client_subnets": [
+              "10.60.0.0/16",
+              "10.61.0.0/16"
+            ],
+            "translated_addresses": [
+              "10.0.0.2"
+            ],
+            "zone_subnets": [
+              {
+                "cidr": "10.60.0.0/16",
+                "zone": "hall-a"
+              },
+              {
+                "cidr": "10.61.0.0/16",
+                "zone": "hall-b"
+              }
+            ]
+          },
           "privacy": {
             "scrub_after_diagnosis": false
           },

@@ -178,13 +178,19 @@ def cmd_authcfg():
     sys.stdout.write('header = "Authorization: Bearer %s"\n' % sec)
 
 
-def cmd_desired(path):
+def cmd_desired(path, manager_url=""):
     d = load_json(path, 8 * 1024 * 1024)
     try:
         if d.get("schema") != "exp.desired/1":
             die("the desired state is not exp.desired/1")
         if d.get("decommission") is True:
             die("this host is marked for decommission in the manager; nothing to install")
+        if "agent" not in d and "release" not in d:
+            # A bare document: the host is enrolled, but its site has no release yet (the manager's compile).
+            site = clean((d.get("site") or {}).get("name") or (d.get("site") or {}).get("id") or "this site")
+            again = "curl -fsSL %s/install.sh | sudo bash" % manager_url if manager_url else "the same installer without a token"
+            die("the host is enrolled, but site '%s' has no release set in the manager yet. Set one (Sites -> %s -> "
+                "Release), then finish here with: %s" % (site, site, again))
         ag, rel = d["agent"], d["release"]
         av, art, rv = ag["version"], ag["artifact"], rel["version"]
         site = clean((d.get("site") or {}).get("name") or (d.get("site") or {}).get("id") or "")
@@ -445,7 +451,10 @@ main() {
     # 3. fetch and verify the agent
     authed_get /api/agent/v1/desired "$TMP/desired.json" 8388608 || die "cannot fetch this host's desired state (credentials revoked? re-run with a new enrol token)"
     local ag_ver ag_art rel_ver site hid
-    IFS=$'\t' read -r ag_ver ag_art rel_ver site hid <<<"$(py desired "$TMP/desired.json")" || die "the desired state is not usable"
+    # the helper prints its own reason on failure (e.g. the site has no release yet): stop there, add nothing vaguer
+    local desired_tsv
+    desired_tsv="$(py desired "$TMP/desired.json" "$MANAGER_URL")" || exit 1
+    IFS=$'\t' read -r ag_ver ag_art rel_ver site hid <<<"$desired_tsv"
     [ -n "$ag_ver" ] || die "the desired state is not usable"
     authed_get "/api/agent/v1/releases/$rel_ver/manifest" "$TMP/manifest.json" 1048576 || die "cannot fetch the release manifest"
     authed_get "/api/agent/v1/releases/$rel_ver/manifest.sig" "$TMP/manifest.sig.b64" 4096 || die "cannot fetch the release manifest signature"

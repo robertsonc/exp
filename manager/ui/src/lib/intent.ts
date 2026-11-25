@@ -84,6 +84,21 @@ export function ifaceBlockReason(i: Iface, ownProbe?: string): string | null {
   return null;
 }
 
+/** The picker rows for a probe's current ports (so the component page edits what is configured, not a blank slate). */
+export function draftsFromPorts(ports: unknown): Record<string, PortDraft> {
+  const out: Record<string, PortDraft> = {};
+  if (!Array.isArray(ports)) return out;
+  for (const p of ports) {
+    if (!p || typeof p !== 'object') continue;
+    const c = p as Cfg;
+    const iface = typeof c['iface'] === 'string' ? c['iface'] : null;
+    const role = c['role'];
+    if (!iface || (role !== 'client' && role !== 'target' && role !== 'wifi')) continue;
+    out[iface] = { role, address: typeof c['address'] === 'string' ? c['address'] : '', gateway: typeof c['gateway'] === 'string' ? c['gateway'] : '', ssid: typeof c['ssid'] === 'string' ? c['ssid'] : '' };
+  }
+  return out;
+}
+
 export interface PortsResult { ports: Cfg[]; errors: Record<string, string> }
 
 /** Turn the picker's choices into the `ports` array of PUT components/{id}/ports. Ids are c01.., s01.., w01... */
@@ -369,3 +384,8 @@ export function applyDashboardForm(config: Cfg, f: DashboardForm): { config: Cfg
   if (Array.isArray(out['collectors'])) out['collectors'] = (out['collectors'] as unknown[]).filter((x) => f.collectorIds.includes(str(obj(x)['collector_id'])));
   return { config: out, problems: p };
 }
+
+/** Probe features the 0.2.0 probe does not have yet (milestone M4, probe/README.md): the probe skips a configured one
+ * and logs "not available in this build". The UI says so and does not offer to switch them on. */
+export const PROBE_M4_NOTE = 'Not in the 0.2.0 probe yet (milestone M4): the probe would skip it. You can still switch an existing one off.';
+export const PROBE_M4_ROLE_NOTE = 'not in 0.2.0 probes (M4)';

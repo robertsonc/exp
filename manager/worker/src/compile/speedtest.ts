@@ -170,6 +170,23 @@ const pick = (src: Obj, keys: string[]): Obj => {
   return out;
 };
 
+/** The NAT-guard / identity inputs both the speedtest (`serve`) and its runner (`correlation.network`) use, from the
+ * same site settings and the box's serve block (CR-m6-runner-network): attendee subnets default to the zone-label
+ * subnets, so the box and the runner can never disagree about who is an attendee. */
+export function natGuardInputs(w: World, site: string, serve: Obj): { require_real_client_ip: boolean; client_subnets: string[]; translated_addresses: string[]; zone_subnets: Array<{ cidr: string; zone: string }> } {
+  const settings = siteSpeedtest(w, site)?.settings ?? {};
+  const zl = isObj(settings.zone_labels) && Array.isArray(settings.zone_labels.subnets) ? (settings.zone_labels.subnets as unknown[]) : [];
+  const zones = zl.filter((z): z is Obj => isObj(z) && typeof z.cidr === "string" && typeof z.zone === "string")
+    .map((z) => ({ cidr: z.cidr as string, zone: z.zone as string })).slice(0, 256);
+  const strs = (v: unknown, n: number): string[] | null => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, n) : null);
+  return {
+    require_real_client_ip: serve.require_real_client_ip !== false,
+    client_subnets: strs(serve.client_subnets, 64) ?? zones.map((z) => z.cidr).slice(0, 64),
+    translated_addresses: strs(serve.translated_addresses, 64) ?? [],
+    zone_subnets: zones,
+  };
+}
+
 const SPEEDTEST_KEYS = ["zones", "zone_labels", "branding", "display", "targets", "limits", "internet_leg", "dns_leg", "path", "privacy", "core_guard"];
 
 /**
@@ -191,10 +208,10 @@ export function speedtestConfig(
   const branding: Obj = isObj(settings.branding) ? { ...settings.branding } : {};
   if (st?.logo) branding.logo_artifact = st.logo.artifact.artifact_id;
   else delete branding.logo_artifact;
-  const zones = Array.isArray(settings.zone_labels && (settings.zone_labels as Obj).subnets) ? ((settings.zone_labels as Obj).subnets as Obj[]) : [];
   const serveOut: Obj = { ...serve };
   // NAT guard input (12 section 3, CR-m6-spec-resolutions A.6): attendee subnets default to the zone-label subnets
-  if (serveOut.client_subnets === undefined && zones.length > 0) serveOut.client_subnets = zones.map((z) => z.cidr).slice(0, 64);
+  const guard = natGuardInputs(w, host.site, serve);
+  if (serveOut.client_subnets === undefined && guard.client_subnets.length > 0) serveOut.client_subnets = guard.client_subnets;
   const internet: Obj = { ...(isObj(settings.internet_leg) ? settings.internet_leg : {}), paused: st?.paused === true };
   const config: Obj = {
     schema: "exp.speedtest.config/1",
@@ -242,10 +259,13 @@ export function runnerCorrelation(w: World, c: WComponent, host: WHost): Obj | n
   const st = siteSpeedtest(w, host.site);
   const privacy = isObj(st?.settings.privacy) ? (st?.settings.privacy as Obj) : {};
   const sp = speedtestOfRunner(w, c);
+  // the same identity inputs as the paired box (or, without one on this host, the site's speedtest settings)
+  const serve = sp ? effectiveServe(w, sp) : isObj(st?.settings.serve) ? (st?.settings.serve as Obj) : {};
   return {
     enabled: base.enabled === false ? false : true,
     ...pick(base, CORR_KEYS),
     sources,
+    network: natGuardInputs(w, host.site, serve),
     privacy: { scrub_after_diagnosis: privacy.scrub_after_diagnosis === true },
     ...(sp ? { speedtest_channel: { url: CHANNEL_URL } } : {}),
   };

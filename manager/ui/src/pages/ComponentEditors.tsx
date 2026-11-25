@@ -4,7 +4,7 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import { ep } from '../api/endpoints';
-import type { Component, DashboardTls, DashboardUser, Me, NocToken, NocTokenCreated, Overview, Page } from '../api/types';
+import type { Component, DashboardTls, DashboardUser, Host, Me, NocToken, NocTokenCreated, Overview, Page } from '../api/types';
 import { mutate, useNow, useResource } from '../data/hooks';
 import { Badge, Button, ConfirmDialog, CopyField, Dialog, EmptyState, ErrorBanner, Panel, SkeletonBlock } from '../components/atoms';
 import { CheckField, Fieldset, FormError, SelectField, TextArea, TextField, failText } from '../components/forms';
@@ -14,8 +14,9 @@ import { notify } from '../components/Toasts';
 import { DASH, formatAbsolute } from '../lib/format';
 import {
   applyCollectorForm, applyDashboardForm, applyProbeForm, collectorFormFrom, dashboardFormFrom, probeFormFrom, sameConfig,
-  type AppRow, type Cfg, type CollectorForm, type DashboardForm, type LabelRow, type PeerRow, type ProbeForm,
+  type AppRow, type Cfg, type CollectorForm, type DashboardForm, type LabelRow, type PeerRow, type ProbeForm, PROBE_M4_NOTE, draftsFromPorts,
 } from '../lib/intent';
+import { PortPicker } from '../components/PortPicker';
 import { nocUrl } from '../lib/sso';
 import { MAX_CERT_PEM, MAX_KEY_PEM, certExpiry, fingerprintPending, tlsPemProblems } from '../lib/tls';
 import { applyRunnerForm, runnerFormFrom, runnerProblems, type RunnerForm } from '../lib/runner';
@@ -131,7 +132,8 @@ export function ProbeEditor({ comp, me }: { comp: Component; me: Me | undefined 
           ) : null}
         </Fieldset>
         <Fieldset legend="Throughput">
-          <TestHead title="Throughput" on={f.throughput.on} onChange={(on) => set({ throughput: { ...f.throughput, on } })} interval={f.throughput.interval} onInterval={(interval) => set({ throughput: { ...f.throughput, interval } })} error={p['throughputInterval']} disabled={!allowed} />
+          <p class="dim" data-testid="m4-throughput">{PROBE_M4_NOTE}</p>
+          <TestHead title="Throughput" on={f.throughput.on} onChange={(on) => set({ throughput: { ...f.throughput, on } })} interval={f.throughput.interval} onInterval={(interval) => set({ throughput: { ...f.throughput, interval } })} error={p['throughputInterval']} disabled={!allowed || !f.throughput.on} />
           {f.throughput.on ? (
             <div class="check-row">
               <CheckField label="Cloudflare" checked={f.throughput.cloudflare} onChange={(cloudflare) => set({ throughput: { ...f.throughput, cloudflare } })} disabled={!allowed} />
@@ -141,7 +143,8 @@ export function ProbeEditor({ comp, me }: { comp: Component; me: Me | undefined 
           ) : null}
         </Fieldset>
         <Fieldset legend="Path peers" hint="Another probe's target port, measured for loss, jitter and delay with a short UDP/TCP stream.">
-          <TestHead title="Path" on={f.path.on} onChange={(on) => set({ path: { ...f.path, on } })} interval={f.path.interval} onInterval={(interval) => set({ path: { ...f.path, interval } })} error={p['pathInterval']} disabled={!allowed} />
+          <p class="dim" data-testid="m4-path">{PROBE_M4_NOTE}</p>
+          <TestHead title="Path" on={f.path.on} onChange={(on) => set({ path: { ...f.path, on } })} interval={f.path.interval} onInterval={(interval) => set({ path: { ...f.path, interval } })} error={p['pathInterval']} disabled={!allowed || !f.path.on} />
           {f.path.on ? (
             <>
               {p['pathPeers'] ? <p class="field-error" role="alert">{p['pathPeers']}</p> : null}
@@ -167,7 +170,8 @@ export function ProbeEditor({ comp, me }: { comp: Component; me: Me | undefined 
           ) : null}
         </Fieldset>
         <Fieldset legend="Wi-Fi">
-          <TestHead title="Wi-Fi" on={f.wifi.on} onChange={(on) => set({ wifi: { ...f.wifi, on } })} interval={f.wifi.interval} onInterval={(interval) => set({ wifi: { ...f.wifi, interval } })} error={p['wifiInterval']} disabled={!allowed} />
+          <p class="dim" data-testid="m4-wifi">{PROBE_M4_NOTE}</p>
+          <TestHead title="Wi-Fi" on={f.wifi.on} onChange={(on) => set({ wifi: { ...f.wifi, on } })} interval={f.wifi.interval} onInterval={(interval) => set({ wifi: { ...f.wifi, interval } })} error={p['wifiInterval']} disabled={!allowed || !f.wifi.on} />
         </Fieldset>
       </Panel>
 
@@ -192,6 +196,25 @@ export function ProbeEditor({ comp, me }: { comp: Component; me: Me | undefined 
 }
 
 // ---- collector ----------------------------------------------------------------------------------------------------
+
+/** Test ports after enrolment (the wizard's step 3 picker, prefilled with what the probe has now). */
+export function ProbePortsPanel({ comp, host, me }: { comp: Component; host: Host | undefined; me: Me | undefined }): JSX.Element {
+  const allowed = canAdmin(me);
+  const cfg = (comp.config ?? {}) as Cfg;
+  return (
+    <Panel title="Test ports" id="cp-ports">
+      <p class="dim">Which interfaces this probe tests from. Saving replaces the probe's port list; the host applies it on its next poll.</p>
+      {host ? (
+        <PortPicker key={`${comp.component_id}:${comp.updated_at}`} hostName={host.name} ifaces={host.facts?.interfaces ?? []} ownProbe={comp.id}
+          initial={draftsFromPorts(cfg['ports'])} applyLabel="Save ports" allowed={allowed}
+          onApply={async (ports) => {
+            const r = await mutate<{ desired_version?: number | null }>('PUT', ep.ports(comp.component_id), { ports });
+            notify('ok', `Saved ${ports.length} port${ports.length === 1 ? '' : 's'} for ${comp.id}${r?.desired_version != null ? ` (desired config v${r.desired_version})` : ''}.`);
+          }} />
+      ) : <p class="dim">Loading the host's interfaces…</p>}
+    </Panel>
+  );
+}
 
 export function CollectorEditor({ comp, me }: { comp: Component; me: Me | undefined }): JSX.Element {
   const [f, setF] = useState<CollectorForm>(() => collectorFormFrom(comp.config));

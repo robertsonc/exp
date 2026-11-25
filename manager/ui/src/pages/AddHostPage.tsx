@@ -5,15 +5,16 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ep } from '../api/endpoints';
-import type { Component, EnrolToken, Host, HostCreated, Iface, Me, Page, Shape, Site } from '../api/types';
+import type { Component, EnrolToken, Host, HostCreated, Me, Page, Shape, Site } from '../api/types';
 import { mutate, useNow, useResource } from '../data/hooks';
-import { Badge, Button, CopyField, Countdown, EmptyState, ErrorBanner, Panel, ShapeBadges, SkeletonBlock, StatusPill, healthPill } from '../components/atoms';
+import { Badge, Button, CopyField, Countdown, ErrorBanner, Panel, ShapeBadges, SkeletonBlock, StatusPill, healthPill } from '../components/atoms';
 import { CheckField, FormError, SelectField, TextField, failText } from '../components/forms';
 import { canAdmin } from '../components/Issues';
 import { Link } from '../components/viz';
 import { PageHeader } from './common';
 import { DASH, formatMiB, formatVersion } from '../lib/format';
-import { defaultComponentId, defaultIntent, buildPorts, emptyDraft, ifaceBlockReason, type PortDraft, type PortRole } from '../lib/intent';
+import { defaultComponentId, defaultIntent } from '../lib/intent';
+import { PortPicker } from '../components/PortPicker';
 import { slugProblem, slugify } from '../lib/validate';
 import { navigate, useLocation } from '../router';
 
@@ -194,63 +195,9 @@ function Facts({ host }: { host: Host }): JSX.Element {
   );
 }
 
-function IfaceRow({ i, d, onChange }: { i: Iface; d: PortDraft; onChange: (d: PortDraft) => void }): JSX.Element {
-  const block = ifaceBlockReason(i);
-  const label = `Test role for ${i.name}`;
-  const roleOpts: { v: PortRole; l: string }[] = [{ v: 'none', l: 'Not used' }, { v: 'client', l: 'Client (DHCP)' }, { v: 'target', l: 'Target (serves tests)' }, { v: 'wifi', l: 'Wi-Fi' }];
-  return (
-    <tr class={block ? 'iface-blocked' : ''} data-iface={i.name} data-blocked={block ? 'true' : 'false'}>
-      <th scope="row">{i.name}</th>
-      <td class="mono">{i.mac ?? DASH}</td>
-      <td><StatusPill state={i.state === 'up' ? 'ok' : i.state === 'down' ? 'fail' : 'unknown'} label={`link ${i.state}`} /></td>
-      <td>{i.speed_mbps ? `${i.speed_mbps} Mb/s` : DASH}</td>
-      <td>{(i.addrs ?? []).join(', ') || DASH}</td>
-      <td class="iface-role">
-        <select aria-label={label} value={block ? 'none' : d.role} disabled={!!block} onChange={(e) => onChange({ ...d, role: (e.currentTarget as HTMLSelectElement).value as PortRole })}>
-          {roleOpts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
-        </select>
-        {block ? <span class="iface-reason" data-testid="iface-reason">{block}</span> : null}
-        {!block && d.role === 'target' ? (
-          <span class="iface-extra">
-            <input type="text" aria-label={`Target address for ${i.name}`} placeholder="10.1.0.250/24" value={d.address} autocomplete="off" onInput={(e) => onChange({ ...d, address: (e.currentTarget as HTMLInputElement).value })} />
-            <input type="text" aria-label={`Gateway for ${i.name}`} placeholder="gateway 10.1.0.1" value={d.gateway} autocomplete="off" onInput={(e) => onChange({ ...d, gateway: (e.currentTarget as HTMLInputElement).value })} />
-          </span>
-        ) : null}
-        {!block && d.role === 'wifi' ? (
-          <span class="iface-extra">
-            <input type="text" aria-label={`SSID for ${i.name}`} placeholder="SSID (optional)" value={d.ssid} autocomplete="off" maxLength={32} onInput={(e) => onChange({ ...d, ssid: (e.currentTarget as HTMLInputElement).value })} />
-          </span>
-        ) : null}
-      </td>
-    </tr>
-  );
-}
-
 function InterfaceStep({ host, comps, onApplied }: { host: Host; comps: Component[]; onApplied: () => void }): JSX.Element {
   const ifaces = host.facts?.interfaces ?? [];
   const probe = comps.find((c) => c.type === 'probe');
-  const [drafts, setDrafts] = useState<Record<string, PortDraft>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const built = buildPorts(ifaces, drafts, probe?.id);
-  const hasAny = built.ports.length > 0;
-  const problemList = Object.entries(built.errors);
-  const canApply = !probe || (hasAny && problemList.length === 0);
-
-  const apply = async () => {
-    if (!canApply || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      if (probe) await mutate('PUT', ep.ports(probe.component_id), { ports: built.ports });
-      onApplied();
-    } catch (e) {
-      setError(failText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <>
       <Panel title="3. The host has enrolled" id="w3a">
@@ -258,28 +205,15 @@ function InterfaceStep({ host, comps, onApplied }: { host: Host; comps: Componen
         <Facts host={host} />
       </Panel>
       <Panel title={probe ? 'Choose the probe interfaces' : 'Interfaces'} id="w3b">
-        {ifaces.length === 0 ? <EmptyState title="No interfaces reported yet">The agent has not sent its interface list.</EmptyState> : (
-          <div class="table-scroll">
-            <table class="plain iface-table" data-testid="iface-picker">
-              <caption class="sr-only">Network interfaces of {host.name}</caption>
-              <thead><tr><th scope="col">Interface</th><th scope="col">MAC</th><th scope="col">Link</th><th scope="col">Speed</th><th scope="col">Addresses</th><th scope="col">{probe ? 'Test role' : 'Use'}</th></tr></thead>
-              <tbody>
-                {ifaces.map((i) => (
-                  <IfaceRow key={i.name} i={i} d={drafts[i.name] ?? emptyDraft()} onChange={(d) => setDrafts((cur) => ({ ...cur, [i.name]: d }))} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
         {probe ? (
+          <PortPicker hostName={host.name} ifaces={ifaces} ownProbe={probe.id}
+            onApply={async (ports) => { await mutate('PUT', ep.ports(probe.component_id), { ports }); onApplied(); }} />
+        ) : (
           <>
-            <p class="dim">A client port asks for an address by DHCP and measures like an attendee's device. A target port claims a fixed address and serves the test endpoints. The management interface is never available.</p>
-            {problemList.length ? <ul class="form-error" role="alert">{problemList.map(([n, m]) => <li key={n}>{n}: {m}</li>)}</ul> : null}
-            {!hasAny && problemList.length === 0 ? <p class="hint">Assign at least one interface to the probe to continue.</p> : null}
+            <p class="dim">This host has no probe, so there are no test interfaces to assign.</p>
+            <div class="dialog-actions"><Button variant="primary" onClick={onApplied}>Continue</Button></div>
           </>
-        ) : <p class="dim">This host has no probe, so there are no test interfaces to assign.</p>}
-        <FormError error={error} />
-        <div class="dialog-actions"><Button variant="primary" disabled={!canApply || busy} onClick={() => void apply()}>{busy ? 'Applying…' : 'Apply'}</Button></div>
+        )}
       </Panel>
     </>
   );
