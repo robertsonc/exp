@@ -11,7 +11,7 @@ Resilience drills prove the monitoring and the network's failover actually work.
 
 ## Status
 
-**Milestones M0–M3 and M6 implemented and accepted; v0.3.0 released (0.1.0: M0–M2; 0.1.1: M3 and the agent netns-port fix; 0.2.0: M6 speedtest and Raspberry Pi hosts; 0.3.0: heartbeat cadence and lab fixes).** Contracts; probe, collector, dashboard; Cloudflare
+**Milestones M0–M3 and M6 implemented and accepted; v0.3.0 released (0.1.0: M0–M2; 0.1.1: M3 and the agent netns-port fix; 0.2.0: M6 speedtest and Raspberry Pi hosts; 0.3.0: site lines board, heartbeat cadence and lab fixes).** Contracts; probe, collector, dashboard; Cloudflare
 manager + admin UI; agent + one-line bootstrap; signed reproducible releases; CI. The M1 (A1.1–A1.5), M2 (A2.2–A2.8)
 and M3 (A3.1–A3.4: multi-site federation, webhook alerts, manager outage, site internet outage) acceptance suites pass
 in containers (`test/e2e/`); M1 runs in CI on every push, M1–M3 nightly (`e2e.yml`, A3.3 with the full 30-minute outage).

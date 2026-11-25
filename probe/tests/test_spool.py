@@ -10,13 +10,22 @@ from fakes import FakeClock
 from exp_probe import spool as spool_mod
 from exp_probe.spool import Spool
 
+# Records carry a fixed timestamp, so every spool here runs on a clock pinned to that day. With the real clock the
+# 7-day age bound drops them once the date is a week old (they failed on 2026-11-25T20:00Z for exactly that reason).
+REC_EPOCH = 1795032000.0   # 2026-11-18T20:00:00Z
+
+
+def _spool(path, **kw):
+    kw.setdefault("clock", FakeClock(REC_EPOCH))
+    return Spool(path, **kw)
+
 
 def rec(ts="2026-11-18T20:00:00.000Z", pad=0, rid=None):
     return {"schema": "exp.measurement/1", "id": rid or new_ulid(), "ts": ts, "test": "gateway", "x": "y" * pad}
 
 
 def test_roundtrip_order_and_delete(tmp_path):
-    s = Spool(tmp_path / "s.db")
+    s = _spool(tmp_path / "s.db")
     rs = [rec(rid=new_ulid(1_700_000_000_000 + i)) for i in range(50)]
     assert s.add_many(rs) == 50
     got = s.fetch(500)
@@ -31,7 +40,7 @@ def test_roundtrip_order_and_delete(tmp_path):
 
 def test_is_sqlite_wal_with_the_documented_table(tmp_path):
     p = tmp_path / "s.db"
-    Spool(p).add(rec())
+    _spool(p).add(rec())
     db = sqlite3.connect(p)
     assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     cols = {r[1]: r[2] for r in db.execute("PRAGMA table_info(spool)")}
@@ -40,7 +49,7 @@ def test_is_sqlite_wal_with_the_documented_table(tmp_path):
 
 
 def test_duplicate_id_is_stored_once(tmp_path):
-    s = Spool(tmp_path / "s.db")
+    s = _spool(tmp_path / "s.db")
     r = rec()
     assert s.add(r) is True and s.add(r) is False        # second one is ignored (same id)
     assert s.stat()["depth"] == 1
@@ -48,12 +57,12 @@ def test_duplicate_id_is_stored_once(tmp_path):
 
 def test_survives_restart(tmp_path):
     p = tmp_path / "s.db"
-    a = Spool(p)
+    a = _spool(p)
     ids = [rec()["id"] for _ in range(3)]
     for i in ids:
         a.add(rec(rid=i))
     a.close()
-    b = Spool(p)
+    b = _spool(p)
     assert [i for i, _ in b.fetch(10)] == ids and b.stat()["depth"] == 3
 
 
@@ -85,7 +94,7 @@ def test_age_bound_drops_old_records(tmp_path):
 
 
 def test_oversized_and_malformed_records_refused_not_raised(tmp_path):
-    s = Spool(tmp_path / "s.db")
+    s = _spool(tmp_path / "s.db")
     assert not s.add(rec(pad=spool_mod.MAX_LINE_BYTES + 10))
     assert not s.add({"id": "x"})                                          # no ts
     assert not s.add(b"not json")
@@ -97,13 +106,13 @@ def test_oversized_and_malformed_records_refused_not_raised(tmp_path):
 def test_corrupt_spool_is_set_aside_not_deleted(tmp_path):
     p = tmp_path / "s.db"
     p.write_bytes(b"this is not an sqlite database" * 100)
-    s = Spool(p)
+    s = _spool(p)
     assert s.add(rec()) and s.stat()["depth"] == 1
     assert list(tmp_path.glob("s.db.corrupt-*"))
 
 
 def test_concurrent_writers(tmp_path):
-    s = Spool(tmp_path / "s.db")
+    s = _spool(tmp_path / "s.db")
 
     def work():
         for _ in range(100):

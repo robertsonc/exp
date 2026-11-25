@@ -5,21 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-25
+
+Site lines board, heartbeat cadence, and fixes found bringing up the cr-lab containerlab lab.
+
 ### Added
 - Site lines board ("Event Grand Central", CR-site-lines-board): `/site/<id>/lines` in the dashboard, one line per
   network, one station per check, one train per probe port; trains move on real beats only and every state, finding and
   headline comes from the collector. Collector `GET /api/v1/sites/{site}/lines[/timeline]` (`exp.lines/1`); collector
   config `probes[].ports`; manager port fields **Network** and **Out-of-band reference** (stripped from the probe's
-  config).
-
-### Changed
-- Manager: the milestone M4 notes no longer name a probe version.
-
-## [0.3.0] - 2026-11-25
-
-Heartbeat cadence, and fixes found bringing up the cr-lab containerlab lab.
-
-### Added
+  config). A collector older than 0.3.0 ignores `probes[].ports`.
 - Heartbeat cadence (CR-heartbeat-cadence): the collector measures each line's beat spacing and judges state on a
   window of at least 2.5 beats (never below the spec window, capped at 180 s), so a slow heartbeat no longer reads
   `unknown` between beats; 5 s and 10 s are unchanged. Window texts and the incident hold use the effective window.
@@ -32,13 +27,17 @@ Heartbeat cadence, and fixes found bringing up the cr-lab containerlab lab.
 
 ### Changed
 - Manager: throughput, path and Wi-Fi tests, and the target and Wi-Fi port roles (milestone M4) are shown but cannot be
-  switched on, since the probe does not run them yet; existing settings can still be switched off.
+  switched on, since the probe does not run them yet; existing settings can still be switched off. The notes no longer
+  name a probe version.
 
 ### Fixed
 - `install.sh`: a site without a release is named as the cause, with the command that finishes the install.
 - Runner: `correlation.network` (attendee subnets, translated addresses, zone subnets, `require_real_client_ip`) is
   compiled from the same site settings as the speed-test box, so the NAT guard and the subnet-zone fallback work in
   managed deployments.
+- Probe tests: the spool tests run on a clock pinned to their records' date. With the real clock the 7-day age bound
+  dropped the fixed-date test records from 2026-11-25T20:00Z (the first v0.3.0 release run failed on it; nothing was
+  published).
 
 ## [0.2.0] - 2026-11-21
 
