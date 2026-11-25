@@ -77,7 +77,7 @@ this one). If you do reuse it, decommission the old collector host first.
    | collector | collector | iperf3 **on** (port 5201). Listen is auto-detected as 172.31.250.11:8443 (the default-route interface). |
    | box | speedtest **and** runner | see 3 and 4 |
    | dash | dashboard | *Address operators use*: `https://<lab host IP>:8443`. Required: sign-in returns you to this address, and without it the manager sends you to the unreachable mgmt IP |
-   | probe-a/b/c | probe | mode netns; test port **eth1**, role *client* (DHCP). Ports are set only in the Add host wizard, step 3: reopen it at `/hosts/new?host=<host id>`. Never assign eth0, the management port. (The *iperf3 (collector)* throughput toggle has no probe support in 0.2.0 yet.) |
+   | probe-a/b/c | probe | mode netns; test port **eth1**, role *client* (DHCP). Set ports on the probe's component page (**Test ports**), or in the Add host wizard, step 3. Never assign eth0, the management port. (The *iperf3 (collector)* throughput toggle has no probe support in 0.2.0 yet.) |
 
 3. **Speedtest -> site -> Speedtest settings**
 
@@ -97,7 +97,7 @@ this one). If you do reuse it, decommission the old collector host first.
    `172.30.1.7/32, 172.30.255.1/32` (svc's Kea and dnsmasq lines, and the AOS-CX). Leave Mist and EdgeConnect empty:
    identity then comes from the DHCP syslog fallback (Kea `DHCP4_LEASE_ALLOC` lines).
 
-Before the first enrolment, set the site's **release** (e.g. 0.2.0): with none, `install.sh` stops with "the desired state is missing the agent or release section". The host is enrolled by then (the token is spent), so re-run the installer without a token to finish: `docker exec clab-cr-lab-<node> bash -c 'curl -fsSL <manager>/install.sh | bash'`.
+Before the first enrolment, set the site's **release** (e.g. 0.2.0): with none, `install.sh` stops with "the host is enrolled, but site '...' has no release set in the manager yet" (0.2.0 installers said "the desired state is missing the agent or release section"). The host is enrolled by then (the token is spent), so re-run the installer without a token to finish: `docker exec clab-cr-lab-<node> bash -c 'curl -fsSL <manager>/install.sh | bash'`.
 
 Open the dashboard through **Manager → Dashboards → Open** (SSO); there are no local users until you add one.
 

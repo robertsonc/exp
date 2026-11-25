@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Iface } from '../src/api/types';
 import {
-  applyCollectorForm, applyDashboardForm, applyProbeForm, buildPorts, collectorFormFrom, dashboardFormFrom, defaultComponentId, defaultIntent,
+  applyCollectorForm, applyDashboardForm, applyProbeForm, buildPorts, draftsFromPorts, collectorFormFrom, dashboardFormFrom, defaultComponentId, defaultIntent,
   emptyDraft, ifaceBlockReason, probeFormFrom, sameConfig, type Cfg,
 } from '../src/lib/intent';
 import { slugify, versionLess } from '../src/lib/validate';
@@ -28,6 +28,14 @@ describe('probe interface picker', () => {
     const r = buildPorts(ifaces, { eno1: { ...emptyDraft(), role: 'client' } });
     expect(r.ports).toEqual([]);
     expect(r.errors['eno1']).toMatch(/Management interface/);
+  });
+  it('prefills the picker from a probe\'s current ports, and saving them unchanged gives the same list', () => {
+    const current = [{ id: 'c01', iface: 'enp1', role: 'client' }, { id: 's01', iface: 'enp2', role: 'target', address: '10.1.0.250/24', gateway: '10.1.0.1' }];
+    const drafts = draftsFromPorts(current);
+    expect(drafts['enp1']).toEqual({ ...emptyDraft(), role: 'client' });
+    expect(buildPorts(ifaces, drafts).ports).toEqual(current);
+    expect(draftsFromPorts(undefined)).toEqual({});
+    expect(draftsFromPorts([{ iface: 'x', role: 'mgmt' }, null, 'junk'])).toEqual({});
   });
   it('numbers ports per role and validates target addresses', () => {
     const r = buildPorts(ifaces, {

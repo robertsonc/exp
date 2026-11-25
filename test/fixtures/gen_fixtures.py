@@ -624,8 +624,19 @@ def runner_corr_cfg() -> dict:
                     "syslog": {"listen": ["udp:5514", "tcp:5514", "tls:6514"], "bind": "0.0.0.0", "allow": ["10.0.0.0/8"], "rate_limit_lines_per_s": 200,
                                "max_line_bytes": 4096, "ring_minutes": 60, "tls": {"mode": "self_signed"}},
                     "sse": {"enabled": False}},
+                # compiled by the manager from the same site settings as the box's serve block (CR-m6-runner-network)
+                "network": runner_network(),
                 "privacy": {"scrub_after_diagnosis": False},
                 "speedtest_channel": {"url": "http://127.0.0.1:8480/local/v1"}}}
+
+
+def runner_network() -> dict:
+    """The runner's identity inputs mirror the speedtest's serve + zone_labels (one source, two configs)."""
+    st = speedtest_cfg()
+    return {"require_real_client_ip": st["serve"]["require_real_client_ip"],
+            "client_subnets": list(st["serve"]["client_subnets"]),
+            "translated_addresses": list(st["serve"]["translated_addresses"]),
+            "zone_subnets": [dict(z) for z in st["zone_labels"]["subnets"]]}
 
 
 def collector_speedtests_cfg() -> dict:

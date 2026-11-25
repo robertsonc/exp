@@ -5,7 +5,7 @@ import { useResource } from '../data/hooks';
 import { useHostData } from '../data/hostData';
 import { Badge, EmptyState, ErrorBanner, Missing, Panel, SkeletonBlock, StatusPill, Tabs, healthPill } from '../components/atoms';
 import { OpenDashboardButton } from '../components/OpenDashboard';
-import { CollectorEditor, DashboardEditor, ProbeEditor, RunnerEditor } from './ComponentEditors';
+import { CollectorEditor, DashboardEditor, ProbeEditor, ProbePortsPanel, RunnerEditor } from './ComponentEditors';
 import { MetricChart, RangePicker, rangeFrom, useMetrics } from '../components/MetricChart';
 import { Link, MetricTile, UsageBar } from '../components/viz';
 import { PageHeader } from './common';
@@ -365,6 +365,7 @@ export function ComponentPage({ id, cid, me }: { id: string; cid: string; me?: M
       {tab === 'configure' ? (
         <div role="tabpanel" id="panel-configure" aria-labelledby="tab-configure">
           {comp.type === 'probe' ? <ProbeEditor key={`${comp.component_id}:${comp.updated_at}`} comp={comp} me={me} /> : null}
+          {comp.type === 'probe' ? <ProbePortsPanel comp={comp} host={d.host.data ?? undefined} me={me} /> : null}
           {comp.type === 'runner' ? <RunnerEditor key={`${comp.component_id}:${comp.updated_at}`} comp={comp} me={me} /> : null}
           {comp.type === 'collector' ? <CollectorEditor key={`${comp.component_id}:${comp.updated_at}`} comp={comp} me={me} /> : null}
           {comp.type === 'dashboard' ? <DashboardEditor key={`${comp.component_id}:${comp.updated_at}`} comp={comp} me={me} tlsFingerprint={typeof sc?.facts?.['tls_fingerprint_sha256'] === 'string' ? (sc.facts['tls_fingerprint_sha256'] as string) : typeof comp.facts?.['tls_fingerprint_sha256'] === 'string' ? (comp.facts['tls_fingerprint_sha256'] as string) : null} factsUrl={typeof sc?.facts?.['url'] === 'string' ? (sc.facts['url'] as string) : typeof comp.facts?.['url'] === 'string' ? (comp.facts['url'] as string) : null} />

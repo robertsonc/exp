@@ -30,9 +30,9 @@ function settingsFromFixture(): Record<string, unknown> {
   return { ...rest, branding };
 }
 
-/** the admin-owned part of the fixture's correlation block (privacy + channel are compiled by the manager) */
+/** the admin-owned part of the fixture's correlation block (privacy, channel and network are compiled by the manager) */
 function runnerOwn(): Record<string, unknown> {
-  const { privacy: _p, speedtest_channel: _s, ...own } = fx("configs/runner.correlation.json").correlation;
+  const { privacy: _p, speedtest_channel: _s, network: _n, ...own } = fx("configs/runner.correlation.json").correlation;
   return own;
 }
 
@@ -109,6 +109,24 @@ describe("the all-in-one host (collector + probe + runner + speedtest)", () => {
     const got = comp(d, "runner").config;
     expect(got.correlation).toEqual(want.correlation);
     expect(validateAgainst("runner.config.schema.json", got)).toEqual([]);
+  });
+
+  it("the runner's correlation.network mirrors the box's NAT-guard inputs, also when they default to the zone labels", () => {
+    const d = build(m6World());
+    const net = comp(d, "runner").config.correlation.network;
+    const serve = comp(d, "speedtest").config.serve;
+    expect(net).toEqual({ require_real_client_ip: true, client_subnets: serve.client_subnets, translated_addresses: serve.translated_addresses,
+      zone_subnets: comp(d, "speedtest").config.zone_labels.subnets });
+    // no explicit attendee subnets: both configs fall back to the zone-label subnets
+    const w = m6World();
+    const st = w.speedtest!["hall-b"]!;
+    const { client_subnets: _c, ...serveNoSubnets } = st.settings.serve as Record<string, unknown>;
+    st.settings = { ...st.settings, serve: serveNoSubnets };
+    const d2 = build(w);
+    const zoneCidrs = (comp(d2, "speedtest").config.zone_labels.subnets as Array<{ cidr: string }>).map((z) => z.cidr);
+    expect(comp(d2, "speedtest").config.serve.client_subnets).toEqual(zoneCidrs);
+    expect(comp(d2, "runner").config.correlation.network.client_subnets).toEqual(zoneCidrs);
+    expect(validateAgainst("runner.config.schema.json", comp(d2, "runner").config)).toEqual([]);
   });
 
   it("the collector config gains the speedtests block and accepts the two new tokens (hashes) + the device key", () => {
@@ -259,10 +277,11 @@ describe("zod mirrors agree with the JSON Schema fixtures", () => {
 
   it("the runner correlation sources of the fixture pass CorrelationConfigSchema, SSE on does not", () => {
     const corr = fx("configs/runner.correlation.json").correlation;
-    const { privacy: _p, speedtest_channel: _s, ...own } = corr;
+    const { privacy: _p, speedtest_channel: _s, network: _n, ...own } = corr;
     expect(CorrelationConfigSchema.safeParse(own).success).toBe(true);
+    expect(CorrelationConfigSchema.safeParse({ ...own, network: corr.network }).success).toBe(false); // compiled, not admin-set
     expect(CorrelationConfigSchema.safeParse({ sources: { sse: { enabled: true } } }).success).toBe(false);
-    expect(CorrelationConfigSchema.safeParse(corr).success).toBe(false); // privacy + channel are the manager's, not the admin's
+    expect(CorrelationConfigSchema.safeParse(corr).success).toBe(false); // privacy, channel and network are the manager's, not the admin's
   });
 
   it("the speedtest component config accepts only host-level overrides", () => {
