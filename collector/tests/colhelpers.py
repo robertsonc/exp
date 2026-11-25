@@ -269,7 +269,9 @@ class Env:
         self.ingest_token2 = ids.new_token("expi")
         self.dash_token = ids.new_token("expd")
         self.cfg_doc = json.loads(CONFIG_FIXTURE.read_text())
-        self.cfg_doc["probes"] = [{"probe_id": "probe-a1", "site": "hall-b", "label": "Hall B east"},
+        # probe-a1 is on the site lines board: two networks of two wired ports each (CR-site-lines-board)
+        board = [{"id": f"c0{i}", "network": "event" if i <= 2 else "vendor", "media": "wired"} for i in range(1, 5)]
+        self.cfg_doc["probes"] = [{"probe_id": "probe-a1", "site": "hall-b", "label": "Hall B east", "ports": board},
                                   {"probe_id": "probe-a2", "site": "hall-b", "label": "Hall B west"},
                                   {"probe_id": "probe-c1", "site": "hall-c", "label": "Hall C"}]
         self.write_creds({"probe-a1": ids.token_hash(self.ingest_token),

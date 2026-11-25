@@ -117,6 +117,8 @@ fieldset.bare { border: 0; padding: 0; margin: 0; min-width: 0; }
 .iface-reason { display: block; margin-top: 4px; font-size: var(--exp-text-xs); color: var(--exp-text-dim); }
 .iface-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .iface-extra input { width: 100%; }
+.iface-extra .inline-check { display: flex; align-items: center; gap: 6px; font-size: 0.9em; }
+.iface-extra .inline-check input { width: auto; }
 .iface-blocked th, .iface-blocked td { background: var(--exp-surface-2); }
 .apply-list { display: flex; flex-direction: column; margin: var(--exp-space-3) 0; }
 .apply-list li { display: flex; justify-content: space-between; align-items: center; gap: var(--exp-space-3); padding: 8px 0; border-bottom: 1px solid var(--exp-stroke); }

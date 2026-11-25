@@ -107,7 +107,7 @@ def drv(world, tmp_path):
     d.feeder.stop()
 
 
-@pytest.mark.parametrize("scenario", ["xss", "rewind", "live", "incidents", "overview", "kiosk", "mobile", "login"])
+@pytest.mark.parametrize("scenario", ["xss", "rewind", "live", "incidents", "overview", "kiosk", "mobile", "login", "lines"])
 def test_scenario(drv, scenario):
     drv.run(scenario)
 

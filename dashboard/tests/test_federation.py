@@ -265,3 +265,20 @@ def test_upstream_requests_carry_user_for_audit(world):
     assert last["user"] == "alice" and last["note"] == "seen"
     inc = world.fakes["col-a"].app.incidents[-1]
     assert inc["acked_by"] == "alice"
+
+
+def test_site_lines_board_goes_to_the_collector_that_serves_the_site(world):
+    """CR-site-lines-board: /sites/{site}/lines[/timeline] is relayed to the collector of that site; a site no
+    collector serves is 404; the site and the query are validated before anything leaves the dashboard."""
+    doc = {"schema": "exp.lines/1", "site": "hall-b", "networks": [], "findings": []}
+    with world.fakes["col-b"].app.lock:
+        world.fakes["col-b"].app.board_docs["hall-b"] = doc
+        world.fakes["col-b"].app.board_timelines["hall-b"] = {"schema": "exp.lines-timeline/1", "networks": []}
+    c = world.as_user("vera")
+    r = c.get("/api/v1/sites/hall-b/lines")
+    assert r.status == 200 and r.json() == doc and r.headers.get("x-exp-collector") == "col-b"
+    assert c.get("/api/v1/sites/hall-b/lines/timeline?step_s=10").json()["schema"] == "exp.lines-timeline/1"
+    assert c.get("/api/v1/sites/nowhere/lines").status == 404
+    assert c.get("/api/v1/sites/Bad_Site/lines").status == 400
+    assert c.get("/api/v1/sites/hall-b/lines?at=not-a-time").status == 400
+    assert c.get("/api/v1/sites/hall-b/lines/other").status == 404

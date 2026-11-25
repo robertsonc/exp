@@ -26,7 +26,9 @@ const TZ_RE = /^(UTC|[A-Za-z]+(\/[A-Za-z0-9_+-]+){1,2})$/;
 const HTTPS_URL = /^https:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(\/[^\s]*)?$/;
 
 const slugS = z.string().regex(SLUG_RE);
-const base = { id: slugS, iface: z.string().regex(IFACE_RE) };
+// network / reference: the site lines board (CR-site-lines-board). Manager-only: stripped from the probe's config and
+// compiled into the collector's (the probe does not use them).
+const base = { id: slugS, iface: z.string().regex(IFACE_RE), network: slugS.optional(), reference: z.boolean().optional() };
 export const PortSchema = z.discriminatedUnion("role", [
   z.object({
     ...base,

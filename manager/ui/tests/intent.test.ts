@@ -37,6 +37,17 @@ describe('probe interface picker', () => {
     expect(draftsFromPorts(undefined)).toEqual({});
     expect(draftsFromPorts([{ iface: 'x', role: 'mgmt' }, null, 'junk'])).toEqual({});
   });
+  it('board fields: a network (slug) and a reference flag ride on client and Wi-Fi ports only', () => {
+    const r = buildPorts(ifaces, { enp1: { ...emptyDraft(), role: 'client', network: 'Hall-A ', reference: true } });
+    expect(r.errors).toEqual({});
+    expect(r.ports).toEqual([{ id: 'c01', iface: 'enp1', role: 'client', network: 'hall-a', reference: true }]);
+    expect(buildPorts(ifaces, { enp1: { ...emptyDraft(), role: 'client', network: 'hall a' } }).errors['enp1']).toMatch(/Network/);
+    expect(buildPorts(ifaces, { enp1: { ...emptyDraft(), role: 'client', reference: true } }).errors['enp1']).toMatch(/reference/);
+    const t = buildPorts(ifaces, { enp2: { ...emptyDraft(), role: 'target', address: '10.1.0.250/24', gateway: '10.1.0.1', network: 'x' } });
+    expect(t.ports[0]).not.toHaveProperty('network');
+    expect(draftsFromPorts([{ id: 'c01', iface: 'enp1', role: 'client', network: 'event', reference: true }])['enp1'])
+      .toMatchObject({ network: 'event', reference: true });
+  });
   it('numbers ports per role and validates target addresses', () => {
     const r = buildPorts(ifaces, {
       enp1: { ...emptyDraft(), role: 'client' },

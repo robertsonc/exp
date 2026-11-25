@@ -213,6 +213,44 @@ S.overview = async () => {
   await browser.close();
 };
 
+// The site lines board (CR-site-lines-board): reached from the overview, renders the collector's exp.lines/1 only,
+// the finding card and its pattern strip, the ribbon pins a moment and goes back to live, no horizontal scroll at 390 px.
+S.lines = async () => {
+  const { browser, page } = await open({ user: "vera" });
+  await page.goto(cfg.base + "/");
+  await page.waitForSelector(".site[data-site='hall-b'] .site-lines");
+  await page.click(".site[data-site='hall-b'] .site-lines");
+  await page.waitForFunction(() => location.pathname === "/site/hall-b/lines");
+  await page.waitForFunction(() => document.querySelector(".lines-h1").textContent.includes("Same failure, 2 networks"), null, { timeout: 20000 });
+  assert.strictEqual(await page.locator(".lines").getAttribute("data-phase"), "down");
+  assert.strictEqual((await page.locator(".lines-chip").textContent()).trim(), "INVESTIGATING");
+  assert.ok((await page.locator(".lines-sub").textContent()).includes("it is the resolver"), "by-IP evidence reaches the words");
+  const card = page.locator(".lines-card").first();
+  assert.ok((await card.locator("h3").textContent()).startsWith("Stopped at DNS"));
+  assert.strictEqual(await card.locator(".lines-sig li[data-state='stopped']").textContent(), "DNS");
+  assert.ok((await card.locator(".lines-ev").first().textContent()).includes("Names fail, the path is fine."));
+  assert.ok(await page.locator("canvas.lines-map").isVisible() && await page.locator("canvas.lines-ribbon").isVisible());
+  // the ribbon pins a moment (history mode) and "Back to live" returns
+  const box = await page.locator("canvas.lines-ribbon").boundingBox();
+  await page.mouse.click(box.x + box.width * 0.5, box.y + 12);
+  await page.waitForSelector(".lines-pinned:not([hidden])");
+  assert.strictEqual(await page.locator(".lines").getAttribute("data-mode"), "history");
+  await page.click(".lines-pinned button");
+  await page.waitForFunction(() => document.querySelector(".lines").dataset.mode === "live");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await sleep(500);
+  await page.screenshot({ path: cfg.out + "/lines-desktop.png", fullPage: true });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await sleep(300);
+  await page.screenshot({ path: cfg.out + "/lines-desktop-dark.png", fullPage: true });
+  await page.emulateMedia({ colorScheme: "light" });
+  // phone width: nothing scrolls sideways
+  await page.setViewportSize({ width: 390, height: 844 });
+  await sleep(300);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal scroll at 390 px");
+  await browser.close();
+};
+
 S.incidents = async () => {
   // viewer: list, filters, link to the board at the incident time; no acknowledge buttons
   let ctxs = await open({ user: "vera" });

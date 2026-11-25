@@ -70,7 +70,8 @@ export function mountOverview(root, opts) {
       const bad = list.filter((r) => r.sev !== "ok").length;
       el.groups.appendChild(h("section", { class: "site", data: { site }, "aria-label": titleCase(site) },
         h("h2", { class: "site-name" }, icon("site"), titleCase(site) || "No site",
-          h("span", { class: "site-count", text: bad ? bad + " of " + list.length + " need a look" : list.length + (list.length === 1 ? " probe" : " probes") + ", all good" })),
+          h("span", { class: "site-count", text: bad ? bad + " of " + list.length + " need a look" : list.length + (list.length === 1 ? " probe" : " probes") + ", all good" }),
+          site ? h("a", { class: "site-lines", href: "/site/" + encodeURIComponent(site) + "/lines", "data-spa": "", text: "Lines board" }) : null),
         h("ul", { class: "probe-rows" }, list.map(row))));
     }
   }

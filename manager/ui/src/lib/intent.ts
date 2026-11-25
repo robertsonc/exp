@@ -74,8 +74,9 @@ export function defaultIntent(shape: Shape, hostName: string): Cfg {
 // ---- probe port picker -----------------------------------------------------------------------------------------
 
 export type PortRole = 'none' | 'client' | 'target' | 'wifi';
-export interface PortDraft { role: PortRole; address: string; gateway: string; ssid: string }
-export const emptyDraft = (): PortDraft => ({ role: 'none', address: '', gateway: '', ssid: '' });
+export interface PortDraft { role: PortRole; address: string; gateway: string; ssid: string; network: string; reference: boolean }
+export const emptyDraft = (): PortDraft => ({ role: 'none', address: '', gateway: '', ssid: '', network: '', reference: false });
+const NETWORK_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** Why an interface cannot carry tests, or null when it can. The management interface is never selectable. */
 export function ifaceBlockReason(i: Iface, ownProbe?: string): string | null {
@@ -94,7 +95,8 @@ export function draftsFromPorts(ports: unknown): Record<string, PortDraft> {
     const iface = typeof c['iface'] === 'string' ? c['iface'] : null;
     const role = c['role'];
     if (!iface || (role !== 'client' && role !== 'target' && role !== 'wifi')) continue;
-    out[iface] = { role, address: typeof c['address'] === 'string' ? c['address'] : '', gateway: typeof c['gateway'] === 'string' ? c['gateway'] : '', ssid: typeof c['ssid'] === 'string' ? c['ssid'] : '' };
+    out[iface] = { role, address: typeof c['address'] === 'string' ? c['address'] : '', gateway: typeof c['gateway'] === 'string' ? c['gateway'] : '', ssid: typeof c['ssid'] === 'string' ? c['ssid'] : '',
+      network: typeof c['network'] === 'string' ? c['network'] : '', reference: c['reference'] === true };
   }
   return out;
 }
@@ -117,9 +119,19 @@ export function buildPorts(ifaces: Iface[], drafts: Record<string, PortDraft>, o
     }
     n[d.role] += 1;
     const id = `${d.role === 'client' ? 'c' : d.role === 'target' ? 's' : 'w'}${String(n[d.role]).padStart(2, '0')}`;
-    if (d.role === 'client') ports.push({ id, iface: i.name, role: 'client' });
+    // the site lines board (CR-site-lines-board): which network an attendee port measures; manager-only
+    const board: Cfg = {};
+    if (d.role === 'client' || d.role === 'wifi') {
+      const net = d.network.trim().toLowerCase();
+      if (net && !NETWORK_RE.test(net)) errors[i.name] = 'Network: lower-case letters, digits and dashes, for example hall-a.';
+      else if (net) {
+        board['network'] = net;
+        if (d.reference) board['reference'] = true;
+      } else if (d.reference) errors[i.name] = 'Give the reference port a network name.';
+    }
+    if (d.role === 'client') ports.push({ id, iface: i.name, role: 'client', ...board });
     else if (d.role === 'wifi') {
-      const p: Cfg = { id, iface: i.name, role: 'wifi' };
+      const p: Cfg = { id, iface: i.name, role: 'wifi', ...board };
       if (d.ssid.trim()) {
         if (d.ssid.length > 32 || CTRL.test(d.ssid)) errors[i.name] = 'SSID must be at most 32 characters without control characters.';
         else p['ssid'] = d.ssid.trim();
@@ -385,7 +397,7 @@ export function applyDashboardForm(config: Cfg, f: DashboardForm): { config: Cfg
   return { config: out, problems: p };
 }
 
-/** Probe features the 0.2.0 probe does not have yet (milestone M4, probe/README.md): the probe skips a configured one
+/** Probe features the probe does not have yet (milestone M4, probe/README.md): the probe skips a configured one
  * and logs "not available in this build". The UI says so and does not offer to switch them on. */
-export const PROBE_M4_NOTE = 'Not in the 0.2.0 probe yet (milestone M4): the probe would skip it. You can still switch an existing one off.';
-export const PROBE_M4_ROLE_NOTE = 'not in 0.2.0 probes (M4)';
+export const PROBE_M4_NOTE = 'Not in the probe yet (milestone M4): the probe would skip it. You can still switch an existing one off.';
+export const PROBE_M4_ROLE_NOTE = 'not in the probe yet (M4)';

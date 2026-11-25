@@ -86,6 +86,12 @@ def seed(world: Any) -> dict[str, Any]:
             t += 10000
         for i in range(0, len(docs), 500):
             ingest(world, probe, docs[i:i + 500])
+    # the site lines board of hall-b (CR-site-lines-board): a real exp.lines/1 built by the collector's own code from
+    # synthetic records (two networks lose DNS, the reference passes), served by the hall-b fake collector
+    board, tl = board_docs(now)
+    with world.fakes["col-b"].app.lock:
+        world.fakes["col-b"].app.board_docs["hall-b"] = board
+        world.fakes["col-b"].app.board_timelines["hall-b"] = tl
     # a rich, hostile probe served from a state document (labels and texts are attacker-controlled)
     col_a = world.fakes["col-a"].app
     doc = json.loads((ROOT / "test/fixtures/state/gateway-fail.json").read_text())
@@ -115,3 +121,31 @@ def seed(world: Any) -> dict[str, Any]:
     feeder = Feeder(world, ("probe-a1", "probe-c1"))
     feeder.start()
     return {"now": now, "fail_from": fail_from, "fail_to": fail_to, "feeder": feeder}
+
+
+def board_docs(now: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    """exp.lines/1 and its timeline for hall-b, from the collector's rules engine (not a hand-written fixture)."""
+    import sys
+    for p in (ROOT / "collector", ROOT / "collector" / "tests"):
+        if str(p) not in sys.path:
+            sys.path.insert(0, str(p))
+    import synth
+    from exp_collector.config import BoardPort
+    from exp_collector.lines import site_lines, timeline
+    from exp_collector.rules import evaluate_records
+
+    nets = {"vendor": "probe-vn", "admin": "probe-ad", "event": "probe-ev", "control": "probe-ct"}
+    evs, ports = {}, {}
+    for net, probe in nets.items():
+        recs: list[dict[str, Any]] = []
+        for t in range(now - 20 * 60000, now + 1, 10000):
+            for i in (1, 2, 3):
+                port = f"c0{i}"
+                dns_bad = net in ("vendor", "admin") and t >= now - 90000
+                recs += [{**r, "probe": probe} for r in (
+                    synth.mk("gateway", t, "ok", port=port, metrics={"link_up": 1, "loss_pct": 0, "rtt_ms": 0.5}),
+                    synth.dhcp_hb(t + 100, port=port), *synth.dns_hb(t + 200, ok=not dns_bad, port=port),
+                    synth.trace(t + 300, port=port), synth.app(t + 400, ok=not dns_bad, port=port))]
+        evs[probe] = evaluate_records(recs, now, probe=probe, site="hall-b")
+        ports[probe] = [BoardPort(f"c0{i}", net, "wired", net == "control") for i in (1, 2, 3)]
+    return site_lines(evs, ports, "hall-b", now, live=True), timeline(evs, ports, now - 15 * 60000, now, 10000)

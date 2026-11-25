@@ -55,7 +55,8 @@ CONTENT_TYPES = {
     ".txt": "text/plain; charset=utf-8", ".webmanifest": "application/manifest+json",
     ".woff2": "font/woff2", ".map": "application/json",
 }
-SPA_ROUTES = re.compile(r"^/(probe/[a-z0-9][a-z0-9-]{0,63}|incidents|drills|login"
+SPA_ROUTES = re.compile(r"^/(probe/[a-z0-9][a-z0-9-]{0,63}|site/[a-z0-9][a-z0-9-]{0,63}/lines"
+                        r"|incidents|drills|login"
                         r"|speedtests(/(breakdowns|support|test/st_[0-9A-HJKMNP-TV-Z]{26}))?"
                         r"|st/r/st_[0-9A-HJKMNP-TV-Z]{26})?/?$")
 _BAD_TARGET = re.compile(r"[\x00-\x20\x7f-\xff\\]")
@@ -504,6 +505,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._relay(*fed.get(segs[0], query, user))
         if len(segs) == 2 and segs[0] == "drills" and segs[1] != "control":
             return self._relay(*fed.get_try_all(f"drills/{segs[1]}", user))
+        board = len(segs) in (3, 4) and segs[0] == "sites" and segs[2] == "lines"
+        if board and (len(segs) == 3 or segs[3] == "timeline"):
+            return self._relay(*fed.get_site_lines(segs[1], len(segs) == 4, query, user))
         raise ApiProblem(404, "not_found", "no such endpoint")
 
     def _speedtests(self, s: Session, segs: list[str], query: dict[str, list[str]]) -> None:

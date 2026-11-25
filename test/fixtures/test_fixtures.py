@@ -26,7 +26,7 @@ DOC_SCHEMAS = {"measurement": "exp.measurement/1", "desired": "exp.desired/1", "
                "state": "exp.state/1", "beats": "exp.beats/1", "manifest": "exp.manifest/1", "probe.config": "exp.probe.config/1",
                "collector.config": "exp.collector.config/1", "dashboard.config": "exp.dashboard.config/1", "runner.config": "exp.runner.config/1",
                "speedtest": "exp.speedtest/1", "speedtest.submission": "exp.speedtest.submission/1", "evidence": "exp.evidence/1",
-               "speedtest.config": "exp.speedtest.config/1"}
+               "speedtest.config": "exp.speedtest.config/1", "lines": "exp.lines/1"}
 
 
 def load(path: str):
