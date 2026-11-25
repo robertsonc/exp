@@ -397,7 +397,7 @@ export function applyDashboardForm(config: Cfg, f: DashboardForm): { config: Cfg
   return { config: out, problems: p };
 }
 
-/** Probe features the 0.2.0 probe does not have yet (milestone M4, probe/README.md): the probe skips a configured one
+/** Probe features the probe does not have yet (milestone M4, probe/README.md): the probe skips a configured one
  * and logs "not available in this build". The UI says so and does not offer to switch them on. */
-export const PROBE_M4_NOTE = 'Not in the 0.2.0 probe yet (milestone M4): the probe would skip it. You can still switch an existing one off.';
-export const PROBE_M4_ROLE_NOTE = 'not in 0.2.0 probes (M4)';
+export const PROBE_M4_NOTE = 'Not in the probe yet (milestone M4): the probe would skip it. You can still switch an existing one off.';
+export const PROBE_M4_ROLE_NOTE = 'not in the probe yet (M4)';

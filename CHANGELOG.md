@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+### Added
+- Site lines board ("Event Grand Central", CR-site-lines-board): `/site/<id>/lines` in the dashboard, one line per
+  network, one station per check, one train per probe port; trains move on real beats only and every state, finding and
+  headline comes from the collector. Collector `GET /api/v1/sites/{site}/lines[/timeline]` (`exp.lines/1`); collector
+  config `probes[].ports`; manager port fields **Network** and **Out-of-band reference** (stripped from the probe's
+  config).
+
+### Changed
+- Manager: the milestone M4 notes no longer name a probe version.
+
 ## [0.3.0] - 2026-11-25
 
 Heartbeat cadence, and fixes found bringing up the cr-lab containerlab lab.

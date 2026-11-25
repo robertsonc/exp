@@ -8,7 +8,7 @@ import { PROBE_M4_ROLE_NOTE, buildPorts, emptyDraft, ifaceBlockReason, type Cfg,
 import { Button, EmptyState, StatusPill } from './atoms';
 import { FormError, failText } from './forms';
 
-// Target and Wi-Fi ports are M4 (probe/README.md): a 0.2.0 probe cannot use them, so they are shown but not offered.
+// Target and Wi-Fi ports are M4 (probe/README.md): the probe cannot use them yet, so they are shown but not offered.
 const ROLES: { v: PortRole; l: string; m4?: boolean }[] = [
   { v: 'none', l: 'Not used' }, { v: 'client', l: 'Client (DHCP)' },
   { v: 'target', l: `Target (serves tests), ${PROBE_M4_ROLE_NOTE}`, m4: true }, { v: 'wifi', l: `Wi-Fi, ${PROBE_M4_ROLE_NOTE}`, m4: true },
