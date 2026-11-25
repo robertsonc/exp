@@ -3,6 +3,7 @@ import { api, loadSession, session, toLogin, ApiError } from "./api.js";
 import { h, clear, icon, isSlug } from "./dom.js";
 import { setTimezone, pref } from "./util.js";
 import { mountBoard } from "./board.js";
+import { mountLines } from "./lines.js";
 import { mountOverview } from "./overview.js";
 import { mountIncidents } from "./incidents.js";
 import { mountLogin } from "./login.js";
@@ -42,7 +43,7 @@ async function logout() {
 
 function renderChrome(params, path) {
   clear(chrome);
-  const kiosk = params.get("kiosk") === "1" && (path === "/" || path.startsWith("/probe/"));
+  const kiosk = params.get("kiosk") === "1" && (path === "/" || path.startsWith("/probe/") || /^\/site\/[a-z0-9-]+\/lines$/.test(path));
   document.body.classList.toggle("kiosk", kiosk);
   chrome.hidden = kiosk || path === "/login";
   if (chrome.hidden) return;
@@ -109,6 +110,7 @@ async function route() {
   const staticMode = params.get("static") === "1";
   const kiosk = document.body.classList.contains("kiosk");
   const probe = /^\/probe\/([a-z0-9][a-z0-9-]{0,63})$/.exec(path);
+  const lines = /^\/site\/([a-z0-9][a-z0-9-]{0,63})\/lines$/.exec(path);
   const common = { static: staticMode, voice: params.get("voice"), defaultVoice: session.voice, navigate: soft, go };
   const test = /^\/speedtests\/test\/(st_[0-9A-HJKMNP-TV-Z]{26})$/.exec(path);
   const shared = /^\/st\/r\/(st_[0-9A-HJKMNP-TV-Z]{26})$/.exec(path);
@@ -117,6 +119,9 @@ async function route() {
     document.title = "Overview";
     mount(() => kiosk ? mountKiosk(app, { ...common, rotate: params.get("rotate"), site: params.get("site") })
       : mountOverview(app, { ...common, site: params.get("site") }));
+  } else if (lines && isSlug(lines[1])) {
+    document.title = "Lines · " + lines[1];
+    mount(() => mountLines(app, { ...common, site: lines[1], kiosk }));
   } else if (probe && isSlug(probe[1])) {
     mount(() => mountBoard(app, { ...common, probe: probe[1], at: params.get("at"), kiosk }));
   } else if (path === "/incidents") {

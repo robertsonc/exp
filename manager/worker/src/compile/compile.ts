@@ -139,6 +139,28 @@ function probePeers(ctx: Ctx, cfg: Obj, collector: WComponent | null): Obj {
   return { ...cfg, tests };
 }
 
+/** The ports the probe gets: without the manager-only board fields (CR-site-lines-board). */
+function probePorts(ports: unknown): unknown {
+  if (!Array.isArray(ports)) return ports;
+  return ports.map((p) => {
+    if (!isObj(p)) return p;
+    const { network: _n, reference: _r, ...rest } = p;
+    return rest;
+  });
+}
+
+/** The collector's board map of one probe: ports that carry a network label (CR-site-lines-board). */
+export function boardPorts(cfg: Obj): Array<{ id: string; network: string; media: "wired" | "wireless"; reference: boolean }> {
+  const ports = Array.isArray(cfg.ports) ? cfg.ports : [];
+  const out: Array<{ id: string; network: string; media: "wired" | "wireless"; reference: boolean }> = [];
+  for (const p of ports) {
+    if (!isObj(p) || typeof p.id !== "string" || typeof p.network !== "string" || !p.network) continue;
+    if (p.role !== "client" && p.role !== "wifi") continue;          // target ports serve tests, they are not attendees
+    out.push({ id: p.id, network: p.network, media: p.role === "wifi" ? "wireless" : "wired", reference: p.reference === true });
+  }
+  return out.slice(0, 64);
+}
+
 function buildProbe(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | null {
   const { w, host } = ctx;
   const cfg = c.config;
@@ -167,7 +189,7 @@ function buildProbe(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | null
     collector: ep ? { url: ep.url, tls_fingerprint_sha256: ep.pin, fallback: [] } : null,
     mode: typeof cfg.mode === "string" ? cfg.mode : "netns",
     mgmt_iface: iface,
-    ports: base.ports,
+    ports: probePorts(base.ports),
     ...pick(base, ["heartbeat", "tests", "spool", "labels", "drills"]),
   };
   const tok = w.secrets[secretKey(c.component_id, INGEST_KIND)];
@@ -207,9 +229,12 @@ function buildCollector(ctx: Ctx, c: WComponent): { config: Obj; creds: Obj } | 
     listen,
     probes: probes.map((p) => {
       const label = typeof p.config.label === "string" ? p.config.label : undefined;
-      return label !== undefined
-        ? { probe_id: p.slug, site: hostOf(w, p)?.site ?? ctx.host.site, label }
-        : { probe_id: p.slug, site: hostOf(w, p)?.site ?? ctx.host.site };
+      const ports = boardPorts(p.config);
+      return {
+        probe_id: p.slug, site: hostOf(w, p)?.site ?? ctx.host.site,
+        ...(label !== undefined ? { label } : {}),
+        ...(ports.length ? { ports } : {}),
+      };
     }),
     dashboards: dashes.map((d) => d.slug),
     ...(isObj(cfg.retention) || Object.keys(site.retention).length

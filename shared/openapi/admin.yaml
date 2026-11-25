@@ -667,13 +667,25 @@ components:
           type: boolean
       additionalProperties: false
       minProperties: 1
+    ManagedPort:
+      description: A probe port as the manager stores it. `network` and `reference` place the port on the site lines
+        board (CR-site-lines-board); they are compiled into the collector's config and stripped from the probe's.
+      allOf:
+      - $ref: ../schemas/probe.config.schema.json#/$defs/port
+      - type: object
+        properties:
+          network:
+            $ref: ../schemas/common.schema.json#/$defs/slug
+          reference:
+            type: boolean
+            description: The port measures the out-of-band reference network (its own DHCP, DNS and internet path).
     PortsPut:
       type: object
       properties:
         ports:
           type: array
           items:
-            $ref: ../schemas/probe.config.schema.json#/$defs/port
+            $ref: '#/components/schemas/ManagedPort'
           maxItems: 64
           minItems: 1
       required:
@@ -690,7 +702,7 @@ components:
         ports:
           type: array
           items:
-            $ref: ../schemas/probe.config.schema.json#/$defs/port
+            $ref: '#/components/schemas/ManagedPort'
           maxItems: 64
         desired_version:
           anyOf:

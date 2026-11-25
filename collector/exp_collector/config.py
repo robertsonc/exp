@@ -51,10 +51,20 @@ class CollectorConfigError(ValueError):
 
 
 @dataclasses.dataclass(frozen=True)
+class BoardPort:
+    """One attendee port on the site lines board (CR-site-lines-board)."""
+    id: str
+    network: str
+    media: str = "wired"            # wired | wireless
+    reference: bool = False         # the out-of-band reference network
+
+
+@dataclasses.dataclass(frozen=True)
 class ProbeEntry:
     probe_id: str
     site: str
     label: str = ""
+    ports: tuple[BoardPort, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -104,7 +114,9 @@ class CollectorConfig:
             pid = p["probe_id"]
             if pid in probes:
                 raise CollectorConfigError(f"probe {pid!r} is listed twice")
-            probes[pid] = ProbeEntry(pid, p["site"], p.get("label", ""))
+            ports = tuple(BoardPort(str(x["id"]), str(x["network"]), str(x.get("media", "wired")),
+                                    bool(x.get("reference", False))) for x in p.get("ports", []))
+            probes[pid] = ProbeEntry(pid, p["site"], p.get("label", ""), ports)
         retention = d.get("retention") or {}
         vm = d.get("vm") or {}
         vm_host, _, vm_port = str(vm.get("listen", "127.0.0.1:8428")).rpartition(":")

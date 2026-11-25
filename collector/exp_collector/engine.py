@@ -426,6 +426,35 @@ class RulesEngine:
                 return evaluate(buf, now, probe=probe, site=entry.site)
         return evaluate_from_store(self.store, probe, entry.site, at_ms, self.history_ms)
 
+    # ------------------------------------------------------------------------------- site lines board
+    def board_ports(self, site: str) -> dict[str, tuple[Any, ...]]:
+        """probe -> its board ports, for the probes of `site` that have any (CR-site-lines-board)."""
+        return {pid: e.ports for pid, e in self.config.probes.items() if e.site == site and e.ports}
+
+    def site_lines(self, site: str, at_ms: int | None = None) -> dict[str, Any] | None:
+        """exp.lines/1 for a site, live or at `at_ms` (time travel re-evaluates records). None: no such site."""
+        from .lines import site_lines
+        if not any(e.site == site for e in self.config.probes.values()):
+            return None
+        ports = self.board_ports(site)
+        at = int(self.clock() * 1000) if at_ms is None else at_ms
+        evs = {pid: ev for pid in ports if (ev := self.evaluation(pid, at_ms)) is not None}
+        if at_ms is None and evs:
+            at = max(ev.at for ev in evs.values())
+        return site_lines(evs, ports, site, at, live=at_ms is None)
+
+    def site_lines_timeline(self, site: str, from_ms: int, to_ms: int, step_ms: int) -> dict[str, Any] | None:
+        from .lines import timeline
+        if not any(e.site == site for e in self.config.probes.values()):
+            return None
+        ports = self.board_ports(site)
+        evs = {}
+        for pid in ports:
+            entry = self.config.probes[pid]
+            span = max(self.history_ms, to_ms - from_ms + 300_000)       # the range plus the widest state window
+            evs[pid] = evaluate_from_store(self.store, pid, entry.site, to_ms, span)
+        return timeline(evs, ports, from_ms, to_ms, step_ms)
+
     def state(self, probe: str, at_ms: int | None = None, voice: str | None = None) -> dict[str, Any] | None:
         ev = self.evaluation(probe, at_ms)
         if ev is None:

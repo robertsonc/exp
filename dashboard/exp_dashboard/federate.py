@@ -99,6 +99,9 @@ PARAMS: dict[str, dict[str, Any]] = {
     "query_range": {"query": _text(2048), "start": _time, "end": _time, "step": _text(16),
                     "collector": _slug},
     "health": {},
+    # the site lines board (CR-site-lines-board): path /sites/{site}/lines[/timeline]
+    "site_lines": {"at": _time},
+    "site_lines_timeline": {"from": _time, "to": _time, "step_s": _int(2, 60)},
 }
 REQUIRED = {"state": ("probe",), "beats": ("probe", "from", "to"), "records": ("probe", "from", "to"),
             "summary": ("probe", "minutes"), "query_range": ("query", "start", "end", "step")}
@@ -444,6 +447,31 @@ class Federation:
             raise ApiProblem(502, "collector_unreachable", "a collector is unreachable",
                              {"collector_id": bad.collector_id, "reason": bad.error or "unreachable"})
         raise ApiProblem(404, "not_found", "no such item")
+
+    def get_site_lines(self, site: str, timeline: bool, raw_query: dict[str, list[str]],
+                       user: str) -> tuple[int, bytes, dict[str, str]]:
+        """The site lines board from the collector that serves `site` (CR-site-lines-board). The collector
+        whose configured site it is goes first; one that does not know the site answers 404, then the next."""
+        if not SLUG.match(site):
+            raise ApiProblem(400, "invalid_request", "site must be a slug")
+        params = clean_params("site_lines_timeline" if timeline else "site_lines", raw_query)
+        path = f"sites/{site}/lines" + ("/timeline" if timeline else "")
+        order = sorted(self.collectors.values(), key=lambda c: c.site != site)
+        unreachable = None
+        for c in order:
+            res = self._call(c, "GET", path, params, user, None)
+            self._note(res)
+            if not res.ok:
+                unreachable = unreachable or res
+                continue
+            if res.status == 404:
+                continue
+            return self._passthrough(res)
+        if unreachable is not None:
+            raise ApiProblem(502, "collector_unreachable", "a collector is unreachable",
+                             {"collector_id": unreachable.collector_id,
+                              "reason": unreachable.error or "unreachable"})
+        raise ApiProblem(404, "unknown_site", "no collector serves that site")
 
     # -- health -----------------------------------------------------------------------------
     def reachability(self) -> tuple[int, int]:

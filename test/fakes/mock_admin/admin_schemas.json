@@ -2323,6 +2323,26 @@
    "iface_errors"
   ]
  },
+ "ManagedPort": {
+  "allOf": [
+   {
+    "$ref": "probe.config.schema.json#/$defs/port"
+   },
+   {
+    "properties": {
+     "network": {
+      "$ref": "common.schema.json#/$defs/slug"
+     },
+     "reference": {
+      "description": "The port measures the out-of-band reference network (its own DHCP, DNS and internet path).",
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   }
+  ],
+  "description": "A probe port as the manager stores it. `network` and `reference` place the port on the site lines board (CR-site-lines-board); they are compiled into the collector's config and stripped from the probe's."
+ },
  "MasterKeyStatus": {
   "additionalProperties": false,
   "description": "CR-m3-master-key-rotation. 503 `unavailable` when the key ring is misconfigured.",
@@ -2791,7 +2811,7 @@
    },
    "ports": {
     "items": {
-     "$ref": "probe.config.schema.json#/$defs/port"
+     "$ref": "#/$defs/ManagedPort"
     },
     "maxItems": 64,
     "type": "array"
@@ -2809,7 +2829,7 @@
   "properties": {
    "ports": {
     "items": {
-     "$ref": "probe.config.schema.json#/$defs/port"
+     "$ref": "#/$defs/ManagedPort"
     },
     "maxItems": 64,
     "minItems": 1,

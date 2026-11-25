@@ -168,6 +168,9 @@ class CollectorApp:
         self.drill_reports: dict[str, dict[str, Any]] = {}
         self.drill_aborts: list[str] = []
         self.audit: list[dict[str, Any]] = []
+        # the site lines board (CR-site-lines-board): canned exp.lines/1 and timeline documents set by the test
+        self.board_docs: dict[str, dict[str, Any]] = {}
+        self.board_timelines: dict[str, dict[str, Any]] = {}
         self.force: dict[str, Any] | None = None
         self.accepted_times: collections.deque[float] = collections.deque(maxlen=100000)
         self.reject_times: collections.deque[float] = collections.deque(maxlen=100000)
@@ -677,6 +680,13 @@ class Handler(fc.BaseHandler):
         if name == "drills" and len(segs) == 2:
             self._need(method, "GET")
             return self._h_drill(segs[1])
+        if name == "sites" and len(segs) in (3, 4) and segs[2] == "lines" and (len(segs) == 3 or segs[3] == "timeline"):
+            self._need(method, "GET")
+            with app.lock:
+                doc = (app.board_timelines if len(segs) == 4 else app.board_docs).get(segs[1])
+            if doc is None:
+                raise ApiError(404, "unknown_site", "no probe of this collector is in that site")
+            return self.send_json(200, doc)
         if name == "drills" and len(segs) == 3 and segs[2] == "abort":
             self._need(method, "POST")
             return self._h_drill_abort(segs[1], user)

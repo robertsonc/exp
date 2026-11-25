@@ -203,6 +203,8 @@ def build_router(app: CollectorApp) -> Router:
     r.add("GET", f"{BASE}/incidents", handle_incidents, auth=AUTH_DASHBOARD)
     r.add("POST", f"{BASE}/incidents/{{id}}/ack", handle_ack, auth=AUTH_DASHBOARD, max_body=MAX_ACK_BODY)
     r.add("GET", f"{BASE}/summary", handle_summary, auth=AUTH_DASHBOARD)
+    r.add("GET", f"{BASE}/sites/{{site}}/lines", handle_site_lines, auth=AUTH_DASHBOARD)
+    r.add("GET", f"{BASE}/sites/{{site}}/lines/timeline", handle_site_lines_timeline, auth=AUTH_DASHBOARD)
     r.add("GET", f"{BASE}/query_range", handle_query_range, auth=AUTH_DASHBOARD)
     r.add("GET", f"{BASE}/stream", handle_stream, auth=AUTH_DASHBOARD)
     r.add("GET", EXECUTOR_ROUTE, handle_drill_control, auth=AUTH_INGEST)       # registered before {run_id}
@@ -300,6 +302,45 @@ def handle_states(req: Handler) -> None:
                     items.append(state_lite(doc))
     nxt = encode_cursor({"o": offset + limit}) if offset + limit < len(probes) else None
     req.send_json(200, {"items": items, "next_cursor": nxt})
+
+
+# ------------------------------------------------------------------------------- site lines board
+MAX_LINES_RANGE_MS = 60 * 60 * 1000      # the board shows 15 min; an hour leaves room to scroll back
+
+
+def _site_path(req: Handler) -> str:
+    site = str(req.params.get("site", ""))
+    if not ids.is_slug(site):
+        raise HttpError(400, "invalid_request", "site must be a slug")
+    return site
+
+
+def handle_site_lines(req: Handler) -> None:
+    site = _site_path(req)
+    at = ts_param(req, "at")
+    if at is None:
+        doc = req.app.rules.site_lines(site, None)
+    else:
+        with _Heavy(HEAVY_SLOTS):
+            doc = req.app.rules.site_lines(site, at)
+    if doc is None:
+        raise HttpError(404, "unknown_site", "no probe of this collector is in that site")
+    req.send_json(200, doc)
+
+
+def handle_site_lines_timeline(req: Handler) -> None:
+    site = _site_path(req)
+    now = int(time.time() * 1000)
+    to = ts_param(req, "to") or now
+    frm = ts_param(req, "from") or (to - 15 * 60 * 1000)
+    if frm >= to or to - frm > MAX_LINES_RANGE_MS:
+        raise HttpError(400, "invalid_request", "from must be before to, at most 60 minutes apart")
+    step = int_param(req, "step_s", 2, 60, 10) * 1000
+    with _Heavy(HEAVY_SLOTS):
+        doc = req.app.rules.site_lines_timeline(site, frm, to, step)
+    if doc is None:
+        raise HttpError(404, "unknown_site", "no probe of this collector is in that site")
+    req.send_json(200, doc)
 
 
 # ------------------------------------------------------------------------------------------ beats

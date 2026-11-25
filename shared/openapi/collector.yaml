@@ -332,6 +332,59 @@ components:
       - probes
       - disk_free_mb
       additionalProperties: true
+    LinesTimeline:
+      type: object
+      properties:
+        schema:
+          const: exp.lines-timeline/1
+        from:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        to:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        step_s:
+          type: integer
+        networks:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            properties:
+              network:
+                $ref: ../schemas/common.schema.json#/$defs/slug
+              points:
+                type: array
+                maxItems: 2160
+                items:
+                  type: object
+                  properties:
+                    t:
+                      $ref: ../schemas/common.schema.json#/$defs/ts
+                    state:
+                      enum:
+                      - ok
+                      - confirming
+                      - stopped
+                      - unknown
+                    share:
+                      type: number
+                      minimum: 0
+                      maximum: 1
+                    known:
+                      type: integer
+                      minimum: 0
+                  required:
+                  - t
+                  - state
+                  - share
+            required:
+            - network
+            - points
+      required:
+      - schema
+      - from
+      - to
+      - step_s
+      - networks
     ProbeSummary:
       type: object
       properties:
@@ -1651,6 +1704,85 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SummaryTables'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/lines:
+    get:
+      operationId: getSiteLines
+      summary: The site lines board (exp.lines/1), live or at a moment
+      description: One line per network, one station per check, one train per probe port (CR-site-lines-board).
+        Every state is the rules engine's; `at` re-evaluates stored records (same records in, same board out).
+      tags:
+      - query
+      parameters:
+      - name: site
+        in: path
+        required: true
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - $ref: '#/components/parameters/At'
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/lines.schema.json
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /sites/{site}/lines/timeline:
+    get:
+      operationId: getSiteLinesTimeline
+      summary: Per network and step, the worst station state and the share of ports affected (the board's ribbon)
+      tags:
+      - query
+      parameters:
+      - name: site
+        in: path
+        required: true
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/slug
+      - name: from
+        in: query
+        required: false
+        description: Start (default `to` minus 15 minutes); at most 60 minutes before `to`.
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: to
+        in: query
+        required: false
+        description: End (default now).
+        schema:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      - name: step_s
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 2
+          maximum: 60
+          default: 10
+      - $ref: '#/components/parameters/XExpUser'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinesTimeline'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

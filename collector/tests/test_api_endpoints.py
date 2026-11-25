@@ -33,7 +33,7 @@ def feed(env, app, port, now=None, tick=True):
 def test_every_route_but_healthz_needs_the_right_token(env, app, port):
     routes = [(m, t) for m, t in app.router.templates()]
     assert ("GET", "/healthz") in routes and len(routes) >= 16
-    fills = {"{id}": "inc_" + "0" * 26, "{run_id}": "run_" + "0" * 26}
+    fills = {"{id}": "inc_" + "0" * 26, "{run_id}": "run_" + "0" * 26, "{site}": "hall-b"}
     for method, tmpl in routes:
         path = tmpl
         for k, v in fills.items():
@@ -52,6 +52,35 @@ def test_every_route_but_healthz_needs_the_right_token(env, app, port):
 def test_401_matches_openapi(env, port):
     r = https(port, "GET", "/api/v1/state?probe=probe-a1")
     check_openapi("collector", "/state", "get", 401, r.json())
+
+
+# ------------------------------------------------------------------------------- site lines board
+def test_site_lines_live_time_travel_and_timeline_validate(env, app, port):
+    now = feed(env, app, port)
+    r = get(port, env, "/sites/hall-b/lines")
+    assert r.status == 200
+    doc = r.json()
+    check_openapi("collector", "/sites/{site}/lines", "get", 200, doc)
+    check_schema_file("lines.schema.json", doc)
+    assert doc["live"] is True and [n["id"] for n in doc["networks"]] == ["event", "vendor"]
+    assert {p["port"] for n in doc["networks"] for p in n["ports"]} == {"c01", "c02", "c03", "c04"}
+    at = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now / 1000 - 60)) + ".000Z"
+    old = get(port, env, f"/sites/hall-b/lines?at={at}")
+    assert old.status == 200 and old.json()["live"] is False
+    check_schema_file("lines.schema.json", old.json())
+    tl = get(port, env, "/sites/hall-b/lines/timeline?step_s=10")
+    assert tl.status == 200
+    check_openapi("collector", "/sites/{site}/lines/timeline", "get", 200, tl.json())
+    assert {n["network"] for n in tl.json()["networks"]} == {"event", "vendor"}
+
+
+def test_site_lines_errors(env, app, port):
+    assert get(port, env, "/sites/nope/lines").json()["error"]["code"] == "unknown_site"
+    assert get(port, env, "/sites/Bad_Site/lines").status == 400
+    assert get(port, env, "/sites/hall-c/lines").json()["networks"] == []        # a site with no board ports
+    r = get(port, env, "/sites/hall-b/lines/timeline?from=2026-01-01T00:00:00.000Z&to=2026-01-01T02:00:00.000Z")
+    assert r.status == 400 and r.json()["error"]["code"] == "invalid_request"
+    check_openapi("collector", "/sites/{site}/lines/timeline", "get", 400, r.json())
 
 
 # -------------------------------------------------------------------------------- state / states

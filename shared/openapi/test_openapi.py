@@ -24,6 +24,8 @@ AGREED_SCHEMA_FILES = {
     "probe.config", "collector.config", "dashboard.config", "runner.config",
     # M6 (CR-m6-contracts)
     "speedtest", "speedtest.submission", "evidence", "speedtest.config",
+    # the site lines board (CR-site-lines-board)
+    "lines",
 }
 AGREED_NAMES = {f"{n}.schema.json" for n in AGREED_SCHEMA_FILES}
 
@@ -52,6 +54,8 @@ _TABLE = {
         GET /incidents
         POST /incidents/{id}/ack
         GET /summary
+        GET /sites/{site}/lines
+        GET /sites/{site}/lines/timeline
         GET /query_range
         GET /stream
         GET /drills/{run_id}

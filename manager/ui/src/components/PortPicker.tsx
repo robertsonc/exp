@@ -30,6 +30,13 @@ function IfaceRow({ i, d, ownProbe, onChange, disabled }: { i: Iface; d: PortDra
           {ROLES.map((o) => <option key={o.v} value={o.v} disabled={!!o.m4 && d.role !== o.v}>{o.l}</option>)}
         </select>
         {block ? <span class="iface-reason" data-testid="iface-reason">{block}</span> : null}
+        {!block && (d.role === 'client' || d.role === 'wifi') ? (
+          <span class="iface-extra">
+            <input type="text" aria-label={`Network for ${i.name}`} placeholder="network, e.g. hall-a (site board)" value={d.network} autocomplete="off" maxLength={64} disabled={disabled}
+              onInput={(e) => onChange({ ...d, network: (e.currentTarget as HTMLInputElement).value })} />
+            <label class="inline-check"><input type="checkbox" checked={d.reference} disabled={disabled} onChange={(e) => onChange({ ...d, reference: (e.currentTarget as HTMLInputElement).checked })} /> Out-of-band reference</label>
+          </span>
+        ) : null}
         {!block && d.role === 'target' ? (
           <span class="iface-extra">
             <input type="text" aria-label={`Target address for ${i.name}`} placeholder="10.1.0.250/24" value={d.address} autocomplete="off" disabled={disabled} onInput={(e) => onChange({ ...d, address: (e.currentTarget as HTMLInputElement).value })} />
@@ -84,7 +91,7 @@ export function PortPicker({ hostName, ifaces, ownProbe, initial, applyLabel = '
           </table>
         </div>
       )}
-      <p class="dim">A client port asks for an address by DHCP and measures like an attendee's device. The management interface is never available.</p>
+      <p class="dim">A client port asks for an address by DHCP and measures like an attendee's device. Its <strong>network</strong> places it on the site lines board, one line per network; mark the port of an out-of-band path (its own DHCP, DNS and internet) as the <strong>reference</strong>, so an outside fault can be told from ours. The management interface is never available.</p>
       {problems.length ? <ul class="form-error" role="alert">{problems.map(([n, m]) => <li key={n}>{n}: {m}</li>)}</ul> : null}
       {requireOne && !hasAny && problems.length === 0 ? <p class="hint">Assign at least one interface to the probe.</p> : null}
       <FormError error={error} />

@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lines.schema.json",
+  "title": "exp.lines/1",
+  "description": "The site lines board (CR-site-lines-board): one line per network, one station per check, one train per probe port. Every state comes from the collector's rules engine; the dashboard only renders this.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "exp.lines/1"
+    },
+    "site": {
+      "$ref": "common.schema.json#/$defs/slug"
+    },
+    "at": {
+      "$ref": "common.schema.json#/$defs/ts"
+    },
+    "live": {
+      "type": "boolean"
+    },
+    "stations": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "enum": [
+              "wifi",
+              "dhcp",
+              "network",
+              "dns",
+              "internet",
+              "apps"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      }
+    },
+    "cadence_s": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "number",
+          "minimum": 0
+        }
+      ]
+    },
+    "headline": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "enum": [
+            "ok",
+            "failing",
+            "down",
+            "verifying"
+          ]
+        },
+        "chip": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "h": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "sub": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "why": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "phase",
+        "chip",
+        "h",
+        "sub",
+        "why"
+      ]
+    },
+    "networks": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/slug"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "reference": {
+            "type": "boolean"
+          },
+          "through": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ports_total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "silent": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "maxLength": 16
+              }
+            ]
+          },
+          "stations": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "ok",
+                    "hollow",
+                    "confirming",
+                    "stopped",
+                    "verifying",
+                    "untestable",
+                    "unknown",
+                    "na"
+                  ]
+                },
+                "affected": {
+                  "type": "integer"
+                },
+                "of": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "state",
+                "affected",
+                "of"
+              ]
+            }
+          },
+          "ports": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "object",
+              "properties": {
+                "probe": {
+                  "$ref": "common.schema.json#/$defs/slug"
+                },
+                "port": {
+                  "$ref": "common.schema.json#/$defs/slug"
+                },
+                "media": {
+                  "enum": [
+                    "wired",
+                    "wireless"
+                  ]
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "newest_s": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "cadence_s": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "stations": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "enum": [
+                          "ok",
+                          "hollow",
+                          "confirming",
+                          "stopped",
+                          "verifying",
+                          "untestable",
+                          "unknown",
+                          "na"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "probe",
+                "port",
+                "media",
+                "silent",
+                "stations"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "reference",
+          "through",
+          "ports_total",
+          "stations",
+          "ports"
+        ]
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "enum": [
+              "ring",
+              "multi",
+              "arc",
+              "spoke"
+            ]
+          },
+          "station": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "networks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "media": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "enum": [
+                  "wired",
+                  "wireless"
+                ]
+              }
+            ]
+          },
+          "reference": {
+            "type": "boolean"
+          },
+          "phase": {
+            "enum": [
+              "failing",
+              "down",
+              "verifying"
+            ]
+          },
+          "affected": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "since_s": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "by_ip_ok": {
+                    "type": "integer"
+                  },
+                  "n": {
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "enum": [
+                      "names",
+                      "path",
+                      "mixed"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "scope",
+          "station",
+          "networks",
+          "phase",
+          "affected",
+          "total",
+          "ports"
+        ]
+      }
+    },
+    "coverage": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 256
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "site",
+    "at",
+    "live",
+    "stations",
+    "headline",
+    "networks",
+    "findings",
+    "coverage"
+  ]
+}
