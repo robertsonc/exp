@@ -5,6 +5,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-25
+
+Heartbeat cadence, and fixes found bringing up the cr-lab containerlab lab.
+
+### Added
+- Heartbeat cadence (CR-heartbeat-cadence): the collector measures each line's beat spacing and judges state on a
+  window of at least 2.5 beats (never below the spec window, capped at 180 s), so a slow heartbeat no longer reads
+  `unknown` between beats; 5 s and 10 s are unchanged. Window texts and the incident hold use the effective window.
+  `exp.state/1` gains `cadence_s` and `lines[].window_s`; the probe list gains `cadence_s`.
+- Dashboard: beat width, playhead step and staleness (3 beats, at least 30 s) follow the probe's real cadence.
+- Manager: per-site probe heartbeat, Standard 10 s or Fast 5 s (site page; `POST /sites/{site}/probe-heartbeat`, one
+  audited batch for every probe of the site).
+- Manager: a **Test ports** panel on the probe's component page (the wizard's port picker, prefilled).
+- `lab/cr-lab`: a containerlab topology exercising every exp role, and a multi-gig speed-test bench kit.
+
+### Changed
+- Manager: throughput, path and Wi-Fi tests, and the target and Wi-Fi port roles (milestone M4) are shown but cannot be
+  switched on, since the probe does not run them yet; existing settings can still be switched off.
+
+### Fixed
+- `install.sh`: a site without a release is named as the cause, with the command that finishes the install.
+- Runner: `correlation.network` (attendee subnets, translated addresses, zone subnets, `require_real_client_ip`) is
+  compiled from the same site settings as the speed-test box, so the NAT guard and the subnet-zone fallback work in
+  managed deployments.
+
 ## [0.2.0] - 2026-11-21
 
 M6: speedtest to the core/DC box, correlated with network evidence (acceptance A6.1-A6.12, 33/33 on the core layout).
