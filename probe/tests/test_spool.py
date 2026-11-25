@@ -10,7 +10,6 @@ from fakes import FakeClock
 from exp_probe import spool as spool_mod
 from exp_probe.spool import Spool
 
-
 # Records carry a fixed timestamp, so every spool here runs on a clock pinned to that day. With the real clock the
 # 7-day age bound drops them once the date is a week old (they failed on 2026-11-25T20:00Z for exactly that reason).
 REC_EPOCH = 1795032000.0   # 2026-11-18T20:00:00Z
