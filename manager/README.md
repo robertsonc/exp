@@ -72,14 +72,22 @@ and the new `central` integration (`config.api_base` = the regional API gateway,
 Use **read-only** credentials (Mist Observer org token; a Central API client with a read-only role). The owner connects
 both from the card on `/ops`; "Save and test" runs the same poll (`POST integrations/{kind}/test`, `inventory_count`).
 
-**Kiosk (`/kiosk`, no sign-in, read-only).** The same counts on a standalone wall-screen page for a trusted network, e.g. the
+**Kiosk (`/kiosk`, no sign-in, read-only).** The same counts, and the devices that are down, on a standalone wall-screen page for a trusted network, e.g. the
 management network's egress: `deploy.sh ... --kiosk-allow-ip 37.34.66.15/32`. Two gates: the Access application
 `<worker> bypass /kiosk` admits only those CIDRs (any other source meets an app with no matching policy and is refused by Access),
 and the Worker checks `CF-Connecting-IP` against `KIOSK_ALLOW_CIDRS` again (empty = 404). It serves only `GET /kiosk` (static page,
-CSP pinned by hash) and `GET /kiosk/api/devices` (counts per platform; no device names, connector state or vendor errors). It is
+CSP pinned by hash) and `GET /kiosk/api/devices` (counts per platform plus up to 200 down devices by name, type, site and down
+since; no serials, MACs, addresses, connector state or vendor errors). It is
 deliberately **not** an Access bypass of the admin app: `/api/admin/v1` keeps requiring the Access JWT from every source. Pass
 the flag on every redeploy (without it the Worker turns the kiosk off; the Access app is left and warned about). If the
 management network is dual-stack, add its IPv6 prefix too: a browser that reaches Cloudflare over IPv6 arrives from that address.
+
+**Down devices (`/ops` and `/kiosk`).** Each poll keeps the devices that are down (never the whole inventory): name, type,
+site and "down since", at most 500 per platform, longest down first (migration `0007_ops_down_devices.sql`). "Down since"
+is the first poll that saw the device down, or Mist's `last_seen` when earlier; it survives from poll to poll through a
+keyed hash of the device's MAC / serial, which is the only form the identity is stored in. Mist site names come from one
+extra read (`GET /orgs/{org_id}/sites`) when a device is down. Central's name and site fields (`deviceName`, `siteName`)
+are not confirmed against the API reference yet; a device without them shows as "(unnamed)".
 
 ## Commands
 

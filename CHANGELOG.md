@@ -14,6 +14,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 - Manager: read-only **kiosk** (`/kiosk`): the ops board's device counts without Access sign-in, for listed source networks
   only (`deploy.sh --kiosk-allow-ip CIDR`, Access bypass app for exactly those CIDRs plus a Worker-side check of
   `CF-Connecting-IP` against `KIOSK_ALLOW_CIDRS`; SR-27). The admin API is unchanged: it still requires the Access JWT.
+- Manager: the ops board and the kiosk list **which devices are down**: name, type, site and how long, longest down first
+  (admin board up to 500 per platform, kiosk up to 200, the rest as "+N more"). Only down devices are stored, never the
+  inventory, a serial, a MAC or an address; "down since" carries across polls through a keyed hash of the device identity.
+  Mist site names come from one extra read-only call when a device is down. Migration `0007_ops_down_devices.sql`.
 
 ## [0.3.0] - 2026-11-25
 

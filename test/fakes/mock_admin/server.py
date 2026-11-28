@@ -1163,12 +1163,14 @@ def r_ops_devices(a: MockAdmin, r: Req) -> Resp:
             missing += [k for k in _OPS_NEED[kind] if k not in ("api_base", "org_id")]
         c = a.w.get("ops_devices", {}).get(kind)
         src = {"kind": kind, "label": _OPS_LABEL[kind], "state": "unconfigured", "missing": missing, "total": None,
-               "online": None, "offline": None, "by_type": {}, "counts_at": None, "checked_at": None, "error": None}
+               "online": None, "offline": None, "by_type": {}, "counts_at": None, "checked_at": None, "error": None,
+               "down": [], "down_more": 0}
         if not missing:
             src.update(state="ok" if c else "pending", checked_at=seed.iso(a.now()))
             if c:
+                down = list(c.get("down", []))
                 src.update(total=c["total"], online=c["online"], offline=c["offline"], by_type=c["by_type"],
-                           counts_at=c["counts_at"])
+                           counts_at=c["counts_at"], down=down, down_more=max(0, c["offline"] - len(down)))
         out.append(src)
     return ok({"as_of": seed.iso(a.now()), "ttl_s": 60, "sources": out})
 

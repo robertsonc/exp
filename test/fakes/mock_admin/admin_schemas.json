@@ -2633,6 +2633,52 @@
   ],
   "type": "object"
  },
+ "OpsDownDevice": {
+  "additionalProperties": false,
+  "description": "A device that is down. Name, type, site and since only; no serial, MAC or address.",
+  "properties": {
+   "name": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maxLength": 64,
+      "type": "string"
+     }
+    ]
+   },
+   "since": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "site": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maxLength": 64,
+      "type": "string"
+     }
+    ]
+   },
+   "type": {
+    "enum": [
+     "ap",
+     "switch",
+     "gateway",
+     "other"
+    ]
+   }
+  },
+  "required": [
+   "name",
+   "type",
+   "site",
+   "since"
+  ],
+  "type": "object"
+ },
  "OpsSource": {
   "additionalProperties": false,
   "description": "One platform on the ops board. Counts come from the last successful read-only poll; after a failed poll they are kept (with `counts_at`) and `error` says why the poll failed. Never carries a credential.",
@@ -2674,6 +2720,19 @@
       "$ref": "common.schema.json#/$defs/ts"
      }
     ]
+   },
+   "down": {
+    "description": "Devices down at the last successful poll, longest down first. Only down devices, never the inventory.",
+    "items": {
+     "$ref": "#/$defs/OpsDownDevice"
+    },
+    "maxItems": 500,
+    "type": "array"
+   },
+   "down_more": {
+    "description": "Offline devices not listed in `down` (beyond the 500 cap).",
+    "minimum": 0,
+    "type": "integer"
    },
    "error": {
     "anyOf": [
@@ -2762,7 +2821,9 @@
    "by_type",
    "counts_at",
    "checked_at",
-   "error"
+   "error",
+   "down",
+   "down_more"
   ],
   "type": "object"
  },

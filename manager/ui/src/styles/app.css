@@ -425,4 +425,10 @@ table.plain thead th { color: var(--exp-text-dim); font-size: var(--exp-text-xs)
 .ops-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--exp-space-3); }
 .ops-empty p { margin: 0; }
 .ops-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--exp-space-3); font-size: var(--exp-text-xs); margin-top: auto; }
+.ops-down h3 { margin: 0 0 var(--exp-space-2); font-size: var(--exp-text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--exp-fail); }
+.ops-down ol { list-style: none; margin: 0; padding: 0; max-height: 22rem; overflow-y: auto; border-top: 1px solid var(--exp-stroke); }
+.ops-down li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--exp-space-3); padding: var(--exp-space-2) 0; border-bottom: 1px solid var(--exp-stroke); }
+.ops-down-name { font-weight: var(--exp-weight-bold); overflow-wrap: anywhere; }
+.ops-down-for { color: var(--exp-fail); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ops-down-meta { grid-column: 1 / -1; color: var(--exp-text-dim); font-size: var(--exp-text-sm); overflow-wrap: anywhere; }
 .ops-sum { margin: 0 0 var(--exp-space-3); font-size: var(--exp-text-md, 1rem); font-variant-numeric: tabular-nums; }

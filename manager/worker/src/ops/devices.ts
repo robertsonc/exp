@@ -3,9 +3,11 @@
 // vendor APIs (plus Central's OAuth token request), never a write.
 //
 // Polling is on demand and shared: every open board reads ops_device_status, and at most one request per platform
-// per TTL wins an atomic claim on the row and polls the vendor. Counts only are stored (no device list, no
-// credential). A failed poll keeps the last good counts and says why it failed, so a wall screen degrades to
-// "counts from 4 min ago, Mist answered 401" instead of going blank.
+// per TTL wins an atomic claim on the row and polls the vendor. Stored: the counts and the devices that are DOWN (name,
+// type, site, down since; capped at DOWN_STORE_MAX), never the whole inventory, a serial, a MAC, an address or a
+// credential. A device's identity is kept only as a keyed hash, so "down since" survives from poll to poll. A failed poll
+// keeps the last good counts and list and says why it failed, so a wall screen degrades to "counts from 4 min ago, Mist
+// answered 401" instead of going blank.
 //
 // Vendor facts this relies on:
 //   Central  (verified, developer.arubanetworks.com/new-central, Nov 2026):
@@ -13,11 +15,17 @@
 //             no refresh token; devices GET {base}/network-monitoring/v1/devices?limit<=1000&next=<cursor>,
 //             body {items[], count, total?, next|null}; items[].status ONLINE|OFFLINE, items[].deviceType
 //             ACCESS_POINT|SWITCH|GATEWAY. Rate limit 10 requests/s per Central account.
+//             NOT verified (the reference page was unreachable, Nov 2026): the device name and site fields. Read as
+//             deviceName | name and siteName | site_name (the spelling of Central's other monitoring APIs); a device
+//             without them is listed as "(unnamed)" / no site, never dropped.
 //   Mist     (verified against Juniper's Mist OpenAPI, mistapi 0.64.1, the reference CI pins): listOrgDevicesStats
 //             GET {base}/api/v1/orgs/{org_id}/stats/devices?type=all&status=all&limit&page (limit default 100, no
 //             documented maximum: we ask 1000 and cope with a smaller cap), body = JSON array of stats_ap | stats_switch |
 //             stats_gateway discriminated by `type`, `status` "connected" when up; status=all is sent explicitly because
 //             the OAS documents no default. X-Page-Total is used when sent (not in the OAS). Authorization: Token <token>.
+//             Down devices: name (switches/gateways may only carry hostname), site_id, last_seen (epoch seconds). Site
+//             names: listOrgSites GET {base}/api/v1/orgs/{org_id}/sites?limit=1000 -> [{id, name}], fetched only when a
+//             device is down; a failure there leaves the site blank, it never fails the poll.
 import { parseJson } from "../compile/load";
 import type { Env } from "../env";
 import { getSecretRow, readSecret } from "../secrets/store";
@@ -40,6 +48,13 @@ const LABEL: Record<OpsKind, string> = { mist: "Juniper Mist", central: "HPE Aru
 type DeviceType = "ap" | "switch" | "gateway" | "other";
 type ByType = Partial<Record<DeviceType, { total: number; online: number }>>;
 export interface Counts { total: number; online: number; offline: number; by_type: ByType }
+/** A device that is down, as a poll saw it. `key` (MAC / serial / id) never leaves this module unhashed. */
+export interface RawDown { key: string; name: string | null; type: DeviceType; site: string | null; lastSeenMs: number | null }
+export interface Poll extends Counts { down: RawDown[] }
+/** A down device as the board shows it: no identifier beyond its name. */
+export interface DownDevice { name: string | null; type: DeviceType; site: string | null; since: string }
+/** stored per platform (longest down first); the admin board shows all of them, the kiosk KIOSK_DOWN_MAX */
+export const DOWN_STORE_MAX = 500;
 
 export interface OpsSource {
   kind: OpsKind;
@@ -55,6 +70,10 @@ export interface OpsSource {
   counts_at: string | null;
   checked_at: string | null;
   error: string | null;
+  /** devices down at the last successful poll, longest down first (at most DOWN_STORE_MAX) */
+  down: DownDevice[];
+  /** offline devices not in `down` (beyond the cap, or counted before the list existed) */
+  down_more: number;
 }
 
 /** A failure we can show to an operator: never carries a credential or a raw vendor body. */
@@ -150,6 +169,21 @@ async function jsonOf(platform: string, res: Response): Promise<unknown> {
   }
 }
 
+/** A vendor-provided label: text only, no control characters, at most 64 characters; empty -> null. */
+export function label(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
+  return t ? (t.length > 64 ? `${t.slice(0, 63)}\u2026` : t) : null;
+}
+
+interface SeenDevice { type: DeviceType; online: boolean; name: string | null; site: string | null; siteId: string | null; lastSeenMs: number | null }
+
+function pollOf(seen: Map<string, SeenDevice>): Poll {
+  const down: RawDown[] = [];
+  for (const [key, d] of seen) if (!d.online) down.push({ key, name: d.name, type: d.type, site: d.site, lastSeenMs: d.lastSeenMs });
+  return { ...tally([...seen.values()]), down };
+}
+
 function tally(items: Array<{ type: DeviceType; online: boolean }>): Counts {
   const by_type: ByType = {};
   let online = 0;
@@ -163,24 +197,56 @@ function tally(items: Array<{ type: DeviceType; online: boolean }>): Counts {
 
 const MIST_TYPES: Record<string, DeviceType> = { ap: "ap", switch: "switch", gateway: "gateway" };
 
-export async function pollMist(r: Pick<Resolved, "base" | "orgId" | "creds">): Promise<Counts> {
-  const seen = new Map<string, { type: DeviceType; online: boolean }>();
+const mistHeaders = (r: Pick<Resolved, "creds">) => ({ authorization: `Token ${r.creds.token}`, accept: "application/json", "user-agent": "exp-manager" });
+
+/** Site id -> name for the sites of down devices. Best effort: any failure leaves the sites blank. */
+async function mistSiteNames(r: Pick<Resolved, "base" | "orgId" | "creds">): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  try {
+    const res = await vendorFetch("Mist", `${r.base}/api/v1/orgs/${encodeURIComponent(r.orgId)}/sites?limit=${PAGE_LIMIT}`, { headers: mistHeaders(r) });
+    const body = await jsonOf("Mist", res);
+    if (Array.isArray(body)) {
+      for (const s of body as Array<Record<string, unknown>>) {
+        const n = s && typeof s === "object" ? label(s.name) : null;
+        if (n && typeof s.id === "string") names.set(s.id, n);
+      }
+    }
+  } catch {
+    // the counts and names are still right; only the site column stays empty
+  }
+  return names;
+}
+
+export async function pollMist(r: Pick<Resolved, "base" | "orgId" | "creds">): Promise<Poll> {
+  const seen = new Map<string, SeenDevice>();
   let firstLen = -1;
   for (let page = 1; page <= MAX_PAGES; page++) {
     const url = `${r.base}/api/v1/orgs/${encodeURIComponent(r.orgId)}/stats/devices?type=all&status=all&limit=${PAGE_LIMIT}&page=${page}`;
-    const res = await vendorFetch("Mist", url, { headers: { authorization: `Token ${r.creds.token}`, accept: "application/json", "user-agent": "exp-manager" } });
+    const res = await vendorFetch("Mist", url, { headers: mistHeaders(r) });
     const pageTotal = Number(res.headers.get("x-page-total"));
     const body = await jsonOf("Mist", res);
     if (!Array.isArray(body)) throw new PollError("Mist answered with an unexpected shape (expected a device list)");
     for (const d of body as Array<Record<string, unknown>>) {
       if (!d || typeof d !== "object") continue;
       const key = String(d.mac ?? d.id ?? d.serial ?? `${page}:${seen.size}`);
-      seen.set(key, { type: MIST_TYPES[String(d.type)] ?? "other", online: d.status === "connected" });
+      const online = d.status === "connected";
+      const ls = typeof d.last_seen === "number" && Number.isFinite(d.last_seen) && d.last_seen > 0 ? Math.round(d.last_seen * 1000) : null;
+      seen.set(key, {
+        type: MIST_TYPES[String(d.type)] ?? "other", online,
+        name: online ? null : label(d.name) ?? label(d.hostname), site: null,
+        siteId: !online && typeof d.site_id === "string" ? d.site_id : null, lastSeenMs: online ? null : ls,
+      });
     }
     if (firstLen < 0) firstLen = body.length;
     // last page: empty, short (compared with the first page, in case the API caps limit below what we asked), or
     // the advertised total reached
-    if (body.length === 0 || body.length < firstLen || (Number.isFinite(pageTotal) && pageTotal > 0 && seen.size >= pageTotal)) return tally([...seen.values()]);
+    if (body.length === 0 || body.length < firstLen || (Number.isFinite(pageTotal) && pageTotal > 0 && seen.size >= pageTotal)) {
+      if ([...seen.values()].some((d) => d.siteId)) {
+        const sites = await mistSiteNames(r);
+        for (const d of seen.values()) if (d.siteId) d.site = sites.get(d.siteId) ?? null;
+      }
+      return pollOf(seen);
+    }
   }
   throw new PollError(`Mist has more than ${MAX_PAGES * PAGE_LIMIT} devices; the board stops counting there`);
 }
@@ -209,10 +275,10 @@ async function centralToken(r: Pick<Resolved, "fp" | "creds">, fresh: boolean): 
 
 const CENTRAL_TYPES: Record<string, DeviceType> = { ACCESS_POINT: "ap", SWITCH: "switch", GATEWAY: "gateway" };
 
-export async function pollCentral(r: Pick<Resolved, "base" | "fp" | "creds">): Promise<Counts> {
+export async function pollCentral(r: Pick<Resolved, "base" | "fp" | "creds">): Promise<Poll> {
   let token = await centralToken(r, false);
   let retried = false;
-  const seen = new Map<string, { type: DeviceType; online: boolean }>();
+  const seen = new Map<string, SeenDevice>();
   let next: string | null = null;
   for (let page = 0; page < MAX_PAGES; page++) {
     const url = `${r.base}/network-monitoring/v1/devices?limit=${PAGE_LIMIT}${next ? `&next=${encodeURIComponent(next)}` : ""}`;
@@ -234,10 +300,15 @@ export async function pollCentral(r: Pick<Resolved, "base" | "fp" | "creds">): P
     for (const d of body.items as Array<Record<string, unknown>>) {
       if (!d || typeof d !== "object") continue;
       const key = String(d.serialNumber ?? d.id ?? d.macAddress ?? `${page}:${seen.size}`);
-      seen.set(key, { type: CENTRAL_TYPES[String(d.deviceType)] ?? "other", online: d.status === "ONLINE" });
+      const online = d.status === "ONLINE";
+      seen.set(key, {
+        type: CENTRAL_TYPES[String(d.deviceType)] ?? "other", online,
+        name: online ? null : label(d.deviceName) ?? label(d.name), site: online ? null : label(d.siteName) ?? label(d.site_name),
+        siteId: null, lastSeenMs: null,
+      });
     }
     const n = body.next;
-    if (n === null || n === undefined || n === "" || body.items.length === 0) return tally([...seen.values()]);
+    if (n === null || n === undefined || n === "" || body.items.length === 0) return pollOf(seen);
     if (typeof n !== "string" && typeof n !== "number") throw new PollError("Central answered with an unexpected pagination cursor");
     if (String(n) === next) throw new PollError("Central returned the same page cursor twice");
     next = String(n);
@@ -246,7 +317,7 @@ export async function pollCentral(r: Pick<Resolved, "base" | "fp" | "creds">): P
 }
 
 /** Polls one platform with an already-resolved connector. Exposed for the integrations "test" action. */
-export async function pollPlatform(env: Env, kind: OpsKind): Promise<{ missing: string[]; counts?: Counts; error?: string }> {
+export async function pollPlatform(env: Env, kind: OpsKind): Promise<{ missing: string[]; counts?: Poll; error?: string }> {
   const r = await resolve(env, kind);
   if (r.missing.length) return { missing: r.missing };
   if (r.credError) return { missing: [], error: r.credError };
@@ -271,13 +342,34 @@ interface StatusRow {
   by_type_json: string;
   error: string | null;
   config_fp: string;
+  down_json: string;
+}
+
+/** stored form of a down device: `k` is a keyed hash of the vendor identity (MAC / serial / id), never the identity */
+interface StoredDown { k: string; n: string | null; t: DeviceType; s: string | null; since: string }
+
+/** Merge a poll's down devices with the stored list: a device down at the last poll keeps its "down since"; a newly
+ * down one starts at the vendor's last-seen time when it is earlier than now, else now. Longest down first, capped. */
+export async function mergeDown(kind: OpsKind, prevJson: string | null, down: RawDown[], now: number): Promise<StoredDown[]> {
+  const prev = new Map<string, string>();
+  for (const p of parseJson<StoredDown[]>(prevJson, [])) if (p && typeof p.k === "string" && typeof p.since === "string") prev.set(p.k, p.since);
+  const out: StoredDown[] = [];
+  for (const d of down) {
+    const k = (await sha256Hex(`exp-ops-device/v1|${kind}|${d.key}`)).slice(0, 24);
+    const first = d.lastSeenMs !== null && d.lastSeenMs < now ? d.lastSeenMs : now;
+    const kept = prev.get(k);
+    const since = kept !== undefined && Date.parse(kept) <= now ? kept : isoAt(first);
+    out.push({ k, n: d.name, t: d.type, s: d.site, since });
+  }
+  out.sort((a, b) => (a.since < b.since ? -1 : a.since > b.since ? 1 : (a.n ?? "\uffff").localeCompare(b.n ?? "\uffff")));
+  return out.slice(0, DOWN_STORE_MAX);
 }
 
 const EPOCH = "1970-01-01T00:00:00.000Z";
 
 async function sourceStatus(env: Env, kind: OpsKind): Promise<OpsSource> {
   const r = await resolve(env, kind);
-  const empty: OpsSource = { kind, label: LABEL[kind], state: "unconfigured", missing: r.missing, total: null, online: null, offline: null, by_type: {}, counts_at: null, checked_at: null, error: null };
+  const empty: OpsSource = { kind, label: LABEL[kind], state: "unconfigured", missing: r.missing, total: null, online: null, offline: null, by_type: {}, counts_at: null, checked_at: null, error: null, down: [], down_more: 0 };
   if (r.missing.length) return empty;
   const now = nowMs();
   await env.DB.prepare("INSERT OR IGNORE INTO ops_device_status (kind, checked_at, config_fp) VALUES (?1, ?2, ?3)").bind(kind, EPOCH, r.fp).run();
@@ -288,6 +380,7 @@ async function sourceStatus(env: Env, kind: OpsKind): Promise<OpsSource> {
        ok_at = CASE WHEN config_fp = ?4 THEN ok_at END, total = CASE WHEN config_fp = ?4 THEN total END,
        online = CASE WHEN config_fp = ?4 THEN online END, offline = CASE WHEN config_fp = ?4 THEN offline END,
        by_type_json = CASE WHEN config_fp = ?4 THEN by_type_json ELSE '{}' END,
+       down_json = CASE WHEN config_fp = ?4 THEN down_json ELSE '[]' END,
        error = CASE WHEN config_fp = ?4 THEN error END, config_fp = ?4
      WHERE kind = ?1 AND (checked_at < ?3 OR config_fp != ?4)`,
   ).bind(kind, isoAt(now), isoAt(now - OPS_TTL_S * 1000), r.fp).run();
@@ -295,8 +388,10 @@ async function sourceStatus(env: Env, kind: OpsKind): Promise<OpsSource> {
     const out = await pollPlatform(env, kind);
     const at = isoAt(nowMs());
     if (out.counts) {
-      await env.DB.prepare("UPDATE ops_device_status SET checked_at = ?2, ok_at = ?2, total = ?3, online = ?4, offline = ?5, by_type_json = ?6, error = NULL WHERE kind = ?1 AND config_fp = ?7")
-        .bind(kind, at, out.counts.total, out.counts.online, out.counts.offline, JSON.stringify(out.counts.by_type), r.fp)
+      const prev = await env.DB.prepare("SELECT down_json FROM ops_device_status WHERE kind = ?1 AND config_fp = ?2").bind(kind, r.fp).first<{ down_json: string }>();
+      const down = await mergeDown(kind, prev?.down_json ?? null, out.counts.down, nowMs());
+      await env.DB.prepare("UPDATE ops_device_status SET checked_at = ?2, ok_at = ?2, total = ?3, online = ?4, offline = ?5, by_type_json = ?6, error = NULL, down_json = ?8 WHERE kind = ?1 AND config_fp = ?7")
+        .bind(kind, at, out.counts.total, out.counts.online, out.counts.offline, JSON.stringify(out.counts.by_type), r.fp, JSON.stringify(down))
         .run();
     } else {
       // the last good counts stay (same config): the board shows them with their age and this error
@@ -306,6 +401,7 @@ async function sourceStatus(env: Env, kind: OpsKind): Promise<OpsSource> {
   const row = await env.DB.prepare("SELECT * FROM ops_device_status WHERE kind = ?1").bind(kind).first<StatusRow>();
   if (!row || row.config_fp !== r.fp) return { ...empty, state: "pending", missing: [] };
   const hasCounts = row.ok_at !== null && row.total !== null;
+  const down = hasCounts ? parseJson<StoredDown[]>(row.down_json, []).map((d) => ({ name: d.n ?? null, type: d.t, site: d.s ?? null, since: d.since })) : [];
   return {
     ...empty,
     state: row.error ? "error" : hasCounts ? "ok" : "pending",
@@ -317,6 +413,8 @@ async function sourceStatus(env: Env, kind: OpsKind): Promise<OpsSource> {
     counts_at: row.ok_at,
     checked_at: row.checked_at === EPOCH ? null : row.checked_at,
     error: row.error,
+    down,
+    down_more: hasCounts ? Math.max(0, (row.offline ?? 0) - down.length) : 0,
   };
 }
 

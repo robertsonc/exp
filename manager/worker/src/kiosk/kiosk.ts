@@ -3,7 +3,8 @@
 //
 // Why a separate surface instead of an Access bypass on the admin app: every /api/admin/v1 request must carry a verified
 // Access JWT (05-manager.md section 5) and a "viewer" there can read admin emails, host IPs and launch the dashboard SSO
-// handoff. The kiosk exposes ONLY device counts (no names, serials, IPs, errors or connector details) and is gated twice:
+// handoff. The kiosk exposes ONLY device counts and the devices that are DOWN (name, type, site, down since; at most
+// KIOSK_DOWN_MAX per platform): never the inventory, a serial, a MAC, an address, an error or connector details. Gated twice:
 //   1. Cloudflare Access: the "<worker> bypass /kiosk" application lets in only the source CIDRs (deploy.sh --kiosk-allow-ip);
 //      any other address hits an Access app with no matching policy and is refused at the edge.
 //   2. This Worker: the request's CF-Connecting-IP (set by Cloudflare's edge, not by the client; workers.dev is disabled)
@@ -14,6 +15,9 @@ import { ApiError, notFound } from "../errors";
 import { opsDevices } from "../ops/devices";
 import { enforce } from "../ratelimit";
 import { bytesToB64 } from "../util/encoding";
+
+/** down devices shown per platform; the rest are summed into `down_more` */
+export const KIOSK_DOWN_MAX = 200;
 
 // ---- source address allowlist ---------------------------------------------------------------------------
 
@@ -92,7 +96,12 @@ section.stale{border-color:var(--fail)}h2{font-size:1.25rem;margin:0 0 12px}
 dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0}dt{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim)}
 dd{margin:0;font-size:clamp(1.5rem,8cqi,4.5rem);line-height:1.05;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .on dd{color:var(--ok)}.bad dd{color:var(--fail)}.types,.note{margin:12px 0 0;color:var(--dim);font-variant-numeric:tabular-nums}.note.warn{color:var(--fail)}
-footer{margin-top:16px;font-size:.85rem}`;
+footer{margin-top:16px;font-size:.85rem}
+h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--fail);margin:16px 0 6px}
+ol.down{list-style:none;margin:0;padding:0;max-height:24rem;overflow-y:auto;border-top:1px solid var(--stroke)}
+ol.down li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:6px 0;border-bottom:1px solid var(--stroke)}
+ol.down .nm{font-weight:600;overflow-wrap:anywhere}ol.down .for{color:var(--fail);font-variant-numeric:tabular-nums;white-space:nowrap}
+ol.down .meta{grid-column:1/-1;color:var(--dim);font-size:.85rem;overflow-wrap:anywhere}`;
 
 const SCRIPT = `(function(){
 var grid=document.getElementById("grid"),foot=document.getElementById("foot");
@@ -100,12 +109,19 @@ var T={ap:"APs",switch:"Switches",gateway:"Gateways",other:"Other"};
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
 function n(v){return v==null?"\\u2013":Number(v).toLocaleString();}
 function ago(ts){if(!ts)return "";var s=Math.max(0,Math.round((Date.now()-Date.parse(ts))/1000));return s<90?s+" s ago":Math.round(s/60)+" min ago";}
+function dur(ts){var m=Math.max(0,Math.round((Date.now()-Date.parse(ts))/60000));if(m<1)return "just now";if(m<60)return m+" min";var h=Math.floor(m/60);if(h<48)return h+" h "+(m%60)+" min";return Math.floor(h/24)+" d "+(h%24)+" h";}
+var ONE={ap:"AP",switch:"Switch",gateway:"Gateway",other:"Device"};
+function downList(c,s){var d=s.down||[];if(!d.length&&!s.down_more)return;c.appendChild(el("h3",null,"Down now"));var ol=el("ol","down");
+d.forEach(function(x){var li=el("li");li.appendChild(el("span","nm",x.name||"(unnamed)"));li.appendChild(el("span","for","down "+dur(x.since)));
+li.appendChild(el("span","meta",(ONE[x.type]||"Device")+(x.site?" \u00b7 "+x.site:"")));ol.appendChild(li);});c.appendChild(ol);
+if(s.down_more>0)c.appendChild(el("p","note warn","+ "+n(s.down_more)+" more down (not listed)"));}
 function num(dl,label,v,cls){var d=el("div",cls);d.appendChild(el("dt",null,label));d.appendChild(el("dd",null,n(v)));dl.appendChild(d);}
 function card(s){var c=el("section",s.state==="stale"?"stale":"");c.appendChild(el("h2",null,s.label));
 if(s.state==="unconfigured"){c.appendChild(el("p","dim","Not connected."));return c;}
 var dl=el("dl");num(dl,"Total",s.total);num(dl,"Online",s.online,"on");num(dl,"Offline",s.offline,s.offline>0?"bad":"");c.appendChild(dl);
 var t=Object.keys(s.by_type||{}).filter(function(k){return s.by_type[k]&&s.by_type[k].total>0;}).map(function(k){return (T[k]||k)+" "+s.by_type[k].online+"/"+s.by_type[k].total;});
 if(t.length)c.appendChild(el("p","types",t.join(" \\u00b7 ")));
+downList(c,s);
 c.appendChild(el("p",s.state==="stale"?"note warn":"note",s.state==="pending"?"Waiting for the first poll":s.state==="stale"?"Platform not answering; counts from "+ago(s.counts_at):"Counted "+ago(s.counts_at)));
 return c;}
 function load(){fetch("/kiosk/api/devices",{cache:"no-store",credentials:"same-origin"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).then(function(b){
@@ -146,7 +162,7 @@ kioskRoutes.use("*", async (c, next) => {
 
 kioskRoutes.get("/", async () => new Response(HTML, { status: 200, headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": await csp() } }));
 
-/** Counts only: no connector state (`missing`), no vendor error text, no check time beyond the counts' own age. */
+/** Counts and down devices only: no connector state (`missing`), no vendor error text, no check time beyond the counts' own age. */
 kioskRoutes.get("/api/devices", async (c) => {
   const b = await opsDevices(c.env);
   return c.json({
@@ -160,6 +176,8 @@ kioskRoutes.get("/api/devices", async (c) => {
       offline: s.offline,
       by_type: s.by_type,
       counts_at: s.counts_at,
+      down: s.down.slice(0, KIOSK_DOWN_MAX).map((d) => ({ name: d.name, type: d.type, site: d.site, since: d.since })),
+      down_more: s.down_more + Math.max(0, s.down.length - KIOSK_DOWN_MAX),
     })),
   });
 });

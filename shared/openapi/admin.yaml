@@ -1201,6 +1201,16 @@ components:
           - type: 'null'
           - type: string
             maxLength: 300
+        down:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/OpsDownDevice'
+          description: Devices down at the last successful poll, longest down first. Only down devices, never the inventory.
+        down_more:
+          type: integer
+          minimum: 0
+          description: Offline devices not listed in `down` (beyond the 500 cap).
       required:
       - kind
       - label
@@ -1213,6 +1223,36 @@ components:
       - counts_at
       - checked_at
       - error
+      - down
+      - down_more
+      additionalProperties: false
+    OpsDownDevice:
+      type: object
+      description: A device that is down. Name, type, site and since only; no serial, MAC or address.
+      properties:
+        name:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+        type:
+          enum:
+          - ap
+          - switch
+          - gateway
+          - other
+        site:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 64
+        since:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+      required:
+      - name
+      - type
+      - site
+      - since
       additionalProperties: false
     OpsDevices:
       type: object
