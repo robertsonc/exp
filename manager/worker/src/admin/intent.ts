@@ -61,6 +61,8 @@ export const PortSchema = z.discriminatedUnion("role", [
     role: z.literal("wifi"),
     ssid: z.string().min(1).max(32).regex(/^[^\x00-\x1f\x7f]*$/),
     band: z.enum(["2.4", "5", "6", "any"]).optional(),
+    security: z.enum(["auto", "open", "owe"]).optional(),           // open / OWE only: no Wi-Fi credential exists
+    country: z.string().regex(/^[A-Z]{2}$/).optional(),
   }).strict(),
 ]);
 export type Port = z.infer<typeof PortSchema>;

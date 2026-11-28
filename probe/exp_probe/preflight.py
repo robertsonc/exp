@@ -8,7 +8,10 @@ looking inside a namespace). A port is REFUSED when it
 * carries a global address in the host namespace;
 * is enslaved to a bond/bridge/team, is such a device, or has VLAN/macvlan children on the host;
 * does not exist (unless it is already inside its ``exp-<port>`` namespace -- the upgrade case);
-* is a Wi-Fi interface assigned a non-``wifi`` role.
+* is a Wi-Fi interface assigned a non-``wifi`` role;
+* (``role: wifi``) is not Wi-Fi, has no readable radio, shares its radio with another interface (moving
+  the phy would take that one too -- e.g. the management Wi-Fi), is rfkill-blocked, or is still driven
+  by something else: NetworkManager, or a ``wpa_supplicant`` that is not ours.
 
 Guard logic ported from reference/exm/lib/exm/netns.py:guard (extended with the checks above).
 """
@@ -146,6 +149,77 @@ class HostView:
         base = self.paths.sys_class_net / iface
         return (base / "wireless").is_dir() or (base / "phy80211").exists()
 
+    def phy(self, iface: str) -> str | None:
+        try:
+            name = (self.paths.sys_class_net / iface / "phy80211" / "name").read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        return name or None
+
+    def phy_ifaces(self, phy: str) -> list[str]:
+        """Every host interface on radio `phy`."""
+        out: list[str] = []
+        try:
+            entries = sorted(self.paths.sys_class_net.iterdir())
+        except OSError:
+            return out
+        for d in entries:
+            try:
+                if (d / "phy80211" / "name").read_text(encoding="utf-8").strip() == phy:
+                    out.append(d.name)
+            except OSError:
+                continue
+        return out
+
+    def rfkill(self, iface: str) -> str | None:
+        """'hard' / 'soft' when the radio is blocked, else None."""
+        base = self.paths.sys_class_net / iface / "phy80211"
+        try:
+            kills = sorted(base.glob("rfkill*"))
+        except OSError:
+            return None
+        for k in kills:
+            for kind in ("hard", "soft"):
+                try:
+                    if (k / kind).read_text(encoding="utf-8").strip() == "1":
+                        return kind
+                except OSError:
+                    continue
+        return None
+
+    def other_supplicant(self, iface: str) -> int | None:
+        """PID of a wpa_supplicant driving `iface` that is not the probe's own (its config path)."""
+        try:
+            procs = [d for d in self.paths.proc.iterdir() if d.name.isdigit()]
+        except OSError:
+            return None
+        for d in procs:
+            try:
+                argv = (d / "cmdline").read_bytes().split(b"\0")
+            except OSError:
+                continue
+            if not argv or not argv[0].endswith(b"wpa_supplicant"):
+                continue
+            args = [a.decode("utf-8", "replace") for a in argv if a]
+            if any(a.startswith("/run/exp/probe/") or "/exp/probe/" in a for a in args):
+                continue                                    # ours (an older run, before the move)
+            names = {a[2:] for a in args if a.startswith("-i") and len(a) > 2}
+            names |= {args[i + 1] for i, a in enumerate(args[:-1]) if a == "-i"}
+            if iface in names:        # a D-Bus-only supplicant (-u, no -i) acts for NetworkManager: see nm_managed
+                return int(d.name)
+        return None
+
+    def nm_managed(self, iface: str) -> bool:
+        """NetworkManager manages `iface` (nmcli absent or NM not running: False)."""
+        r = self.runner.run(["nmcli", "-t", "-f", "DEVICE,STATE", "device"], 5)
+        if not r.ok:
+            return False
+        for ln in r.stdout.splitlines():
+            dev, _, state = ln.rpartition(":")
+            if dev.replace("\\:", ":") == iface:
+                return not state.startswith("unmanaged")
+        return False
+
     def in_namespace(self, port: Port) -> dict[str, Any] | None:
         """The port's link if it is already inside its own exp-* namespace, else None."""
         if port.ns not in self.netns:
@@ -238,7 +312,36 @@ def _check_port(cfg: ProbeConfig, view: HostView, port: Port) -> PortCheck:
                             and (r == "holds the host's default route" or r.startswith("carries address")))]
         if view.is_wifi(port.iface) and port.role != "wifi":
             reasons.append(f"is a Wi-Fi interface but is assigned role {port.role!r} (use role wifi)")
+        if port.role == "wifi":
+            reasons += wifi_reasons(cfg, view, port.iface)
     if reasons:
         pc.verdict = REFUSED
         pc.reasons = reasons
     return pc
+
+
+def wifi_reasons(cfg: ProbeConfig, view: HostView, iface: str) -> list[str]:
+    """Why a host Wi-Fi interface must not be taken over for a `role: wifi` port; [] when it is safe."""
+    if not view.is_wifi(iface):
+        return [f"{iface} is not a Wi-Fi interface (role wifi needs one)"]
+    phy = view.phy(iface)
+    if not phy:
+        return [f"cannot read the radio (phy80211) of {iface}"]
+    reasons: list[str] = []
+    others = [i for i in view.phy_ifaces(phy) if i != iface]
+    if others:
+        what = " (the management interface)" if cfg.mgmt_iface in others else ""
+        reasons.append(f"its radio {phy} also carries {', '.join(others)}{what}: the whole radio moves into the "
+                       "namespace, so it must carry only this interface")
+    blocked = view.rfkill(iface)
+    if blocked == "hard":
+        reasons.append(f"radio {phy} is hard-blocked (rfkill: hardware switch or BIOS)")
+    elif blocked == "soft":
+        reasons.append(f"radio {phy} is soft-blocked (run `rfkill unblock wifi`)")
+    if view.nm_managed(iface):
+        reasons.append(f"NetworkManager manages {iface} (mark it unmanaged: "
+                       f"`nmcli device set {iface} managed no`)")
+    pid = view.other_supplicant(iface)
+    if pid is not None:
+        reasons.append(f"another wpa_supplicant (pid {pid}) drives {iface}")
+    return reasons

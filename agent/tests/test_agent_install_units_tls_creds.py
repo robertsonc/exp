@@ -208,6 +208,13 @@ def test_instances_only_for_known_roles_and_slug_ids():
         "exp-probe-target@s01.service",
     ]
     assert units.instance_units("probe", cfg, {"exp-probe-lease@.service"}) == ["exp-probe-lease@c01.service"]
+    have_wifi = have | {"exp-probe-wifi@.service"}
+    assert units.instance_units("probe", cfg, have_wifi) == [
+        "exp-probe-lease@c01.service",
+        "exp-probe-target@s01.service",
+        "exp-probe-wifi@w01.service",
+        "exp-probe-lease@w01.service",
+    ]
     assert units.instance_units("collector", cfg, have) == []
     with pytest.raises(Refused):
         units.instance_units("probe", {"ports": [{"id": "../x", "role": "client"}]}, have)

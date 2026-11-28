@@ -4,3 +4,5 @@ iputils-ping
 curl
 openssl
 iperf3
+iw
+wpasupplicant

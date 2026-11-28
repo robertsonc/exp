@@ -17,6 +17,7 @@ from exp_common.schema import Measurement
 
 from ..config import Port
 from ..lease import has_lease, read_lease
+from ..wifi import joining as wifi_joining
 
 log = logging.getLogger(__name__)
 
@@ -180,6 +181,9 @@ def pick_port(ctx: Any, roles: tuple[str, ...] = ("client", "wifi")) -> tuple[Po
     why: list[str] = []
     cands = [ctx.port] if ctx.explicit and ctx.port is not None else candidate_ports(ctx, roles)
     for p in cands:
+        if p.role == "wifi" and not ctx.explicit and wifi_joining(p.id):
+            why.append(f"{p.id} is running a Wi-Fi join test")
+            continue
         info = port_info(ctx, p)
         if info.bound:
             return p, info, why

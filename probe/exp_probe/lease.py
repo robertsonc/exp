@@ -67,8 +67,9 @@ def run_lease(cfg: ProbeConfig, port_id: str, runner: Any, paths: Paths, config_
     if cfg.mode == "host":
         print("exp-probe: host mode has no lease holder (DHCP is the host's own)", file=sys.stderr)
         return 0
-    if port.role != "client":
-        print(f"exp-probe: port {port_id} has role {port.role}; only client ports hold a lease", file=sys.stderr)
+    if port.role not in ("client", "wifi"):
+        print(f"exp-probe: port {port_id} has role {port.role}; only client and wifi ports hold a lease",
+              file=sys.stderr)
         return 2
     if port.ns not in netns_names(runner):
         print(f"exp-probe: namespace {port.ns} does not exist (is exp-probe-netns.service up?)", file=sys.stderr)

@@ -139,13 +139,32 @@ port also runs the §7 reflector (and `serve.iperf3: true` an iperf3 server), wh
 `path`/`iperf3` peer: it sits on the event network, which normally cannot reach the management
 network where collectors live. Port: `server.py` (`claim_address`, `set_netem`, fault files).
 
-### 5.11 `wifi_hb` / `wifi_join` (M4)
-A Wi-Fi interface with `role: wifi`, managed by `wpa_supplicant` in its own namespace (moved with
-`iw phy … set netns`). It joins the configured `ssid` (PSK or 802.1X creds from
-`creds/wifi.json`), runs DHCP, and each beat reports link, RSSI, noise, SNR, tx rate, channel,
-BSSID, and gateway RTT. If it lands on the wrong SSID or none, `on_target: false` and it retries
-the join every 60 s (EXM lesson: a client roamed to a guest SSID and kept "passing" while bypassing
-the network under test). Heartbeat `gateway`/`dns_hb` also run on the Wi-Fi port.
+### 5.11 `wifi_hb` / `wifi_join` (M4; CR-wifi-open-owe)
+A Wi-Fi interface with `role: wifi` and an `ssid`. Its whole radio moves into the port's namespace
+(`iw phy <phy> set netns name exp-<port>`; back with `iw phy <phy> set netns 1`, since a cfg80211 interface
+refuses `ip link set netns`). Preflight refuses a radio that also carries another interface (the whole
+phy moves), an rfkill-blocked radio, an interface NetworkManager manages, and one another `wpa_supplicant`
+drives. `exp-probe-wifi@<port>` runs `wpa_supplicant` in the namespace with a generated config that
+lists **only the target SSID** (hex-encoded); `exp-probe-lease@<port>` holds the DHCP lease as on a client port.
+
+**Open and Enhanced Open (OWE) networks only**: an event's public Wi-Fi has no credential, and none is
+stored, delivered or configured. `security: auto` (default) offers OWE first and plain open second;
+`open` / `owe` force one. `band` restricts the scan (`freq_list`); `country` sets the regulatory domain
+(needed by some cards for 5 / 6 GHz). The radio's permanent MAC is used (no randomisation), so a venue
+NOC can allowlist the probe past a captive portal.
+
+`wifi_hb` runs every beat on every Wi-Fi port and reports link, RSSI, noise, SNR, tx rate, channel,
+BSSID, security and gateway RTT. Not associated, on the wrong SSID (`on_target: false`), no lease, or a
+silent gateway → `fail`; while off target the probe asks the supplicant to rejoin at most every 60 s
+(EXM lesson: a client roamed to a guest SSID and kept "passing" while bypassing the network under test).
+A **captive portal** (the connectivity check `tests.wifi.portal_url`, default
+`http://connectivitycheck.gstatic.com/generate_204`, does not return its empty 204) → `degraded` with
+`detail.portal: true`; the probe reports a portal and never clicks through it. Weak RSSI / SNR, slow or
+lossy gateway → `degraded`.
+
+`wifi_join` (scheduled by `tests.wifi.interval_s`) drops and rejoins the network to time association,
+key exchange and DHCP; the port is offline for a few seconds each run, and the other heartbeats skip the
+port meanwhile. Heartbeat `gateway`/`dns_hb` also run on the Wi-Fi port. PSK and 802.1X are not supported.
 
 ### 5.12 `probe_self` (60 s)
 Spool depth/bytes, push lag (now − oldest unshipped `ts`), clock offset (from

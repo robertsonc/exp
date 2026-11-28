@@ -1,8 +1,8 @@
 """Scheduler (02-probe.md section 4). Deterministic: the clock, RNG seed and worker pool are injected.
 
 * Heartbeat cycle every ``heartbeat.interval_s`` aligned to the wall clock (``t % interval == 0``):
-  ``gateway`` (all ports), ``dhcp_hb``, ``dns_hb`` and ``ping`` run in parallel; **traces run one
-  after another** (test-port trace, then the control path from the management interface).
+  ``gateway`` (all ports), ``wifi_hb`` (all Wi-Fi ports), ``dhcp_hb``, ``dns_hb`` and ``ping`` run in
+  parallel; **traces run one after another** (test-port trace, then the control path from the management interface).
 * ``dhcp_hb`` / ``dns_hb`` / ``ping`` / ``trace`` each use ONE client port per cycle, rotating through
   the ports with a persisted rotation index (load stays constant as ports grow).
 * Scheduled tests (dhcp, dns, app, throughput, path, wifi_join) run every ``interval_s`` per port,
@@ -43,13 +43,13 @@ log = logging.getLogger(__name__)
 PRIO_BEAT, PRIO_SCHEDULED = 0, 1
 JITTER_FRACTION = 0.10
 SELFTEL_INTERVAL_S = 60
-BEAT_PARALLEL = ("gateway", "dhcp_hb", "dns_hb", "ping")
+BEAT_PARALLEL = ("gateway", "dhcp_hb", "dns_hb", "ping", "wifi_hb")
 SCHEDULED = ("dhcp", "dns", "app", "throughput", "path", "wifi_join")
 DEFAULT_ROLES: dict[str, tuple[str, ...]] = {
     "gateway": ("client", "wifi"), "dhcp_hb": ("client",), "dns_hb": ("client", "wifi"),
     "ping": ("client", "wifi"), "trace": ("client", "wifi"),
     "dhcp": ("client",), "dns": ("client", "wifi"), "app": ("client", "wifi"),
-    "throughput": ("client", "wifi"), "path": ("client", "wifi"), "wifi_join": ("wifi",),
+    "throughput": ("client", "wifi"), "path": ("client", "wifi"), "wifi_hb": ("wifi",), "wifi_join": ("wifi",),
 }
 TestFn = Callable[["TestContext"], "list[Measurement] | Measurement | None"]
 
@@ -332,7 +332,7 @@ class Scheduler:
     def _beat_tests_enabled(self) -> dict[str, bool]:
         hb = self.cfg.heartbeat
         return {"gateway": hb["gateway"], "dhcp_hb": hb["dhcp"], "dns_hb": hb["dns"],
-                "ping": bool(hb["ping"]), "trace": True}
+                "ping": bool(hb["ping"]), "trace": True, "wifi_hb": True}
 
     def run_beat(self, beat_ts: float) -> None:
         enabled = self._beat_tests_enabled()
@@ -343,7 +343,7 @@ class Scheduler:
             ports = self._eligible(test)
             if not ports or (spec := self._spec(test)) is None:
                 continue
-            chosen = ports if test == "gateway" else [ports[self.rotation.pick(test, len(ports))]]
+            chosen = ports if test in ("gateway", "wifi_hb") else [ports[self.rotation.pick(test, len(ports))]]
             for port in chosen:
                 self._submit(Job((test, port.id), PRIO_BEAT, self._runner_for(test, spec, port, "", beat_ts),
                                  port.id, test))

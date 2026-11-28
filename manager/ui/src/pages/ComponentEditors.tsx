@@ -14,7 +14,7 @@ import { notify } from '../components/Toasts';
 import { DASH, formatAbsolute } from '../lib/format';
 import {
   applyCollectorForm, applyDashboardForm, applyProbeForm, collectorFormFrom, dashboardFormFrom, probeFormFrom, sameConfig,
-  type AppRow, type Cfg, type CollectorForm, type DashboardForm, type LabelRow, type PeerRow, type ProbeForm, PROBE_M4_NOTE, draftsFromPorts,
+  type AppRow, type Cfg, type CollectorForm, type DashboardForm, type LabelRow, type PeerRow, type ProbeForm, PROBE_M4_NOTE, WIFI_JOIN_NOTE, draftsFromPorts,
 } from '../lib/intent';
 import { PortPicker } from '../components/PortPicker';
 import { nocUrl } from '../lib/sso';
@@ -169,9 +169,9 @@ export function ProbeEditor({ comp, me }: { comp: Component; me: Me | undefined 
             </>
           ) : null}
         </Fieldset>
-        <Fieldset legend="Wi-Fi">
-          <p class="dim" data-testid="m4-wifi">{PROBE_M4_NOTE}</p>
-          <TestHead title="Wi-Fi" on={f.wifi.on} onChange={(on) => set({ wifi: { ...f.wifi, on } })} interval={f.wifi.interval} onInterval={(interval) => set({ wifi: { ...f.wifi, interval } })} error={p['wifiInterval']} disabled={!allowed || !f.wifi.on} />
+        <Fieldset legend="Wi-Fi join test">
+          <p class="dim" data-testid="wifi-join-note">{WIFI_JOIN_NOTE}</p>
+          <TestHead title="Wi-Fi join" on={f.wifi.on} onChange={(on) => set({ wifi: { ...f.wifi, on } })} interval={f.wifi.interval} onInterval={(interval) => set({ wifi: { ...f.wifi, interval } })} error={p['wifiInterval']} disabled={!allowed} />
         </Fieldset>
       </Panel>
 

@@ -62,6 +62,26 @@ describe('probe interface picker', () => {
   });
 });
 
+describe('Wi-Fi ports (open / OWE)', () => {
+  it('needs an SSID; band, security and country ride along only when not the default', () => {
+    const none = buildPorts(ifaces, { enp1: { ...emptyDraft(), role: 'wifi' } });
+    expect(none.errors['enp1']).toMatch(/SSID/);
+    const r = buildPorts(ifaces, { enp1: { ...emptyDraft(), role: 'wifi', ssid: ' EVENT-FREE ', network: 'event' } });
+    expect(r.errors).toEqual({});
+    expect(r.ports).toEqual([{ id: 'w01', iface: 'enp1', role: 'wifi', network: 'event', ssid: 'EVENT-FREE' }]);
+    const full = buildPorts(ifaces, { enp1: { ...emptyDraft(), role: 'wifi', ssid: 'EVENT-FREE', band: '6', security: 'owe', country: 'nl' } });
+    expect(full.ports).toEqual([{ id: 'w01', iface: 'enp1', role: 'wifi', ssid: 'EVENT-FREE', band: '6', security: 'owe', country: 'NL' }]);
+    expect(buildPorts(ifaces, { enp1: { ...emptyDraft(), role: 'wifi', ssid: 'X', country: 'NLD' } }).errors['enp1']).toMatch(/Country/);
+    expect(buildPorts(ifaces, { enp1: { ...emptyDraft(), role: 'wifi', ssid: 'é'.repeat(17) } }).errors['enp1']).toMatch(/32 bytes/);
+  });
+  it('round-trips a configured Wi-Fi port', () => {
+    const current = [{ id: 'w01', iface: 'enp1', role: 'wifi', ssid: 'EVENT-FREE', band: '5', security: 'open', country: 'US' }];
+    expect(buildPorts(ifaces, draftsFromPorts(current)).ports).toEqual(current);
+    expect(draftsFromPorts([{ id: 'w01', iface: 'enp1', role: 'wifi', ssid: 'x', band: 'bogus', security: 'wpa2' }])['enp1'])
+      .toMatchObject({ band: 'any', security: 'auto', country: '' });
+  });
+});
+
 describe('new component defaults', () => {
   it('derives slugs and never puts secrets or wiring in the intent', () => {
     expect(defaultComponentId('probe', slugify('Hall B / Probe 5'))).toBe('probe-hall-b-probe-5');

@@ -8,6 +8,9 @@ explicitly -- verifying each is visible on the host -- before it deletes any nam
 namespace destroys virtual ports such as veth/VF otherwise; the EXM lesson). A namespace whose port
 could not be returned is left in place and reported, never deleted.
 
+A Wi-Fi port (`role: wifi`) moves as a whole radio: ``iw phy <phy> set netns name <ns>`` in, ``iw phy
+<phy> set netns 1`` out (a cfg80211 interface refuses ``ip link set netns``).
+
 Both directions are idempotent. host mode: tests run in the host namespace bound to the test interface
 (SO_BINDTODEVICE); `up`/`down` only run preflight and change nothing.
 
@@ -123,7 +126,14 @@ def _up_port(runner: Any, paths: Paths, port: Port, ns_exists: bool) -> str:
     if not resolv.exists():
         write_inplace(resolv, PLACEHOLDER_RESOLV)
     if not iface_present(runner, iface, ns):
-        _must(runner, ["ip", "link", "set", "dev", iface, "netns", ns], f"moving {iface} into {ns}")
+        if port.role == "wifi":
+            # a Wi-Fi interface is netns-local: its whole radio moves (preflight refused shared radios)
+            phy = host_phy(paths, iface)
+            if not phy:
+                raise OSError(f"cannot find the radio (phy) of Wi-Fi interface {iface}")
+            _must(runner, ["iw", "phy", phy, "set", "netns", "name", ns], f"moving radio {phy} ({iface}) into {ns}")
+        else:
+            _must(runner, ["ip", "link", "set", "dev", iface, "netns", ns], f"moving {iface} into {ns}")
     _must(runner, ["ip", "-n", ns, "link", "set", "lo", "up"], f"bringing lo up in {ns}")
     r = runner.run(["ip", "netns", "exec", ns, "sysctl", "-qw", f"net.ipv6.conf.{iface}.disable_ipv6=1"], 10)
     if not r.ok:
@@ -180,7 +190,7 @@ def down(cfg: ProbeConfig, runner: Any, paths: Paths | None = None, *, sleep: Sl
             runner.run(["ip", "-n", port.ns, "link", "set", "dev", port.iface, "down"], 10)
             # Hand the port back explicitly: a physical NIC would return when the namespace goes, but a
             # virtual one (veth, some hypervisor NICs) would be destroyed with it.
-            runner.run(["ip", "-n", port.ns, "link", "set", "dev", port.iface, "netns", "1"], 20)
+            _move_back(runner, port.ns, port.iface, port.role == "wifi")
         if _wait_on_host(runner, port.iface, sleep):
             _host_admin_down(runner, port, lines)
             returned.append(port)
@@ -197,6 +207,34 @@ def down(cfg: ProbeConfig, runner: Any, paths: Paths | None = None, *, sleep: Sl
     if kept:
         raise TeardownIncomplete("ports not returned, namespaces kept: " + ", ".join(kept))
     return lines
+
+
+def host_phy(paths: Paths, iface: str) -> str | None:
+    """The cfg80211 radio of a host-namespace interface, or None when it is not Wi-Fi."""
+    try:
+        name = (paths.sys_class_net / iface / "phy80211" / "name").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return name if name.isprintable() and name and "/" not in name else None
+
+
+def ns_phy(runner: Any, ns: str, iface: str) -> str | None:
+    """The radio of an interface inside `ns` (``ip netns exec`` remounts /sys for the namespace)."""
+    r = runner.run(["ip", "netns", "exec", ns, "cat", f"/sys/class/net/{iface}/phy80211/name"], 10)
+    name = r.stdout.strip() if r.ok else ""
+    return name if name and name.isprintable() and "/" not in name and " " not in name else None
+
+
+def _move_back(runner: Any, ns: str, iface: str, wifi: bool | None) -> None:
+    """Return an interface to the host namespace: a Wi-Fi radio with `iw phy`, anything else with `ip`.
+    `wifi` None (a stale namespace, role unknown): try `ip` first, and the radio if that is refused."""
+    if not wifi:
+        r = runner.run(["ip", "-n", ns, "link", "set", "dev", iface, "netns", "1"], 20)
+        if r.ok or wifi is False:
+            return
+    phy = ns_phy(runner, ns, iface)
+    if phy:
+        runner.run(["ip", "netns", "exec", ns, "iw", "phy", phy, "set", "netns", "1"], 20)
 
 
 def _wait_on_host(runner: Any, iface: str, sleep: Sleeper, tries: int = 20) -> bool:
@@ -246,7 +284,7 @@ def remove_stale(cfg: ProbeConfig, runner: Any, paths: Paths, sleep: Sleeper = t
             name = lk.get("ifname") if isinstance(lk, dict) else None
             if not name or name == "lo":
                 continue
-            runner.run(["ip", "-n", ns, "link", "set", "dev", name, "netns", "1"], 20)
+            _move_back(runner, ns, name, None)
             if not _wait_on_host(runner, name, sleep, tries=4):
                 stuck = True
         if stuck:

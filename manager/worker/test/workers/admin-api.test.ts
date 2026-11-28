@@ -200,6 +200,12 @@ describe("components, ports, restart, rotation", () => {
     expect((await lastAudit()).action).toBe("component.ports");
     const doc = (await (await getDesired(host.secret)).json()) as { components: Array<{ config: { ports: Array<{ iface: string }> } }> };
     expect(doc.components[0]!.config.ports.map((p) => p.iface)).toEqual(["enp10s0f0", "enp10s0f1"]);
+    // Wi-Fi: open / OWE only, so a port carries no credential field at all
+    const wifi = { id: "w01", iface: "enp10s0f1", role: "wifi", ssid: "EVENT-FREE", band: "5", security: "owe", country: "NL" };
+    expect((await h.json("admin", "PUT", `/components/${cid}/ports`, { ports: [client("enp10s0f0"), wifi] })).status).toBe(200);
+    for (const extra of [{ psk: "hunter22" }, { password: "x" }, { security: "wpa2" }, { country: "nl" }]) {
+      expect((await h.json("admin", "PUT", `/components/${cid}/ports`, { ports: [client("enp10s0f0"), { ...wifi, ...extra }] })).status, JSON.stringify(extra)).toBe(422);
+    }
     // the same rule applies through a plain config PATCH
     const bad = await h.json<{ error: { code: string } }>("admin", "PATCH", `/components/${cid}`, { config: { ports: [client("eno1")] } });
     expect(bad.status).toBe(422);

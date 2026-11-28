@@ -133,7 +133,9 @@ def referenced_credential_files(info: UnitInfo, creds_logical: str) -> list[str]
 
 def instance_units(component: str, config: dict, available: set[str]) -> list[str]:
     """Probe port instances: exp-probe-lease@<port> for client ports, exp-probe-target@<port> for target
-    ports (only when the artifact ships the template)."""
+    ports, exp-probe-wifi@<port> + exp-probe-lease@<port> for Wi-Fi ports (only when the artifact ships
+    the templates; an artifact without the wifi template predates Wi-Fi support: its Wi-Fi ports get
+    nothing)."""
     if component != "probe":
         return []
     out: list[str] = []
@@ -141,14 +143,16 @@ def instance_units(component: str, config: dict, available: set[str]) -> list[st
         pid, role = port.get("id"), port.get("role")
         if not isinstance(pid, str) or not _SLUG.match(pid):
             raise Refused("probe config has an invalid port id")
-        kind = {"client": "lease", "target": "target"}.get(role)
-        if kind is None:
+        kinds = {"client": ("lease",), "target": ("target",), "wifi": ("wifi", "lease")}.get(role)
+        if kinds is None:
             continue
-        tmpl = f"exp-probe-{kind}@.service"
-        if tmpl in available:
-            out.append(f"exp-probe-{kind}@{pid}.service")
-        else:
-            log.warning("artifact has no %s; port %s gets no %s unit", tmpl, pid, kind)
+        missing = [f"exp-probe-{k}@.service" for k in kinds if f"exp-probe-{k}@.service" not in available]
+        if missing:
+            log.warning("artifact has no %s; port %s gets no %s unit",
+                        ", ".join(missing), pid, "/".join(kinds))
+            if role == "wifi":
+                continue
+        out += [f"exp-probe-{k}@{pid}.service" for k in kinds if f"exp-probe-{k}@.service" in available]
     return out
 
 

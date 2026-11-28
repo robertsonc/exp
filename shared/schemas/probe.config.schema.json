@@ -280,9 +280,15 @@
                   "type": "integer",
                   "minimum": 10,
                   "maximum": 86400
+                },
+                "portal_url": {
+                  "type": "string",
+                  "pattern": "^http://[^\\s\\x00-\\x1f]+$",
+                  "description": "Captive-portal check URL (plain http; must answer an empty 204). Default http://connectivitycheck.gstatic.com/generate_204."
                 }
               },
-              "additionalProperties": true
+              "additionalProperties": true,
+              "description": "The active Wi-Fi join test (wifi_join) every interval_s; wifi_hb runs every beat regardless."
             }
           ]
         },
@@ -514,7 +520,8 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 32,
-              "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+              "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+              "description": "The one SSID the port joins (required by the probe for role wifi; a port without it reports an error)."
             },
             "band": {
               "enum": [
@@ -523,6 +530,19 @@
                 "6",
                 "any"
               ]
+            },
+            "security": {
+              "enum": [
+                "auto",
+                "open",
+                "owe"
+              ],
+              "description": "auto (default): OWE (Enhanced Open) when the SSID offers it, else open. open / owe: only that. No credential: PSK / 802.1X are not supported."
+            },
+            "country": {
+              "type": "string",
+              "pattern": "^[A-Z]{2}$",
+              "description": "Regulatory country (ISO 3166-1 alpha-2) for the radio, needed by some cards for 5 / 6 GHz."
             }
           },
           "required": [

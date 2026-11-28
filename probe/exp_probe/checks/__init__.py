@@ -1,5 +1,5 @@
 """Measurement test modules: gateway, dhcp (dhcp_hb + dhcp), dns (dns_hb + dns), trace, ping, app (M1);
-throughput, path, wifi arrive with M4+.
+wifi (wifi_hb + wifi_join, M4); throughput and path arrive later.
 
 Each module registers its test functions with `exp_probe.scheduler.register_test`; `register_all` imports every
 module that exists in this build. A configured test without a module is reported once in the log and skipped
