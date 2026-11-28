@@ -129,6 +129,7 @@ _TABLE = {
         GET /integrations/{kind}
         PUT /integrations/{kind}
         POST /integrations/{kind}/test
+        GET /ops/devices
         GET /drills
         POST /drills
         POST /drills/{id}/approve

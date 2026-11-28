@@ -19,6 +19,8 @@ export interface Env {
   RELEASES_REPO: string;
   ORG_NAME: string;
   MANAGER_URL?: string;
+  /** source CIDRs allowed to open the read-only /kiosk without Access sign-in (deploy.sh --kiosk-allow-ip); empty = no kiosk */
+  KIOSK_ALLOW_CIDRS?: string;
   // secrets
   EXP_MASTER_KEY?: string;
   /** set only while a master-key rotation is being re-encrypted (05-manager.md section 6) */

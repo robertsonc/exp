@@ -15,6 +15,7 @@ import { toggleTheme, useTheme } from '../lib/theme';
 interface NavDef { to: string; label: string; icon: IconName; match: string[] }
 const NAV: NavDef[] = [
   { to: '/fleet', label: 'Fleet', icon: 'network', match: ['/fleet', '/'] },
+  { to: '/ops', label: 'Ops', icon: 'wifi', match: ['/ops'] },
   { to: '/issues', label: 'Issues', icon: 'alert', match: ['/issues'] },
   { to: '/hosts', label: 'Hosts', icon: 'host', match: ['/hosts'] },
   { to: '/sites', label: 'Sites', icon: 'site', match: ['/sites'] },

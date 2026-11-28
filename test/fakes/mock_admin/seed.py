@@ -602,7 +602,15 @@ def _seed_rest(world: dict[str, Any], now: float) -> None:
                "credentials": {"set": True, "updated_at": iso(now - 7 * day)}, "allowlist": [
                    {"nePk": "1.NE", "interfaces": ["wan0"], "vrrp_groups": [101]}], "updated_at": iso(now - 7 * day)},
         "mist": {"kind": "mist", "config": {"org_id": "mist-org-1", "site_ids": ["mist-site-1"]},
-                 "credentials": {"set": False, "updated_at": None}, "allowlist": [], "updated_at": None}}
+                 "credentials": {"set": False, "updated_at": None}, "allowlist": [], "updated_at": None},
+        "central": {"kind": "central", "config": {"api_base": "https://us1.api.central.arubanetworks.com"},
+                    "credentials": {"set": True, "updated_at": iso(now - 2 * day)}, "allowlist": [],
+                    "updated_at": iso(now - 2 * day)}}
+    # --- ops board (GET /ops/devices): Mist is not connected (no token), Central reports counts
+    world["ops_devices"] = {"central": {"total": 212, "online": 205, "offline": 7,
+                                        "by_type": {"ap": {"total": 180, "online": 175}, "switch": {"total": 28, "online": 27},
+                                                    "gateway": {"total": 4, "online": 3}},
+                                        "counts_at": iso(now - 40)}}
     # --- drills
     d_done = fc.det_id("drl_", "drill:dns-block")
     d_pend = fc.det_id("drl_", "drill:wan-down")

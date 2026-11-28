@@ -1150,6 +1150,29 @@ def r_integ_test(a: MockAdmin, r: Req) -> Resp:
                "inventory_count": 42 if good else None})
 
 
+_OPS_LABEL = {"mist": "Juniper Mist", "central": "HPE Aruba Networking Central"}
+_OPS_NEED = {"mist": ("api_base", "org_id", "token"), "central": ("api_base", "client_id", "client_secret")}
+
+
+def r_ops_devices(a: MockAdmin, r: Req) -> Resp:
+    out = []
+    for kind in ("mist", "central"):
+        i = a.w["integrations"][kind]
+        missing = [k for k in _OPS_NEED[kind] if k in ("api_base", "org_id") and not i["config"].get(k)]
+        if not i["credentials"]["set"]:
+            missing += [k for k in _OPS_NEED[kind] if k not in ("api_base", "org_id")]
+        c = a.w.get("ops_devices", {}).get(kind)
+        src = {"kind": kind, "label": _OPS_LABEL[kind], "state": "unconfigured", "missing": missing, "total": None,
+               "online": None, "offline": None, "by_type": {}, "counts_at": None, "checked_at": None, "error": None}
+        if not missing:
+            src.update(state="ok" if c else "pending", checked_at=seed.iso(a.now()))
+            if c:
+                src.update(total=c["total"], online=c["online"], offline=c["offline"], by_type=c["by_type"],
+                           counts_at=c["counts_at"])
+        out.append(src)
+    return ok({"as_of": seed.iso(a.now()), "ttl_s": 60, "sources": out})
+
+
 def pw_out(a: MockAdmin) -> dict[str, Any]:
     p = a.w["platform_webhook"]
     return {"format": p["format"], "url": {"set": bool(p.get("_url")), "updated_at": p.get("_updated")}}
@@ -1810,6 +1833,7 @@ def _routes() -> list[tuple[str, re.Pattern[str], str, Callable[[MockAdmin, Req]
         ("POST", "/sites/{site}/alerts/test", "admin", r_alerts_test),
         ("GET", "/integrations/{kind}", "viewer", r_integ_get), ("PUT", "/integrations/{kind}", "owner", r_integ_put),
         ("POST", "/integrations/{kind}/test", "owner", r_integ_test),
+        ("GET", "/ops/devices", "viewer", r_ops_devices),
         ("GET", "/drills", "viewer", r_drills_list), ("POST", "/drills", "admin", r_drill_create),
         ("POST", "/drills/abort-all", "operator", r_drills_abort_all),
         ("POST", "/drills/{id}/approve", "admin", r_drill_approve), ("POST", "/drills/{id}/start", "operator", r_drill_start),

@@ -2078,9 +2078,11 @@
   "type": "object"
  },
  "IntegrationKind": {
+  "description": "`ec` (EdgeConnect Orchestrator), `mist` (Juniper Mist; config `api_base`, `org_id`; credentials `token`), `central` (HPE Aruba Networking Central on GreenLake; config `api_base` = the regional API gateway `https://<region>.api.central.arubanetworks.com`; credentials `client_id` + `client_secret`, sent together).",
   "enum": [
    "ec",
-   "mist"
+   "mist",
+   "central"
   ]
  },
  "IntegrationPut": {
@@ -2100,9 +2102,17 @@
    },
    "credentials": {
     "additionalProperties": false,
-    "description": "Write-only. Omit to keep the stored secret.",
+    "description": "Write-only. Omit to keep the stored secret. `ec` / `mist` take `api_key` or `token`; `central` takes `client_id` and `client_secret`, both at once (the stored value is replaced as a whole).",
     "properties": {
      "api_key": {
+      "maxLength": 512,
+      "type": "string"
+     },
+     "client_id": {
+      "maxLength": 512,
+      "type": "string"
+     },
+     "client_secret": {
       "maxLength": 512,
       "type": "string"
      },
@@ -2576,6 +2586,183 @@
   "required": [
    "noc",
    "token"
+  ],
+  "type": "object"
+ },
+ "OpsDeviceCount": {
+  "additionalProperties": false,
+  "properties": {
+   "online": {
+    "minimum": 0,
+    "type": "integer"
+   },
+   "total": {
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "total",
+   "online"
+  ],
+  "type": "object"
+ },
+ "OpsDevices": {
+  "additionalProperties": false,
+  "properties": {
+   "as_of": {
+    "$ref": "common.schema.json#/$defs/ts"
+   },
+   "sources": {
+    "items": {
+     "$ref": "#/$defs/OpsSource"
+    },
+    "maxItems": 2,
+    "type": "array"
+   },
+   "ttl_s": {
+    "description": "The manager polls each platform at most once per this many seconds, whoever asks.",
+    "minimum": 1,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "as_of",
+   "ttl_s",
+   "sources"
+  ],
+  "type": "object"
+ },
+ "OpsSource": {
+  "additionalProperties": false,
+  "description": "One platform on the ops board. Counts come from the last successful read-only poll; after a failed poll they are kept (with `counts_at`) and `error` says why the poll failed. Never carries a credential.",
+  "properties": {
+   "by_type": {
+    "additionalProperties": false,
+    "properties": {
+     "ap": {
+      "$ref": "#/$defs/OpsDeviceCount"
+     },
+     "gateway": {
+      "$ref": "#/$defs/OpsDeviceCount"
+     },
+     "other": {
+      "$ref": "#/$defs/OpsDeviceCount"
+     },
+     "switch": {
+      "$ref": "#/$defs/OpsDeviceCount"
+     }
+    },
+    "type": "object"
+   },
+   "checked_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   },
+   "counts_at": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "$ref": "common.schema.json#/$defs/ts"
+     }
+    ]
+   },
+   "error": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "maxLength": 300,
+      "type": "string"
+     }
+    ]
+   },
+   "kind": {
+    "enum": [
+     "mist",
+     "central"
+    ]
+   },
+   "label": {
+    "type": "string"
+   },
+   "missing": {
+    "items": {
+     "enum": [
+      "api_base",
+      "org_id",
+      "token",
+      "client_id",
+      "client_secret"
+     ]
+    },
+    "type": "array"
+   },
+   "offline": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ],
+    "description": "total - online (Mist \"disconnected\", \"restarting\", \"upgrading\"... and Central OFFLINE)."
+   },
+   "online": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   },
+   "state": {
+    "description": "`unconfigured`: the connector lacks `missing`; `pending`: first poll not finished; `ok`: the last poll succeeded; `error`: the last poll failed.",
+    "enum": [
+     "unconfigured",
+     "pending",
+     "ok",
+     "error"
+    ]
+   },
+   "total": {
+    "anyOf": [
+     {
+      "type": "null"
+     },
+     {
+      "minimum": 0,
+      "type": "integer"
+     }
+    ]
+   }
+  },
+  "required": [
+   "kind",
+   "label",
+   "state",
+   "missing",
+   "total",
+   "online",
+   "offline",
+   "by_type",
+   "counts_at",
+   "checked_at",
+   "error"
   ],
   "type": "object"
  },

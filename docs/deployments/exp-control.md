@@ -30,8 +30,14 @@ From a checkout of `main`, with an API token in the environment (permissions: `m
 
 ```bash
 CLOUDFLARE_API_TOKEN=… manager/deploy.sh --account-id <account id> --domain exp-control.harnessed.cloud \
-  --owner-email <owner email> --org-name "HPE EXP" --release-pubkey packaging/keys/release-pub.pem
+  --owner-email <owner email> --org-name "HPE EXP" --release-pubkey packaging/keys/release-pub.pem \
+  --kiosk-allow-ip 37.34.66.15/32
 ```
+
+`--kiosk-allow-ip 37.34.66.15/32` (from the first deploy that carries the Ops board, migration `0006`): the management network's
+egress may open https://exp-control.harnessed.cloud/kiosk, a read-only page of Mist / Central device counts, without signing in.
+It creates the Access app `exp-manager bypass /kiosk` (bypass, include IP 37.34.66.15/32 only) and sets `KIOSK_ALLOW_CIDRS`.
+**Keep the flag on every redeploy**; dropping it turns the kiosk off in the Worker. Not yet deployed as of this record.
 
 Idempotent: it reuses D1, R2 and the Access apps, applies new migrations, never replaces `EXP_MASTER_KEY`, and keeps
 any `require`/`exclude` rules added to the Access policies. Add `--embed-ui` only when deploying through a proxy that

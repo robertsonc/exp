@@ -59,6 +59,28 @@ pair, the per-org `device_key` secret (sealed with the master-key keyring, never
 UI: `/sites/{site}/speedtest` (branding preview, consent, zones, QR signage, limits, connectors), runner correlation sources under the
 runner's Configure tab. Decisions and contract additions: [CR-m6-manager](../docs/spec/changes/CR-m6-manager.md).
 
+## Ops board (device status)
+
+`/ops` shows, per platform, how many **Juniper Mist** and **HPE Aruba Networking Central** devices exist and how many are
+online / offline (`GET /api/admin/v1/ops/devices`, viewer). Read-only against both vendors: Mist
+`GET /api/v1/orgs/{org_id}/stats/devices?type=all&status=all` (`Authorization: Token`), Central (the GreenLake-hosted "New
+Central") a client-credentials token from `sso.common.cloud.hpe.com` then `GET /network-monitoring/v1/devices`. The poll is
+on demand and shared: at most one per platform per 60 s across all viewers (atomic claim on `ops_device_status`, migration
+`0006_ops_devices.sql`); only counts are stored. A failed poll keeps the last good counts and shows why. Central's 2 h access
+token lives in isolate memory only. Connectors: the `mist` integration (now also `config.org_id`; the runner ignores it)
+and the new `central` integration (`config.api_base` = the regional API gateway, credentials `client_id` + `client_secret`).
+Use **read-only** credentials (Mist Observer org token; a Central API client with a read-only role). The owner connects
+both from the card on `/ops`; "Save and test" runs the same poll (`POST integrations/{kind}/test`, `inventory_count`).
+
+**Kiosk (`/kiosk`, no sign-in, read-only).** The same counts on a standalone wall-screen page for a trusted network, e.g. the
+management network's egress: `deploy.sh ... --kiosk-allow-ip 37.34.66.15/32`. Two gates: the Access application
+`<worker> bypass /kiosk` admits only those CIDRs (any other source meets an app with no matching policy and is refused by Access),
+and the Worker checks `CF-Connecting-IP` against `KIOSK_ALLOW_CIDRS` again (empty = 404). It serves only `GET /kiosk` (static page,
+CSP pinned by hash) and `GET /kiosk/api/devices` (counts per platform; no device names, connector state or vendor errors). It is
+deliberately **not** an Access bypass of the admin app: `/api/admin/v1` keeps requiring the Access JWT from every source. Pass
+the flag on every redeploy (without it the Worker turns the kiosk off; the Access app is left and warned about). If the
+management network is dual-stack, add its IPv6 prefix too: a browser that reaches Cloudflare over IPv6 arrives from that address.
+
 ## Commands
 
 ```

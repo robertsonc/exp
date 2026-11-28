@@ -146,6 +146,20 @@ openssl genpkey -algorithm ec -pkeyopt ec_paramgen_curve:P-256 -out "$T/ec.pem" 
 assert_fails "refuses a non-Ed25519 release key" "not an Ed25519" "${DEPLOY[@]}" --dry-run --account-id "$ACCT" --owner-email o@example.com --release-pubkey "$T/ecpub.pem"
 assert_fails "refuses a bad worker name" "worker-name" "${DEPLOY[@]}" "${base_args[@]}" --worker-name "Bad Name"
 
+echo "deploy.sh --kiosk-allow-ip"
+assert_lacks "bypass /kiosk" "$out" "no kiosk Access app without --kiosk-allow-ip"
+kout="$("${DEPLOY[@]}" "${base_args[@]}" --kiosk-allow-ip 37.34.66.15/32 --kiosk-allow-ip 2001:db8:10::/48,37.34.66.15/32 2>&1)"; krc=$?
+[ "$krc" -eq 0 ] && ok "kiosk dry run exits 0" || bad "kiosk dry run exits 0 (rc=$krc)" "$kout"
+assert_has '"name":"exp-manager bypass /kiosk","domain":"exp-control.example.com/kiosk"' "$kout" "plans the kiosk bypass application on /kiosk only"
+assert_has '"decision":"bypass","include":[{"ip":{"ip":"37.34.66.15/32"}},{"ip":{"ip":"2001:db8:10::/48"}}]' "$kout" "kiosk bypass includes exactly the given sources (deduplicated), never everyone"
+assert_has "/kiosk/api/devices (direct, bypassing Access) == 403" "$kout" "plans the Worker-side kiosk refusal check"
+assert_has 'KIOSK_ALLOW_CIDRS = "37.34.66.15/32,2001:db8:10::/48"' "$(cat "$GEN")" "generated config carries KIOSK_ALLOW_CIDRS"
+"${DEPLOY[@]}" "${base_args[@]}" >/dev/null 2>&1
+assert_has 'KIOSK_ALLOW_CIDRS = ""' "$(cat "$GEN")" "re-running without --kiosk-allow-ip disables the kiosk in the Worker"
+for badc in 0.0.0.0/0 10.0.0.0/8 37.34.66.15 37.34.66.256/32 ::/0 2001:db8::/16 "37.34.66.15/32;x" example.com/32; do
+  assert_fails "refuses kiosk source $badc" "--kiosk-allow-ip" "${DEPLOY[@]}" "${base_args[@]}" --kiosk-allow-ip "$badc"
+done
+
 echo "deploy.sh takeover guards (ordering, foreign Access apps, policy preservation)"
 # dry-run order: the Workers custom-domain guard and the Access reads come before ANY Access app/policy call
 gline="$(printf '%s\n' "$out" | grep -n 'workers/domains?hostname=exp-control.example.com' | head -n1 | cut -d: -f1)"
