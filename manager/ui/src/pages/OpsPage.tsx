@@ -1,10 +1,10 @@
-// Ops board: how many Mist and Central devices exist, and how many are online / offline. One card per platform,
-// big numbers, readable from across the NOC. The manager polls the vendors read-only and caches 60 s; this page
+// Ops board: how many Mist and Central devices exist, how many are online / offline, and WHICH are down (name, type,
+// site, how long) so the NOC knows what to go and look at. One card per platform, big numbers, readable from across the NOC. The manager polls the vendors read-only and caches 60 s; this page
 // re-reads every 30 s like every other page. Connector setup (owner only) is a dialog on the card.
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import { ep } from '../api/endpoints';
-import type { IntegrationRead, IntegrationTestResult, Me, OpsDevices, OpsKind, OpsSource } from '../api/types';
+import type { IntegrationRead, IntegrationTestResult, Me, OpsDevices, OpsDownDevice, OpsKind, OpsSource } from '../api/types';
 import { mutate, useNow, useResource } from '../data/hooks';
 import { Button, Dialog, ErrorBanner, SkeletonBlock, StatusPill } from '../components/atoms';
 import { FormError, TextField, failText, secretSummary } from '../components/forms';
@@ -19,6 +19,35 @@ const CENTRAL_HOST = /^https:\/\/[a-z0-9-]{1,32}\.api\.central\.arubanetworks\.c
 const TYPE_LABEL: Record<string, string> = { ap: 'APs', switch: 'Switches', gateway: 'Gateways', other: 'Other' };
 const FIELD_LABEL: Record<string, string> = { api_base: 'API URL', org_id: 'org ID', token: 'API token', client_id: 'client ID', client_secret: 'client secret' };
 const fmt = (n: number | null): string => (n === null ? '–' : n.toLocaleString());
+const ONE_LABEL: Record<string, string> = { ap: 'AP', switch: 'Switch', gateway: 'Gateway', other: 'Device' };
+
+/** "12 min", "3 h 5 min", "2 d 4 h": how long a device has been down */
+export function downFor(since: string, now: number): string {
+  const m = Math.max(0, Math.round((now - Date.parse(since)) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h} h ${m % 60} min` : `${Math.floor(h / 24)} d ${h % 24} h`;
+}
+
+function DownList({ down, more, now, kind }: { down: OpsDownDevice[]; more: number; now: number; kind: OpsKind }): JSX.Element | null {
+  if (!down.length && !more) return null;
+  return (
+    <div class="ops-down">
+      <h3 id={`ops-${kind}-down-h`}>Down now</h3>
+      <ol aria-labelledby={`ops-${kind}-down-h`} data-testid={`ops-${kind}-down`}>
+        {down.map((d, i) => (
+          <li key={`${d.since}-${i}`}>
+            <span class="ops-down-name">{d.name ?? '(unnamed)'}</span>
+            <span class="ops-down-for">down {downFor(d.since, now)}</span>
+            <span class="ops-down-meta">{ONE_LABEL[d.type] ?? 'Device'}{d.site ? ` · ${d.site}` : ''}</span>
+          </li>
+        ))}
+      </ol>
+      {more > 0 ? <p class="ops-error">+ {more.toLocaleString()} more down (not listed)</p> : null}
+    </div>
+  );
+}
 
 function Card({ s, me, now, onSetup }: { s: OpsSource; me: Me | undefined; now: number; onSetup: () => void }): JSX.Element {
   const has = s.total !== null;
@@ -47,6 +76,7 @@ function Card({ s, me, now, onSetup }: { s: OpsSource; me: Me | undefined; now: 
             <div class={off > 0 ? 'ops-offline ops-bad' : 'ops-offline'}><dt>Offline</dt><dd data-k="offline">{fmt(s.offline)}</dd></div>
           </dl>
           {types.length ? <p class="ops-types">{types.map(([k, v]) => `${TYPE_LABEL[k] ?? k} ${v.online}/${v.total}`).join(' · ')}</p> : null}
+          <DownList down={s.down ?? []} more={s.down_more ?? 0} now={now} kind={s.kind} />
           {s.error ? <p class="ops-error" role="status">{s.error}{has && s.counts_at ? ` Showing counts from ${formatAgo(s.counts_at, now)}.` : ''}</p> : null}
           <footer class="ops-foot">
             <span class="dim">{s.counts_at ? <AsOf ts={s.counts_at} now={now} label="Counted" /> : 'Waiting for the first poll'}</span>

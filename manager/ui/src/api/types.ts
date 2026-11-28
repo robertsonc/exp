@@ -198,7 +198,12 @@ export interface OpsSource {
   counts_at: string | null;
   checked_at: string | null;
   error: string | null;
+  /** devices down at the last successful poll, longest down first (names and sites only) */
+  down: OpsDownDevice[];
+  /** offline devices beyond the listed ones */
+  down_more: number;
 }
+export interface OpsDownDevice { name: string | null; type: 'ap' | 'switch' | 'gateway' | 'other'; site: string | null; since: string }
 export interface OpsDevices { as_of: string; ttl_s: number; sources: OpsSource[] }
 export interface IntegrationRead { kind: 'ec' | 'mist' | 'central'; config: Record<string, unknown>; credentials: SecretState; updated_at: string | null }
 export interface IntegrationTestResult { ok: boolean; detail: string; inventory_count: number | null }

@@ -1,4 +1,5 @@
-// Read-only kiosk (/kiosk): no Access JWT, gated by the source address (KIOSK_ALLOW_CIDRS) and exposing device counts only.
+// Read-only kiosk (/kiosk): no Access JWT, gated by the source address (KIOSK_ALLOW_CIDRS) and exposing device counts and
+// the devices that are down (name, type, site, since) only.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { app } from "../../src/index";
 import type { Env } from "../../src/env";
@@ -90,7 +91,7 @@ describe("kiosk page and data", () => {
     expect(html).not.toMatch(/innerHTML/);
   });
 
-  it("returns counts only: no connector state, no vendor error text, no credentials", async () => {
+  it("returns counts and down devices only: no connector state, no vendor error text, no credentials", async () => {
     expect((await h.json("owner", "PUT", "/integrations/mist", { config: { api_base: "https://api.mist.com", org_id: ORG }, credentials: { token: "mist-SECRET-token" } })).status).toBe(200);
     let status = 200;
     h.handlers.push((url) => {
@@ -102,7 +103,8 @@ describe("kiosk page and data", () => {
     const b = (await r.json()) as { sources: Array<Record<string, unknown>> };
     const mist = b.sources.find((s) => s.kind === "mist")!;
     expect(mist).toMatchObject({ state: "ok", total: 2, online: 1, offline: 1, by_type: { ap: { total: 1, online: 1 }, switch: { total: 1, online: 0 } } });
-    expect(Object.keys(mist).sort()).toEqual(["by_type", "counts_at", "kind", "label", "offline", "online", "state", "total"]);
+    expect(Object.keys(mist).sort()).toEqual(["by_type", "counts_at", "down", "down_more", "kind", "label", "offline", "online", "state", "total"]);
+    expect(mist.down).toEqual([{ name: null, type: "switch", site: null, since: expect.any(String) }]);
     expect(b.sources.find((s) => s.kind === "central")).toMatchObject({ state: "unconfigured", total: null });
     const text = JSON.stringify(b);
     expect(text).not.toMatch(/SECRET|missing|error|org_id|api\.mist\.com/);
@@ -112,5 +114,27 @@ describe("kiosk page and data", () => {
     const s2 = ((await (await get("/kiosk/api/devices", MGMT)).json()) as { sources: Array<Record<string, unknown>> }).sources.find((s) => s.kind === "mist")!;
     expect(s2).toMatchObject({ state: "stale", total: 2 });
     expect(JSON.stringify(s2)).not.toMatch(/401|credential/);
+  });
+
+  it("lists at most 200 down devices per platform by name, type, site and since; the rest only as a count", async () => {
+    expect((await h.json("owner", "PUT", "/integrations/mist", { config: { api_base: "https://api.mist.com", org_id: ORG }, credentials: { token: "mist-token" } })).status).toBe(200);
+    const devices = Array.from({ length: 230 }, (_, i) => ({ mac: `aa${String(i).padStart(10, "0")}`, serial: `SER${i}`, ip: `10.0.${i >> 8}.${i & 255}`, type: "ap", status: "disconnected", name: `ap-${i}` }));
+    h.handlers.push((url) => {
+      if (!url.startsWith("https://api.mist.com/")) return undefined;
+      return Response.json(new URL(url).searchParams.get("page") === "1" ? devices : []);
+    });
+    const b = (await (await get("/kiosk/api/devices", MGMT)).json()) as { sources: Array<{ kind: string; down: Array<Record<string, unknown>>; down_more: number }> };
+    const m = b.sources.find((s) => s.kind === "mist")!;
+    expect(m.down).toHaveLength(200);
+    expect(m.down_more).toBe(30);
+    for (const d of m.down) expect(Object.keys(d).sort()).toEqual(["name", "since", "site", "type"]);
+    expect(JSON.stringify(b)).not.toMatch(/SER[0-9]|aa0000|10\.0\./);
+  });
+
+  it("the page renders device names as text, never as markup", async () => {
+    const html = await (await get("/kiosk", MGMT)).text();
+    expect(html).toContain("Down now");
+    expect(html).toMatch(/textContent/);
+    expect(html).not.toMatch(/innerHTML|insertAdjacentHTML|outerHTML/);
   });
 });

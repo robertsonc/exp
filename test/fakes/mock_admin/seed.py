@@ -610,7 +610,16 @@ def _seed_rest(world: dict[str, Any], now: float) -> None:
     world["ops_devices"] = {"central": {"total": 212, "online": 205, "offline": 7,
                                         "by_type": {"ap": {"total": 180, "online": 175}, "switch": {"total": 28, "online": 27},
                                                     "gateway": {"total": 4, "online": 3}},
-                                        "counts_at": iso(now - 40)}}
+                                        "counts_at": iso(now - 40),
+                                        # the 7 offline devices, longest down first (names / sites only, as the Worker stores them)
+                                        "down": [
+                                            {"name": "gw-hall-b-02", "type": "gateway", "site": "Hall B", "since": iso(now - 3 * 3600 - 600)},
+                                            {"name": "ap-hall-b-117", "type": "ap", "site": "Hall B", "since": iso(now - 2 * 3600)},
+                                            {"name": "ap-foyer-03", "type": "ap", "site": "Foyer", "since": iso(now - 47 * 60)},
+                                            {"name": "sw-stage-left", "type": "switch", "site": "Main stage", "since": iso(now - 21 * 60)},
+                                            {"name": "ap-hall-b-122", "type": "ap", "site": "Hall B", "since": iso(now - 9 * 60)},
+                                            {"name": None, "type": "ap", "site": None, "since": iso(now - 5 * 60)},
+                                            {"name": "ap-press-room", "type": "ap", "site": "Press centre", "since": iso(now - 2 * 60)}]}}
     # --- drills
     d_done = fc.det_id("drl_", "drill:dns-block")
     d_pend = fc.det_id("drl_", "drill:wan-down")
