@@ -46,6 +46,7 @@ export interface Match { name: string; params: Record<string, string> }
 
 const ROUTES: [string, RegExp, string[]][] = [
   ['fleet', /^\/(?:fleet)?$/, []],
+  ['ops', /^\/ops$/, []],
   ['issues', /^\/issues$/, []],
   ['hosts', /^\/hosts$/, []],
   ['hostnew', /^\/hosts\/new$/, []],

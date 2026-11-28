@@ -183,6 +183,25 @@ export interface EnrolToken { token: string; command: string; expires_at: string
 // ---- administration (step 2) ------------------------------------------------------------------------------------
 
 export interface SecretState { set: boolean; updated_at: string | null }
+
+/** GET /ops/devices: device counts per platform (Mist, Central), from read-only polls cached 60 s by the manager. */
+export type OpsKind = 'mist' | 'central';
+export interface OpsSource {
+  kind: OpsKind;
+  label: string;
+  state: 'unconfigured' | 'pending' | 'ok' | 'error';
+  missing: string[];
+  total: number | null;
+  online: number | null;
+  offline: number | null;
+  by_type: Partial<Record<'ap' | 'switch' | 'gateway' | 'other', { total: number; online: number }>>;
+  counts_at: string | null;
+  checked_at: string | null;
+  error: string | null;
+}
+export interface OpsDevices { as_of: string; ttl_s: number; sources: OpsSource[] }
+export interface IntegrationRead { kind: 'ec' | 'mist' | 'central'; config: Record<string, unknown>; credentials: SecretState; updated_at: string | null }
+export interface IntegrationTestResult { ok: boolean; detail: string; inventory_count: number | null }
 export interface Retention { metrics_days: number; records_days: number }
 export interface HostCreated { host: Host; enrol: EnrolToken }
 export interface Accepted { host_id: string; action_id?: string; desired_version: number }

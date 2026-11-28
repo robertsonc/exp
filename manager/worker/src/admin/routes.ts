@@ -22,6 +22,7 @@ import * as read from "./read";
 import * as svc from "./service";
 import { buildSsoPage, mintLaunchNonce, verifyLaunchNonce } from "./sso";
 import * as speedtest from "../speedtest/settings";
+import { opsDevices } from "../ops/devices";
 
 export const adminRoutes = new Hono<AppBindings>();
 adminRoutes.use("*", accessAuth);
@@ -344,6 +345,9 @@ adminRoutes.post("/integrations/:kind/test", requireRole("owner"), async (c) => 
   await emptyBody(c);
   return c.json(await intent.testIntegration(c.env, actorOf(c), c.req.param("kind")));
 });
+
+// ---- ops board: Mist / Central device counts (read-only polls, shared 60 s cache) --------------------------
+adminRoutes.get("/ops/devices", requireRole("viewer"), async (c) => c.json(await opsDevices(c.env)));
 
 // ---- drills: WP-4 step 3 --------------------------------------------------------------------------------
 adminRoutes.all("/drills", requireRole("viewer"), () => {

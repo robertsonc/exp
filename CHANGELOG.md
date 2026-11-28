@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+### Added
+- Manager: **Ops board** (`/ops`, `GET /api/admin/v1/ops/devices`): total / online / offline devices for Juniper Mist and
+  HPE Aruba Networking Central (New Central, GreenLake client credentials), per platform and by type (APs, switches,
+  gateways). Read-only vendor polls, at most one per platform per 60 s across all viewers; the last good counts survive a
+  failed poll. New `central` integration; the `mist` integration takes `config.org_id`. `POST integrations/{mist|central}/test`
+  now runs the real read-only poll and returns `inventory_count`. Migration `0006_ops_devices.sql` (redeploy applies it).
+
 ## [0.3.0] - 2026-11-25
 
 Site lines board, heartbeat cadence, and fixes found bringing up the cr-lab containerlab lab.

@@ -43,6 +43,7 @@ tags:
 - name: dashboards
 - name: alerts
 - name: integrations
+- name: ops
 - name: drills
 - name: status
 - name: fleet
@@ -1053,6 +1054,10 @@ components:
       enum:
       - ec
       - mist
+      - central
+      description: '`ec` (EdgeConnect Orchestrator), `mist` (Juniper Mist; config `api_base`, `org_id`; credentials `token`),
+        `central` (HPE Aruba Networking Central on GreenLake; config `api_base` = the regional API gateway
+        `https://<region>.api.central.arubanetworks.com`; credentials `client_id` + `client_secret`, sent together).'
     Integration:
       type: object
       properties:
@@ -1096,8 +1101,15 @@ components:
             token:
               type: string
               maxLength: 512
+            client_id:
+              type: string
+              maxLength: 512
+            client_secret:
+              type: string
+              maxLength: 512
           additionalProperties: false
-          description: Write-only. Omit to keep the stored secret.
+          description: Write-only. Omit to keep the stored secret. `ec` / `mist` take `api_key` or `token`; `central`
+            takes `client_id` and `client_secret`, both at once (the stored value is replaced as a whole).
         allowlist:
           type: array
           items:
@@ -1106,6 +1118,120 @@ components:
           maxItems: 500
       required:
       - config
+      additionalProperties: false
+    OpsDeviceCount:
+      type: object
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        online:
+          type: integer
+          minimum: 0
+      required:
+      - total
+      - online
+      additionalProperties: false
+    OpsSource:
+      type: object
+      description: One platform on the ops board. Counts come from the last successful read-only poll; after a failed
+        poll they are kept (with `counts_at`) and `error` says why the poll failed. Never carries a credential.
+      properties:
+        kind:
+          enum:
+          - mist
+          - central
+        label:
+          type: string
+        state:
+          enum:
+          - unconfigured
+          - pending
+          - ok
+          - error
+          description: '`unconfigured`: the connector lacks `missing`; `pending`: first poll not finished; `ok`: the
+            last poll succeeded; `error`: the last poll failed.'
+        missing:
+          type: array
+          items:
+            enum:
+            - api_base
+            - org_id
+            - token
+            - client_id
+            - client_secret
+        total:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        online:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+        offline:
+          anyOf:
+          - type: 'null'
+          - type: integer
+            minimum: 0
+          description: total - online (Mist "disconnected", "restarting", "upgrading"... and Central OFFLINE).
+        by_type:
+          type: object
+          properties:
+            ap:
+              $ref: '#/components/schemas/OpsDeviceCount'
+            switch:
+              $ref: '#/components/schemas/OpsDeviceCount'
+            gateway:
+              $ref: '#/components/schemas/OpsDeviceCount'
+            other:
+              $ref: '#/components/schemas/OpsDeviceCount'
+          additionalProperties: false
+        counts_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        checked_at:
+          anyOf:
+          - type: 'null'
+          - $ref: ../schemas/common.schema.json#/$defs/ts
+        error:
+          anyOf:
+          - type: 'null'
+          - type: string
+            maxLength: 300
+      required:
+      - kind
+      - label
+      - state
+      - missing
+      - total
+      - online
+      - offline
+      - by_type
+      - counts_at
+      - checked_at
+      - error
+      additionalProperties: false
+    OpsDevices:
+      type: object
+      properties:
+        as_of:
+          $ref: ../schemas/common.schema.json#/$defs/ts
+        ttl_s:
+          type: integer
+          minimum: 1
+          description: The manager polls each platform at most once per this many seconds, whoever asks.
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpsSource'
+          maxItems: 2
+      required:
+      - as_of
+      - ttl_s
+      - sources
       additionalProperties: false
     IntegrationTestResult:
       type: object
@@ -4381,7 +4507,7 @@ paths:
         name: kind
         in: path
         required: true
-        description: 'Integration kind: `ec` (EdgeConnect Orchestrator) or `mist`.'
+        description: 'Integration kind: `ec` (EdgeConnect Orchestrator), `mist` or `central`.'
         schema:
           $ref: '#/components/schemas/IntegrationKind'
       x-exp-min-role: viewer
@@ -4447,6 +4573,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/IntegrationTestResult'
         '404': *id005
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /ops/devices:
+    get:
+      operationId: getOpsDevices
+      summary: Ops board - Mist and Central device totals, online and offline
+      description: Read-only. Each platform is polled through its integration (GET requests only, plus Central's
+        client-credentials token request) at most once per `ttl_s` across all callers; other calls read the stored
+        counts. Mist needs `config.org_id`; Central needs the `central` integration.
+      tags:
+      - ops
+      x-exp-min-role: viewer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsDevices'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

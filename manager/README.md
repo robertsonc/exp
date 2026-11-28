@@ -59,6 +59,19 @@ pair, the per-org `device_key` secret (sealed with the master-key keyring, never
 UI: `/sites/{site}/speedtest` (branding preview, consent, zones, QR signage, limits, connectors), runner correlation sources under the
 runner's Configure tab. Decisions and contract additions: [CR-m6-manager](../docs/spec/changes/CR-m6-manager.md).
 
+## Ops board (device status)
+
+`/ops` shows, per platform, how many **Juniper Mist** and **HPE Aruba Networking Central** devices exist and how many are
+online / offline (`GET /api/admin/v1/ops/devices`, viewer). Read-only against both vendors: Mist
+`GET /api/v1/orgs/{org_id}/stats/devices?type=all&status=all` (`Authorization: Token`), Central (the GreenLake-hosted "New
+Central") a client-credentials token from `sso.common.cloud.hpe.com` then `GET /network-monitoring/v1/devices`. The poll is
+on demand and shared: at most one per platform per 60 s across all viewers (atomic claim on `ops_device_status`, migration
+`0006_ops_devices.sql`); only counts are stored. A failed poll keeps the last good counts and shows why. Central's 2 h access
+token lives in isolate memory only. Connectors: the `mist` integration (now also `config.org_id`; the runner ignores it)
+and the new `central` integration (`config.api_base` = the regional API gateway, credentials `client_id` + `client_secret`).
+Use **read-only** credentials (Mist Observer org token; a Central API client with a read-only role). The owner connects
+both from the card on `/ops`; "Save and test" runs the same poll (`POST integrations/{kind}/test`, `inventory_count`).
+
 ## Commands
 
 ```

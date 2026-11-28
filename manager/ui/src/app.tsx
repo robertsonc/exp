@@ -10,6 +10,7 @@ import { ComponentPage } from './pages/ComponentPage';
 import { DashboardsPage } from './pages/DashboardsPage';
 import { DrillsPage } from './pages/DrillsPage';
 import { FleetPage } from './pages/FleetPage';
+import { OpsPage } from './pages/OpsPage';
 import { HostPage } from './pages/HostPage';
 import { HostsPage } from './pages/HostsPage';
 import { IssuesPage } from './pages/IssuesPage';
@@ -27,6 +28,7 @@ export function App(): JSX.Element {
   let page: JSX.Element;
   switch (m.name) {
     case 'fleet': page = <FleetPage me={me} />; break;
+    case 'ops': page = <OpsPage me={me} />; break;
     case 'issues': page = <IssuesPage me={me} />; break;
     case 'hosts': page = <HostsPage me={me} />; break;
     case 'hostnew': page = <AddHostPage me={me} />; break;

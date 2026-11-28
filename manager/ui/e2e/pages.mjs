@@ -16,7 +16,7 @@ export async function allPages(getJson) {
   const runC = await compOf(stBox, 'runner');
   const comp = (h, c, extra = '') => `/hosts/${h.host_id}/components/${c.component_id}${extra}`;
   const pages = [
-    ['fleet', '/fleet'], ['issues', '/issues'], ['hosts', '/hosts'], ['hosts-new', '/hosts/new'],
+    ['fleet', '/fleet'], ['ops', '/ops'], ['issues', '/issues'], ['hosts', '/hosts'], ['hosts-new', '/hosts/new'],
     ['sites', '/sites'], ['site', '/sites/hall-b'],
     ['host-overview', `/hosts/${col.host_id}`], ['host-components', `/hosts/${col.host_id}?tab=components`], ['host-interfaces', `/hosts/${col.host_id}?tab=interfaces`],
     ['host-config', `/hosts/${col.host_id}?tab=config`], ['host-activity', `/hosts/${col.host_id}?tab=activity`], ['host-actions', `/hosts/${col.host_id}?tab=actions`],

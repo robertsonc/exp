@@ -18,6 +18,7 @@ import { COMPONENT_ID_RE, HOST_ID_RE, SLUG_RE, newId, NOC_ID_RE, USR_ID_RE } fro
 import { isoNow } from "../util/time";
 import type { Actor } from "./service";
 import { redact } from "./read";
+import { MIST_ORG_RE, apiBaseOf, pollPlatform } from "../ops/devices";
 
 const IFACE_RE = /^[A-Za-z0-9_.:-]{1,15}$/;
 const IPV4 = /^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/;
@@ -435,7 +436,11 @@ export const INTEGRATION_KIND = "integration_credentials";
 export const IntegrationPutSchema = z
   .object({
     config: z.record(z.string().max(64), z.unknown()),
-    credentials: z.object({ api_key: z.string().min(1).max(512), token: z.string().min(1).max(512) }).partial().strict().optional(),
+    credentials: z
+      .object({ api_key: z.string().min(1).max(512), token: z.string().min(1).max(512), client_id: z.string().min(1).max(512), client_secret: z.string().min(1).max(512) })
+      .partial()
+      .strict()
+      .optional(),
     allowlist: z.array(z.record(z.string().max(64), z.unknown())).max(500).optional(),
   })
   .strict();
@@ -459,7 +464,13 @@ function findSecretKey(v: unknown, path: string, depth = 0): string | null {
   return null;
 }
 
-const isKind = (k: string): k is "ec" | "mist" => k === "ec" || k === "mist";
+const isKind = (k: string): k is "ec" | "mist" | "central" => k === "ec" || k === "mist" || k === "central";
+/** credential keys each connector takes (the stored blob is replaced as a whole, so central needs both at once) */
+const CRED_KEYS: Record<"ec" | "mist" | "central", { allowed: string[]; together?: string[] }> = {
+  ec: { allowed: ["api_key", "token"] },
+  mist: { allowed: ["api_key", "token"] },
+  central: { allowed: ["client_id", "client_secret"], together: ["client_id", "client_secret"] },
+};
 
 export async function getIntegration(env: Env, kind: string) {
   if (!isKind(kind)) throw notFound("no such integration");
@@ -487,6 +498,14 @@ export async function putIntegration(env: Env, actor: Actor, kind: string, body:
   // secrets never live in config: refuse secret-looking keys so they cannot be read back
   const bad = findSecretKey(config, "config");
   if (bad) throw invalidRequest(`${bad} looks like a secret; send credentials in the write-only credentials object`);
+  if (kind === "central" && config.api_base !== undefined && !apiBaseOf("central", config.api_base)) throw invalidRequest("config.api_base must be your Central API gateway, e.g. https://us1.api.central.arubanetworks.com");
+  if (config.org_id !== undefined && !(typeof config.org_id === "string" && MIST_ORG_RE.test(config.org_id))) throw invalidRequest("config.org_id must be a Mist org ID (UUID)");
+  if (credentials) {
+    const rule = CRED_KEYS[kind];
+    const extra = Object.keys(credentials).filter((k) => !rule.allowed.includes(k));
+    if (extra.length) throw invalidRequest(`credentials.${extra[0]} is not used by the ${kind} connector (it takes ${rule.allowed.join(", ")})`);
+    if (rule.together && Object.keys(credentials).length > 0 && rule.together.some((k) => !(k in credentials))) throw invalidRequest(`send ${rule.together.join(" and ")} together`);
+  }
   const badAl = allowlist ? findSecretKey(allowlist, "allowlist") : null;
   if (badAl) throw invalidRequest(`${badAl} looks like a secret; send credentials in the write-only credentials object`);
   const cur = await env.DB.prepare("SELECT secret_id, allowlist_json FROM integrations WHERE kind = ?1").bind(kind).first<{ secret_id: string | null; allowlist_json: string }>();
@@ -529,7 +548,14 @@ export async function testIntegration(env: Env, actor: Actor, kind: string) {
   const i = await getIntegration(env, kind);
   let out: { ok: boolean; detail: string; inventory_count: number | null };
   const url = (i.config.url ?? i.config.api_base ?? i.config.base_url) as string | undefined;
-  if (!url) out = { ok: false, detail: "no url configured", inventory_count: null };
+  // Mist / Central with everything the ops board needs: run the board's own read-only poll (the real credential check)
+  const poll = kind === "mist" || kind === "central" ? await pollPlatform(env, kind) : null;
+  if (poll && poll.missing.length === 0) {
+    out = poll.counts
+      ? { ok: true, detail: `${poll.counts.total} devices (${poll.counts.online} online, ${poll.counts.offline} offline)`, inventory_count: poll.counts.total }
+      : { ok: false, detail: (poll.error ?? "poll failed").slice(0, 200), inventory_count: null };
+  } else if (kind === "central") out = { ok: false, detail: `missing: ${poll?.missing.join(", ") ?? "config"}`, inventory_count: null };
+  else if (!url) out = { ok: false, detail: "no url configured", inventory_count: null };
   else if (!i.credentials.set) out = { ok: false, detail: "no credentials configured", inventory_count: null };
   else {
     try {
