@@ -24,7 +24,8 @@ def parse(path: Path) -> dict[str, list[str]]:
 
 def test_expected_units_exist():
     assert {p.name for p in UNITS.iterdir()} == {"exp-probe-netns.service", "exp-probe-lease@.service",
-                                                  "exp-probe-target@.service", "exp-probe.service"}
+                                                  "exp-probe-target@.service", "exp-probe-wifi@.service",
+                                                  "exp-probe.service"}
     assert all(re.fullmatch(r"exp-[a-z-]+(@)?\.(service|timer)", p.name) for p in UNITS.iterdir())
 
 
@@ -60,6 +61,13 @@ def test_target_unit_is_an_m4_stub_that_does_not_restart():
     assert "target serve %i" in u["ExecStart"][0] and u["Restart"] == ["no"]
 
 
+def test_wifi_unit_is_per_port_and_runs_before_its_lease():
+    u = parse(UNITS / "exp-probe-wifi@.service")
+    assert "wifi %i" in u["ExecStart"][0] and u["Restart"] == ["always"] and u["NoNewPrivileges"] == ["yes"]
+    assert u["Requires"] == ["exp-probe-netns.service"] and u["PartOf"] == ["exp-probe-netns.service"]
+    assert u["Before"] == ["exp-probe-lease@%i.service"]
+
+
 def test_daemon_unit_hardening_exactly_as_the_spec():
     u = parse(UNITS / "exp-probe.service")
     assert u["ProtectSystem"] == ["strict"] and u["NoNewPrivileges"] == ["yes"] and u["PrivateTmp"] == ["yes"]
@@ -70,5 +78,5 @@ def test_daemon_unit_hardening_exactly_as_the_spec():
 
 def test_requirements_apt_uses_only_allowlisted_packages():
     pkgs = [ln.strip() for ln in (ROOT / "probe" / "requirements.apt").read_text().splitlines() if ln.strip()]
-    assert set(pkgs) == {"busybox", "iproute2", "iputils-ping", "curl", "openssl", "iperf3"}
+    assert set(pkgs) == {"busybox", "iproute2", "iputils-ping", "curl", "openssl", "iperf3", "iw", "wpasupplicant"}
     assert set(pkgs) <= AGENT_ALLOWLIST

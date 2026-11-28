@@ -7,8 +7,9 @@ its collector over the management network. Spec: [docs/spec/02-probe.md](../docs
 
 **Status (step 2 of 2, M1):** config, preflight, namespaces/host mode, lease holder, scheduler, spool, shipper,
 `probe_self`, health, CLI and units (step 1) plus the M1 measurement tests: `gateway`, `dhcp_hb`, `dhcp`, `dns_hb`,
-`dns`, `trace` (+ control path), `ping`, `app`. `throughput`, `path`, `wifi_*` and target ports (`role: target`) are
-M4+: a configured test without a module is logged once and skipped (never reported as a fake result).
+`dns`, `trace` (+ control path), `ping`, `app`; on Wi-Fi ports (open / OWE networks, M4) `wifi_hb` + `wifi_join`.
+`throughput`, `path` and target ports (`role: target`) are M4+: a configured test without a module is logged once and
+skipped (never reported as a fake result).
 
 ## Layout
 
@@ -35,6 +36,7 @@ exp-probe test <test> --port <id> [--once]  run one test, print its measurements
 exp-probe spool stat [--json]             depth, bytes, oldest ts, dropped_total
 exp-probe netns up|down                   (exp-probe-netns.service) create / tear down the port namespaces
 exp-probe lease <port>                    (exp-probe-lease@<port>.service) exec busybox udhcpc -f -R in the namespace
+exp-probe wifi <port>                     (exp-probe-wifi@<port>.service) exec wpa_supplicant (open / OWE) in the namespace
 exp-probe target set|clear|serve ...      M4 stub: prints "target ports arrive in M4", exit 69
 ```
 
@@ -123,7 +125,7 @@ msftconnecttest.com and detectportal.firefox.com, and flags a plain-http target 
 | `health`: `auth_failed` | the ingest token was rotated/revoked; the agent rewrites `/etc/exp/probe/creds/ingest_token` and restarts the unit. The probe retries every 60 s. |
 | port has no lease | `journalctl -u exp-probe-lease@<port>`; `cat /run/exp/probe/<port>/lease.json`; `ip -n exp-<port> addr`. |
 | `exp-probe-netns` fails on stop | a port did not return to the host; the namespace is kept on purpose. `ip -n exp-<port> link` shows where it is. |
-| a test says "not available in this build" | `throughput`, `path`, `wifi_*` arrive in M4+. |
+| a test says "not available in this build" | `throughput` and `path` arrive in M4+. |
 | records with `outcome: error` | the probe could not run the test; `error` says why (no lease, namespace missing, no raw socket, curl missing). Never a network verdict. |
 | `spool stat` shows growth and `dropped_total` > 0 | the collector was unreachable longer than the spool bounds allow. |
 

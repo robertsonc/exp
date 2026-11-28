@@ -117,6 +117,8 @@ def test_port_already_in_its_namespace_is_fine(ip, paths):
 def test_wifi_iface_with_client_role_refused(ip, paths):
     host(ip, "t0", "t1")
     (paths.sys_class_net / "t0" / "wireless").mkdir(parents=True)
+    (paths.sys_class_net / "t0" / "phy80211").mkdir(parents=True)
+    (paths.sys_class_net / "t0" / "phy80211" / "name").write_text("phy0\n")
     res = preflight.check(make_config(), ip, paths)
     assert verdicts(res)["c01"] == REFUSED and "Wi-Fi" in res.refused[0].reasons[0]
     ok = preflight.check(make_config(ports=[{"id": "c01", "iface": "t0", "role": "wifi"},

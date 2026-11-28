@@ -33,7 +33,7 @@ def test_all_m1_tests_are_registered_with_the_right_roles():
 def test_beat_set_and_scheduled_set_cover_exactly_the_m1_tests():
     register_all()
     beat = set(BEAT_PARALLEL) | {"trace"}
-    assert beat == {"gateway", "dhcp_hb", "dns_hb", "ping", "trace"}
+    assert beat == {"gateway", "dhcp_hb", "dns_hb", "ping", "trace", "wifi_hb"}
     assert {"dhcp", "dns", "app"} <= set(SCHEDULED) and not (beat & set(SCHEDULED))
     assert (beat | {"dhcp", "dns", "app"}) <= set(REGISTRY)
 

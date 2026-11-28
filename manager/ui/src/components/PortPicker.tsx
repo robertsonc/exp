@@ -4,15 +4,17 @@ import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import type { Iface } from '../api/types';
 import { DASH } from '../lib/format';
-import { PROBE_M4_ROLE_NOTE, buildPorts, emptyDraft, ifaceBlockReason, type Cfg, type PortDraft, type PortRole } from '../lib/intent';
+import { PROBE_M4_ROLE_NOTE, buildPorts, emptyDraft, ifaceBlockReason, type Cfg, type PortDraft, type PortRole, type WifiBand, type WifiSecurity } from '../lib/intent';
 import { Button, EmptyState, StatusPill } from './atoms';
 import { FormError, failText } from './forms';
 
-// Target and Wi-Fi ports are M4 (probe/README.md): the probe cannot use them yet, so they are shown but not offered.
+// Target ports are M4 (probe/README.md): the probe cannot serve them yet, so they are shown but not offered.
 const ROLES: { v: PortRole; l: string; m4?: boolean }[] = [
   { v: 'none', l: 'Not used' }, { v: 'client', l: 'Client (DHCP)' },
-  { v: 'target', l: `Target (serves tests), ${PROBE_M4_ROLE_NOTE}`, m4: true }, { v: 'wifi', l: `Wi-Fi, ${PROBE_M4_ROLE_NOTE}`, m4: true },
+  { v: 'target', l: `Target (serves tests), ${PROBE_M4_ROLE_NOTE}`, m4: true }, { v: 'wifi', l: 'Wi-Fi (open / OWE network)' },
 ];
+const BAND_OPTS: { v: WifiBand; l: string }[] = [{ v: 'any', l: 'Any band' }, { v: '2.4', l: '2.4 GHz' }, { v: '5', l: '5 GHz' }, { v: '6', l: '6 GHz' }];
+const SEC_OPTS: { v: WifiSecurity; l: string }[] = [{ v: 'auto', l: 'OWE, else open' }, { v: 'owe', l: 'OWE only' }, { v: 'open', l: 'Open only' }];
 
 function IfaceRow({ i, d, ownProbe, onChange, disabled }: { i: Iface; d: PortDraft; ownProbe?: string | undefined; onChange: (d: PortDraft) => void; disabled?: boolean }): JSX.Element {
   const block = ifaceBlockReason(i, ownProbe);
@@ -45,7 +47,14 @@ function IfaceRow({ i, d, ownProbe, onChange, disabled }: { i: Iface; d: PortDra
         ) : null}
         {!block && d.role === 'wifi' ? (
           <span class="iface-extra">
-            <input type="text" aria-label={`SSID for ${i.name}`} placeholder="SSID (optional)" value={d.ssid} autocomplete="off" maxLength={32} disabled={disabled} onInput={(e) => onChange({ ...d, ssid: (e.currentTarget as HTMLInputElement).value })} />
+            <input type="text" aria-label={`SSID for ${i.name}`} placeholder="SSID (required)" value={d.ssid} autocomplete="off" maxLength={32} required disabled={disabled} onInput={(e) => onChange({ ...d, ssid: (e.currentTarget as HTMLInputElement).value })} />
+            <select aria-label={`Band for ${i.name}`} value={d.band} disabled={disabled} onChange={(e) => onChange({ ...d, band: (e.currentTarget as HTMLSelectElement).value as WifiBand })}>
+              {BAND_OPTS.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+            <select aria-label={`Security for ${i.name}`} value={d.security} disabled={disabled} onChange={(e) => onChange({ ...d, security: (e.currentTarget as HTMLSelectElement).value as WifiSecurity })}>
+              {SEC_OPTS.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+            <input type="text" aria-label={`Country for ${i.name}`} placeholder="country (e.g. NL)" value={d.country} autocomplete="off" maxLength={2} size={4} disabled={disabled} onInput={(e) => onChange({ ...d, country: (e.currentTarget as HTMLInputElement).value })} />
           </span>
         ) : null}
       </td>

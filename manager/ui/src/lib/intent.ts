@@ -74,8 +74,16 @@ export function defaultIntent(shape: Shape, hostName: string): Cfg {
 // ---- probe port picker -----------------------------------------------------------------------------------------
 
 export type PortRole = 'none' | 'client' | 'target' | 'wifi';
-export interface PortDraft { role: PortRole; address: string; gateway: string; ssid: string; network: string; reference: boolean }
-export const emptyDraft = (): PortDraft => ({ role: 'none', address: '', gateway: '', ssid: '', network: '', reference: false });
+export type WifiBand = 'any' | '2.4' | '5' | '6';
+export type WifiSecurity = 'auto' | 'open' | 'owe';
+export interface PortDraft {
+  role: PortRole; address: string; gateway: string; ssid: string; network: string; reference: boolean;
+  band: WifiBand; security: WifiSecurity; country: string;
+}
+export const emptyDraft = (): PortDraft => ({ role: 'none', address: '', gateway: '', ssid: '', network: '', reference: false, band: 'any', security: 'auto', country: '' });
+const BANDS: readonly WifiBand[] = ['any', '2.4', '5', '6'];
+const SECURITIES: readonly WifiSecurity[] = ['auto', 'open', 'owe'];
+const COUNTRY_RE = /^[A-Za-z]{2}$/;
 const NETWORK_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** Why an interface cannot carry tests, or null when it can. The management interface is never selectable. */
@@ -96,7 +104,10 @@ export function draftsFromPorts(ports: unknown): Record<string, PortDraft> {
     const role = c['role'];
     if (!iface || (role !== 'client' && role !== 'target' && role !== 'wifi')) continue;
     out[iface] = { role, address: typeof c['address'] === 'string' ? c['address'] : '', gateway: typeof c['gateway'] === 'string' ? c['gateway'] : '', ssid: typeof c['ssid'] === 'string' ? c['ssid'] : '',
-      network: typeof c['network'] === 'string' ? c['network'] : '', reference: c['reference'] === true };
+      network: typeof c['network'] === 'string' ? c['network'] : '', reference: c['reference'] === true,
+      band: BANDS.includes(c['band'] as WifiBand) ? (c['band'] as WifiBand) : 'any',
+      security: SECURITIES.includes(c['security'] as WifiSecurity) ? (c['security'] as WifiSecurity) : 'auto',
+      country: typeof c['country'] === 'string' ? c['country'] : '' };
   }
   return out;
 }
@@ -131,10 +142,18 @@ export function buildPorts(ifaces: Iface[], drafts: Record<string, PortDraft>, o
     }
     if (d.role === 'client') ports.push({ id, iface: i.name, role: 'client', ...board });
     else if (d.role === 'wifi') {
+      // open / Enhanced Open (OWE) networks: the probe joins without a credential (docs/spec/changes/CR-wifi-open-owe.md)
       const p: Cfg = { id, iface: i.name, role: 'wifi', ...board };
-      if (d.ssid.trim()) {
-        if (d.ssid.length > 32 || CTRL.test(d.ssid)) errors[i.name] = 'SSID must be at most 32 characters without control characters.';
-        else p['ssid'] = d.ssid.trim();
+      const ssid = d.ssid.trim();
+      const country = d.country.trim();
+      if (!ssid) errors[i.name] = 'Enter the SSID the Wi-Fi port joins.';
+      else if (new TextEncoder().encode(ssid).length > 32 || CTRL.test(ssid)) errors[i.name] = 'SSID must be at most 32 bytes without control characters.';
+      else if (country && !COUNTRY_RE.test(country)) errors[i.name] = 'Country: a two-letter code, for example NL or US.';
+      else {
+        p['ssid'] = ssid;
+        if (d.band !== 'any') p['band'] = d.band;
+        if (d.security !== 'auto') p['security'] = d.security;
+        if (country) p['country'] = country.toUpperCase();
       }
       ports.push(p);
     } else {
@@ -401,3 +420,4 @@ export function applyDashboardForm(config: Cfg, f: DashboardForm): { config: Cfg
  * and logs "not available in this build". The UI says so and does not offer to switch them on. */
 export const PROBE_M4_NOTE = 'Not in the probe yet (milestone M4): the probe would skip it. You can still switch an existing one off.';
 export const PROBE_M4_ROLE_NOTE = 'not in the probe yet (M4)';
+export const WIFI_JOIN_NOTE = 'Every interval the probe drops and rejoins the Wi-Fi network to time the join (association, key exchange, DHCP). The Wi-Fi port is offline for a few seconds each time; the Wi-Fi heartbeat runs whether or not this is on.';

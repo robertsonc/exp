@@ -1,0 +1,25 @@
+# exp-probe: Wi-Fi supplicant for wifi port %i (02-probe.md 5.11). `exp-probe wifi` writes
+# /run/exp/probe/%i/wpa_supplicant.conf (root 0600; open / OWE networks only, no credential) and execs
+# wpa_supplicant inside the port's namespace, so systemd supervises the supplicant directly.
+# The DHCP lease on the same port is held by exp-probe-lease@%i.
+[Unit]
+Description=exp probe: Wi-Fi supplicant for port %i (v@VERSION@)
+Requires=exp-probe-netns.service
+After=exp-probe-netns.service
+PartOf=exp-probe-netns.service
+Before=exp-probe-lease@%i.service
+
+[Service]
+Type=simple
+ExecStart=@PREFIX@/bin/exp-probe wifi %i --config @CONFIG@
+RuntimeDirectory=exp/probe
+RuntimeDirectoryPreserve=yes
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

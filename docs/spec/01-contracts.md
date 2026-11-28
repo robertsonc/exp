@@ -80,8 +80,8 @@ listed are the only ones a probe emits for that test.
 | `app` | scheduled HTTP(S) | `port`, `app` | `dns_ms`, `connect_ms`, `tls_ms`, `ttfb_ms`, `total_ms`, `status_code`, `bytes`, `apdex` | `url`, `ip`, `tls_version` | Apps |
 | `throughput` | scheduled, never concurrent per probe | `port`, `provider` (`cloudflare\|iperf3`) | `down_mbps`, `up_mbps`, `latency_idle_ms`, `latency_loaded_ms`, `jitter_ms`, `retransmits` | `server`, `streams` | Apps (detail) |
 | `path` | scheduled, bidirectional (netvitals) | `port`, `peer`, `proto` (`udp\|tcp`) | `rtt_ms`, `jitter_ms`, `loss_fwd_pct`, `loss_rev_pct`, `mos`, `pqi`, `experience` | `loss_pattern`, `dscp` | Path |
-| `wifi_hb` | beat 10 s | `port`, `ssid`, `band` | `link_up`, `rssi_dbm`, `noise_dbm`, `snr_db`, `tx_rate_mbps`, `channel`, `gw_rtt_ms` | `bssid`, `security`, `on_target` | Wi-Fi |
-| `wifi_join` | on (re)association | `port`, `ssid` | `assoc_ms`, `auth_ms`, `dhcp_ms`, `total_ms` | `bssid`, `reason` | Wi-Fi (detail) |
+| `wifi_hb` | beat 10 s | `port`, `ssid` (joined; `none`), `band` | `link_up`, `rssi_dbm`, `noise_dbm`, `snr_db`, `tx_rate_mbps`, `channel`, `gw_rtt_ms` | `bssid`, `security` (`open`\|`owe`), `on_target`, `target_ssid`, `freq_mhz`, `band_seen`, `portal` (bool\|null), `portal_reason`, `dhcp_captive_portal_uri`, `rejoin` | Wi-Fi |
+| `wifi_join` | `tests.wifi.interval_s` (active rejoin) | `port`, `ssid` | `assoc_ms`, `auth_ms`, `dhcp_ms`, `total_ms` | `bssid`, `security`, `reason`, `target_ssid` | Wi-Fi (detail) |
 | `target_access` | per 60 s, target-server ports | `port`, `proto` | `requests`, `errors`, `p50_ms` | `top_clients[]` | (details table) |
 | `probe_self` | 60 s | — | `spool_depth`, `spool_bytes`, `push_lag_s`, `clock_offset_ms`, `cpu_pct`, `rss_mb`, `dropped_total` | `ntp_synced` | (health) |
 | `ext_mist`, `ext_ec` | correlation events (runner, M5) | `kind`, `severity` | `count` | normalized event | timeline markers |

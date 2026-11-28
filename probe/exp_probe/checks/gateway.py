@@ -23,6 +23,7 @@ from exp_common.schema import Measurement
 from ..icmp import IcmpUnavailable, open_icmp, ping_many
 from ..netio import NetnsMissing
 from ..scheduler import TestContext, register_test
+from ..wifi import joining as wifi_joining
 from .common import clip, error_record, link_state, num, port_info
 
 log = logging.getLogger(__name__)
@@ -68,6 +69,8 @@ def gateway(ctx: TestContext) -> list[Measurement]:
     port = ctx.port
     assert port is not None
     labels = {"port": port.id, "iface": port.iface}
+    if port.role == "wifi" and wifi_joining(port.id):
+        return []                  # a wifi_join has the association down on purpose
     env = ctx.netenv(port)
     if not env.exists():
         return [error_record(ctx, "gateway", f"namespace for port {port.id} is missing", labels=labels)]

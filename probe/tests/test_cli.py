@@ -75,7 +75,7 @@ def test_test_command_with_unavailable_test(cfgfile, paths, capsys):
     saved = dict(scheduler.REGISTRY)
     scheduler.REGISTRY.clear()
     try:
-        assert cli.main(["test", "wifi_hb", "--port", "c01", "--once", *args(cfgfile, paths)]) == 2
+        assert cli.main(["test", "throughput", "--port", "c01", "--once", *args(cfgfile, paths)]) == 2
         assert "not available in this build" in capsys.readouterr().err
     finally:
         scheduler.REGISTRY.update(saved)

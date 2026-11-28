@@ -19,6 +19,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   inventory, a serial, a MAC or an address; "down since" carries across polls through a keyed hash of the device identity.
   Mist site names come from one extra read-only call when a device is down. Migration `0007_ops_down_devices.sql`.
 
+- Probe: **Wi-Fi ports** (M4, CR-wifi-open-owe) on open and Enhanced Open (OWE) networks: the radio moves into the
+  port's namespace (`iw phy … set netns`), `exp-probe-wifi@<port>` runs `wpa_supplicant` for the one configured SSID
+  (no credential exists or is stored), `wifi_hb` every beat (signal, noise, SNR, rate, channel, BSSID, gateway RTT,
+  on-target, captive portal) and an optional `wifi_join` timing test (`tests.wifi`). A captive portal is reported as
+  degraded Wi-Fi, never clicked through. New probe packages `iw`, `wpasupplicant`. Manager: the Wi-Fi port role is
+  selectable, with SSID (required), band, security (OWE / open) and country.
+
 ## [0.3.0] - 2026-11-25
 
 Site lines board, heartbeat cadence, and fixes found bringing up the cr-lab containerlab lab.

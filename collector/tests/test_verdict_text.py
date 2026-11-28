@@ -306,3 +306,19 @@ def test_beats_document_validates_and_marks_probe_errors():
     assert all(v in (0, 1, 2, 3) for line in doc["lines"].values() for _, v in line)
     assert any(v == 3 for _, v in doc["lines"]["internet"])               # the probe error is beat 3
     assert [t for t, _ in doc["lines"]["network"]] == sorted(t for t, _ in doc["lines"]["network"])
+
+
+def test_a_captive_portal_on_the_wifi_port_reads_as_degraded_wifi_with_the_reason():
+    # what the probe sends when the venue's portal intercepts its connectivity check (probe checks/wifi.py)
+    why = "captive portal: expected HTTP 204, got 200 (redirected to https://portal.venue.example/login)"
+    recs = _base(T, T + 120_000) + [
+        dict(synth.wifi(t, ok=True), outcome="degraded", error=why)
+        for t in range(T + 120_000, T + 160_000, 10_000)]
+    for d in recs:
+        if d["test"] == "wifi_hb" and d["outcome"] == "degraded":
+            d["detail"] = {**d["detail"], "portal": True, "portal_reason": why[len("captive portal: "):]}
+    doc = _doc(recs, T + 160_000, "plain")
+    v = doc["verdict"]
+    assert v["headline"] == "Wi-Fi is degraded.", v
+    assert "Captive portal" in " ".join(all_texts(doc))
+    assert next(x for x in doc["lines"] if x["key"] == "wifi")["state"] == "warn"

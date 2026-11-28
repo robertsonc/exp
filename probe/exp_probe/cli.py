@@ -1,7 +1,7 @@
 """exp-probe command line (02-probe.md section 9).
 
   run | health [--json] | version | selftest | preflight | test <test> --port <id> [--once]
-  spool stat | netns up|down | lease <port> | udhcpc-hook <event> | target set|clear|serve
+  spool stat | netns up|down | lease <port> | wifi <port> | udhcpc-hook <event> | target set|clear|serve
 
 Every subcommand accepts ``--config PATH`` (default /etc/exp/probe/config.json) and refuses to run on an
 invalid config, printing why (exit 78). Diagnostics go to stderr via logging; stdout is program output.
@@ -81,6 +81,8 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--wait-s", type=float, default=30.0, help="up: wait this long for ports to appear")
     le = add("lease", "hold the DHCP lease of a client port (execs busybox udhcpc)")
     le.add_argument("port")
+    wi = add("wifi", "join a Wi-Fi port's SSID (writes the config, execs wpa_supplicant in its namespace)")
+    wi.add_argument("port")
     hk = add("udhcpc-hook", "udhcpc event handler (internal)")
     hk.add_argument("event")
     tg = add("target", "target-port fault controls (M4)")
@@ -143,6 +145,13 @@ def _dispatch(args: argparse.Namespace, runner: Any, entry: str) -> int:
         return _netns(cfg, runner, paths, args)
     if cmd == "lease":
         return lease.run_lease(cfg, args.port, runner, paths, args.config, entry)
+    if cmd == "wifi":
+        from . import wifi
+        try:
+            return wifi.run_wifi(cfg, args.port, runner, paths)
+        except (ConfigError, ValueError) as exc:
+            print(f"exp-probe: {exc}", file=sys.stderr)
+            return EX_CONFIG
     if cmd == "udhcpc-hook":
         return lease.hook(cfg, args.event, os.environ, runner, paths)
     if cmd == "spool":
