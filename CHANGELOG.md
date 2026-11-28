@@ -11,6 +11,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   gateways). Read-only vendor polls, at most one per platform per 60 s across all viewers; the last good counts survive a
   failed poll. New `central` integration; the `mist` integration takes `config.org_id`. `POST integrations/{mist|central}/test`
   now runs the real read-only poll and returns `inventory_count`. Migration `0006_ops_devices.sql` (redeploy applies it).
+- Manager: read-only **kiosk** (`/kiosk`): the ops board's device counts without Access sign-in, for listed source networks
+  only (`deploy.sh --kiosk-allow-ip CIDR`, Access bypass app for exactly those CIDRs plus a Worker-side check of
+  `CF-Connecting-IP` against `KIOSK_ALLOW_CIDRS`; SR-27). The admin API is unchanged: it still requires the Access JWT.
 
 ## [0.3.0] - 2026-11-25
 

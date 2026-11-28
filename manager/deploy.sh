@@ -21,6 +21,12 @@
 #                                      generated config has NO [assets] section / ASSETS binding. For environments where wrangler's
 #                                      Static Assets upload fails (a proxy that rewrites Authorization). Same headers, Access still
 #                                      protects the UI. Default: Static Assets binding. Safe to switch either way on re-runs.
+#   --kiosk-allow-ip CIDR              repeatable (or comma-separated): source networks that may open the READ-ONLY /kiosk (ops board
+#                                      device counts only) WITHOUT Access sign-in, e.g. the management network's egress 37.34.66.15/32.
+#                                      Creates/updates the Access app "<worker> bypass /kiosk" with a bypass policy for exactly these
+#                                      CIDRs (replaced on every run) and sets the Worker's KIOSK_ALLOW_CIDRS (the Worker checks the
+#                                      source again). IPv4 /16../32, IPv6 /32../128. Omitted: the Worker disables /kiosk (404); an
+#                                      existing kiosk Access app is left in place (warned). Pass it on EVERY redeploy to keep the kiosk.
 #   --dry-run                          print every API call and wrangler command; execute nothing, contact nothing
 #
 # Steps: (1) D1 + R2 (reuse or create), generated wrangler config; (2) migrations; (3) Cloudflare Access (app, owner
@@ -51,6 +57,7 @@ KEEP_WORKERS_DEV=0
 ADOPT_ACCESS_APPS=0
 DRY=0
 EMBED_UI=0
+KIOSK_CIDRS=""   # comma-separated, validated below
 DEPLOY_DIR="$HERE/.deploy"
 GEN="$DEPLOY_DIR/wrangler.generated.toml"
 
@@ -76,6 +83,7 @@ while [ $# -gt 0 ]; do
     --keep-workers-dev) KEEP_WORKERS_DEV=1; shift ;;
     --adopt-access-apps) ADOPT_ACCESS_APPS=1; shift ;;
     --embed-ui) EMBED_UI=1; shift ;;
+    --kiosk-allow-ip) KIOSK_CIDRS="${KIOSK_CIDRS:+$KIOSK_CIDRS,}${2:?--kiosk-allow-ip needs a CIDR such as 203.0.113.7/32}"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     --api-token|--token|--cloudflare-api-token) die "the API token is read from CLOUDFLARE_API_TOKEN only (a flag would leak it into shell history and ps)" ;;
     -h|--help) usage; exit 0 ;;
@@ -102,6 +110,22 @@ done
 if [ -n "$ORG_NAME" ]; then
   [ "${#ORG_NAME}" -le 100 ] || die "--org-name is longer than 100 characters"
   printf '%s' "$ORG_NAME" | LC_ALL=C grep -q '[[:cntrl:]]' && die "--org-name contains control characters"
+fi
+# kiosk sources: explicit prefix length, no wider than a /16 (IPv4) or /32 (IPv6); the kiosk is for a management network
+if [ -n "$KIOSK_CIDRS" ]; then
+  kiosk_ok=""
+  for c in $(printf '%s' "$KIOSK_CIDRS" | tr ',' ' '); do
+    if printf '%s' "$c" | grep -Eq '^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/([0-9]{1,2})$'; then
+      [ "${c#*/}" -ge 16 ] && [ "${c#*/}" -le 32 ] || die "--kiosk-allow-ip $c: an IPv4 prefix must be /16../32 (the kiosk is not meant to be public)"
+    elif printf '%s' "$c" | grep -Eq '^[0-9a-fA-F:]{2,39}/[0-9]{1,3}$' && printf '%s' "${c%/*}" | grep -q ':'; then
+      [ "${c#*/}" -ge 32 ] && [ "${c#*/}" -le 128 ] || die "--kiosk-allow-ip $c: an IPv6 prefix must be /32../128"
+    else
+      die "--kiosk-allow-ip $c: expected an IPv4 or IPv6 CIDR with a prefix length, e.g. 203.0.113.7/32"
+    fi
+    case ",$kiosk_ok," in *",$c,"*) ;; *) kiosk_ok="${kiosk_ok:+$kiosk_ok,}$c" ;; esac
+  done
+  KIOSK_CIDRS="$kiosk_ok"
+  [ "$(printf '%s' "$KIOSK_CIDRS" | tr ',' '\n' | wc -l)" -le 32 ] || die "--kiosk-allow-ip: at most 32 networks"
 fi
 [ -n "$PUBKEY_FILE" ] || PUBKEY_FILE="$REPO_ROOT/packaging/keys/release-pub.pem"
 case "$PUBKEY_FILE" in /*) ;; *) PUBKEY_FILE="$CALLER_PWD/$PUBKEY_FILE" ;; esac
@@ -240,7 +264,7 @@ pattern = $(tq "$DOMAIN")
 custom_domain = true
 "; fi
   V_AUD="$(tq "$aud")" V_TEAM="$(tq "$team")" V_OWNER="$(tq "$OWNER_EMAIL")" V_ORG="$(tq "$ORG_NAME")" \
-  V_PEM="$(tq "$RELEASE_PUBKEY_PEM")" V_REPO="$(tq "$RELEASES_REPO")" V_URL="$(tq "$BASE")" \
+  V_PEM="$(tq "$RELEASE_PUBKEY_PEM")" V_REPO="$(tq "$RELEASES_REPO")" V_URL="$(tq "$BASE")" V_KIOSK="$(tq "$KIOSK_CIDRS")" \
   V_EMBED="$EMBED_UI" V_NAME="$(tq "$WORKER_NAME")" V_DB="$(tq "$D1_NAME")" V_DBID="$(tq "$D1_ID")" V_BUCKET="$(tq "$R2_BUCKET")" V_ROUTES="$routes" \
   awk '
     function reroot(line,   k, v) { # key = "path"  ->  key = "../path"
@@ -273,6 +297,7 @@ custom_domain = true
       print "RELEASE_PUBKEY_PEM = " ENVIRON["V_PEM"]
       print "RELEASES_REPO = " ENVIRON["V_REPO"]
       print "MANAGER_URL = " ENVIRON["V_URL"]
+      print "KIOSK_ALLOW_CIDRS = " ENVIRON["V_KIOSK"]
       print ""
       if (ENVIRON["V_ROUTES"] != "") print ENVIRON["V_ROUTES"]
     }
@@ -301,6 +326,10 @@ fi
 
 # The Access applications this script manages: name + exact domain. Anything else is somebody else's.
 WANTED_APPS="$(jq -cn --arg w "$WORKER_NAME" --arg h "$HOST" '[{name: $w, domain: $h}] + [("/api/agent", "/install.sh", "/healthz") as $p | {name: "\($w) bypass \($p)", domain: "\($h)\($p)"}]')"
+# the read-only kiosk is managed (and guarded) only when --kiosk-allow-ip is given
+[ -z "$KIOSK_CIDRS" ] || WANTED_APPS="$(printf '%s' "$WANTED_APPS" | jq -c --arg w "$WORKER_NAME" --arg h "$HOST" '. + [{name: "\($w) bypass /kiosk", domain: "\($h)/kiosk"}]')"
+# Access include rules for the kiosk bypass: one {"ip": {"ip": CIDR}} per network
+KIOSK_INCLUDE="$(printf '%s' "$KIOSK_CIDRS" | jq -Rc 'split(",") | map(select(length > 0) | {ip: {ip: .}})')"
 # jq: every host/path an application protects (lower-cased)
 JQ_DOMS='def doms: ([.domain] + (.self_hosted_domains // []) + [(.destinations // [])[]? | .uri]) | map(select(type == "string") | ascii_downcase);'
 
@@ -333,6 +362,10 @@ if [ "$DRY" = 1 ]; then
     api_plan POST "/access/apps" "{\"name\":\"$WORKER_NAME bypass $p\",\"domain\":\"$HOST$p\",\"type\":\"self_hosted\",\"session_duration\":\"24h\"}"
     api_plan POST "/access/apps/<app-id>/policies" "{\"name\":\"bypass everyone\",\"decision\":\"bypass\",\"include\":[{\"everyone\":{}}],\"precedence\":1}"
   done
+  if [ -n "$KIOSK_CIDRS" ]; then
+    api_plan POST "/access/apps" "{\"name\":\"$WORKER_NAME bypass /kiosk\",\"domain\":\"$HOST/kiosk\",\"type\":\"self_hosted\",\"session_duration\":\"24h\"}"
+    api_plan POST "/access/apps/<app-id>/policies" "{\"name\":\"bypass kiosk sources\",\"decision\":\"bypass\",\"include\":$KIOSK_INCLUDE,\"precedence\":1}   (include REPLACED on every run)"
+  fi
   ACCESS_AUD="<access-aud-tag>"
   TEAM_DOMAIN="<team>.cloudflareaccess.com"
 else
@@ -399,6 +432,15 @@ else
     app_upsert "$WORKER_NAME bypass $p" "$HOST$p"
     policy_upsert "$APP_ID" "bypass everyone" bypass '[{"everyone":{}}]'
   done
+  if [ -n "$KIOSK_CIDRS" ]; then
+    # exactly the given sources (no merge: a network dropped from the flags loses access). Everyone else meets an Access
+    # app with no matching policy and is refused at the edge; the Worker checks KIOSK_ALLOW_CIDRS again.
+    app_upsert "$WORKER_NAME bypass /kiosk" "$HOST/kiosk"
+    policy_upsert "$APP_ID" "bypass kiosk sources" bypass "$KIOSK_INCLUDE"
+    log "kiosk: $BASE/kiosk opens without sign-in from $KIOSK_CIDRS (read-only device counts)"
+  elif jq -e --arg d "$HOST/kiosk" "$JQ_DOMS"'any(.[]; doms | any(. == $d))' "$APPS_JSON" >/dev/null; then
+    warn "an Access application for $HOST/kiosk exists but --kiosk-allow-ip was not given: the Worker now answers 404 on /kiosk. The application is left in place; delete it in Zero Trust if the kiosk is no longer wanted, or re-run with --kiosk-allow-ip to keep the kiosk."
+  fi
 fi
 
 # ---- 4. build and deploy ---------------------------------------------------------------------------------------------
@@ -496,6 +538,7 @@ if [ "$DRY" = 1 ]; then
   plan "GET https://$WORKERS_DEV_HOST/api/admin/v1/me (Cf-Access-Jwt-Assertion: forged) == 401 from the Worker"
   plan "GET $BASE/install.sh == 200 and a shell script"
   plan "POST $BASE/api/agent/v1/enrol (bogus token) == 401"
+  [ -z "$KIOSK_CIDRS" ] || plan "GET https://$WORKERS_DEV_HOST/kiosk/api/devices (direct, bypassing Access) == 403 from the Worker unless this machine is a kiosk source"
   if [ -n "$DOMAIN" ] && [ "$KEEP_WORKERS_DEV" = 0 ]; then api_plan POST "/workers/scripts/$WORKER_NAME/subdomain" '{"enabled":false,"previews_enabled":false}'; fi
 else
   body="$WORKDIR/body"
@@ -533,6 +576,14 @@ else
   code="$(retry_http "$body" 401 "$BASE/api/agent/v1/enrol" --request POST --header 'Content-Type: application/json' --data "{\"token\":\"$bogus\",\"facts\":{\"hostname\":\"smoke-test\",\"arch\":\"amd64\"}}")" || true
   [ "$code" = 401 ] && grep -q 'invalid_token' "$body" || die "POST /api/agent/v1/enrol with a bogus token answered $code, expected 401 (body: $(head -c 160 "$body")). If it is 3xx/403 the Access bypass for /api/agent did not apply."
   log "ok: enrol refuses a bogus token (401)"
+
+  if [ -n "$KIOSK_CIDRS" ] && [ -n "$DOMAIN" ]; then
+    # Worker-side kiosk gate, observed directly (workers.dev skips Access): from a non-kiosk address it must be 403
+    code="$(retry_http "$body" 403 "$DIRECT/kiosk/api/devices")" || true
+    if [ "$code" = 403 ] && grep -q '"forbidden"' "$body"; then log "ok: the Worker refuses /kiosk from a source outside KIOSK_ALLOW_CIDRS (403)"
+    elif [ "$code" = 200 ]; then warn "direct GET /kiosk/api/devices answered 200: this machine's address is one of the kiosk sources, so the refusal could not be observed"
+    else die "direct GET $DIRECT/kiosk/api/devices answered $code, expected 403 from the Worker (body: $(head -c 160 "$body"))"; fi
+  fi
 
   if [ -n "$DOMAIN" ] && [ "$KEEP_WORKERS_DEV" = 0 ]; then
     log "disabling the workers.dev route (Access does not protect it)"

@@ -1,5 +1,5 @@
 // exp-manager Worker entry. Routes: /api/admin/v1/* (Access JWT verified here), /api/agent/v1/*
-// (per-agent bearer), /install.sh and /healthz (public). Everything else is served by the Static
+// (per-agent bearer), /install.sh and /healthz (public), /kiosk (read-only device counts; source-IP allowlist only). Everything else is served by the Static
 // Assets binding (the admin SPA) via the not-found fallthrough, or from the embedded copy (--embed-ui).
 import { Hono } from "hono";
 import { adminRoutes } from "./admin/routes";
@@ -8,6 +8,7 @@ import { runScheduled } from "./cron";
 import type { AppBindings, Env } from "./env";
 import { ApiError, ConfigError, errorResponse, notFound } from "./errors";
 import { renderInstallSh } from "./install/install";
+import { kioskRoutes } from "./kiosk/kiosk";
 import { UI_ASSETS, UI_HEADERS } from "../.generated/ui-assets";
 import { type EmbeddedAssets, type HeaderRules, uiFallback } from "./ui/embedded";
 
@@ -36,6 +37,8 @@ app.get("/install.sh", async (c) => {
 
 app.route("/api/admin/v1", adminRoutes);
 app.route("/api/agent/v1", agentRoutes);
+// read-only ops board for the management network: IP-gated by Access AND by the Worker (kiosk/kiosk.ts)
+app.route("/kiosk", kioskRoutes);
 
 app.notFound(async (c) => {
   const p = new URL(c.req.url).pathname;

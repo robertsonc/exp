@@ -409,13 +409,13 @@ table.plain thead th { color: var(--exp-text-dim); font-size: var(--exp-text-xs)
 
 /* ---- ops board (/ops): one card per platform, numbers readable from across the room ---- */
 .ops-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: var(--exp-space-4); margin-bottom: var(--exp-space-3); }
-.ops-card { display: flex; flex-direction: column; gap: var(--exp-space-3); background: var(--exp-surface); border: 1px solid var(--exp-stroke); border-radius: var(--exp-radius-md); padding: var(--exp-space-4); min-width: 0; }
+.ops-card { display: flex; flex-direction: column; gap: var(--exp-space-3); background: var(--exp-surface); border: 1px solid var(--exp-stroke); border-radius: var(--exp-radius-md); padding: var(--exp-space-4); min-width: 0; container-type: inline-size; }
 .ops-card-error { border-color: var(--exp-fail); }
 .ops-head { display: flex; align-items: center; justify-content: space-between; gap: var(--exp-space-3); flex-wrap: wrap; }
 .ops-head h2 { font-size: var(--exp-text-lg); margin: 0; }
 .ops-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--exp-space-3); margin: 0; }
 .ops-nums dt { font-size: var(--exp-text-xs); color: var(--exp-text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
-.ops-nums dd { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); line-height: 1.1; font-weight: var(--exp-weight-bold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ops-nums dd { margin: 0; font-size: clamp(1.5rem, 8cqi, 3.5rem); line-height: 1.1; font-weight: var(--exp-weight-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ops-nums-none dd { color: var(--exp-text-dim); }
 .ops-stale dd { opacity: 0.6; }
 .ops-online dd, strong.ops-online { color: var(--exp-ok); }
