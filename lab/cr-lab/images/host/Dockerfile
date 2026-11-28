@@ -6,7 +6,7 @@ FROM jrei/systemd-ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends \
-      python3 curl openssl ca-certificates iproute2 iputils-ping busybox iperf3 tcpdump procps sudo \
+      python3 curl openssl ca-certificates iproute2 iputils-ping busybox iperf3 iw wpasupplicant tcpdump procps sudo \
       dnsmasq kea-dhcp4-server rsyslog iptables isc-dhcp-client dnsutils \
  && rm -rf /var/lib/apt/lists/*
 # dnsmasq and Kea only run on svc (the topology enables them there); elsewhere dnsmasq would take :53 from the
