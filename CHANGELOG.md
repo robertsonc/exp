@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-28
+
+Probe Wi-Fi ports (open / OWE event networks), the ops board and the read-only kiosk.
+
+Upgrade notes: the manager needs migrations `0006` and `0007` (`deploy.sh` applies them; keep `--kiosk-allow-ip` on every
+redeploy). The 0.4.0 probe installs `iw` and `wpasupplicant`; a Wi-Fi port needs an agent from 0.4.0, which starts
+`exp-probe-wifi@<port>` with the port's lease unit (an older agent starts nothing for a Wi-Fi port).
+
 ### Added
 - Manager: **Ops board** (`/ops`, `GET /api/admin/v1/ops/devices`): total / online / offline devices for Juniper Mist and
   HPE Aruba Networking Central (New Central, GreenLake client credentials), per platform and by type (APs, switches,
@@ -18,7 +26,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   (admin board up to 500 per platform, kiosk up to 200, the rest as "+N more"). Only down devices are stored, never the
   inventory, a serial, a MAC or an address; "down since" carries across polls through a keyed hash of the device identity.
   Mist site names come from one extra read-only call when a device is down. Migration `0007_ops_down_devices.sql`.
-
 - Probe: **Wi-Fi ports** (M4, CR-wifi-open-owe) on open and Enhanced Open (OWE) networks: the radio moves into the
   port's namespace (`iw phy … set netns`), `exp-probe-wifi@<port>` runs `wpa_supplicant` for the one configured SSID
   (no credential exists or is stored), `wifi_hb` every beat (signal, noise, SNR, rate, channel, BSSID, gateway RTT,
